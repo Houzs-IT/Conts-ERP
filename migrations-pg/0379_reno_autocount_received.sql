@@ -1,0 +1,172 @@
+-- REVERSAL: re-run migrations-pg/0368_scm_so_paid_erp_receipts_on_top.sql, then
+--   alter table scm.reno_so_contracts drop column autocount_received_sen;
+-- GRANTS: none - a new column keeps the table grants, and CREATE OR REPLACE VIEW keeps the view grants.
+--
+-- What AutoCount collected on a renovation contract before go-live, as its AR collection list shows it (chew, 25 Nov
+-- 2026: "开多少单我不理，先把collection做好先"). Until now it was worked out as what AutoCount invoiced less what the
+-- customer still owed at go-live. Where the invoiced figure seeded at go-live is off, the collection was off with it
+-- (DCLOVER A-3A-3A: RM 57,000.90 against the AutoCount figure RM 57,145.90).
+--
+--   reno_so_contracts.autocount_received_sen  AutoCount receipts on the contract up to go-live, from the AR
+--                                             collection list. Null = not given: worked out as before.
+-- Read by the engine's billing view (scm/lib/renovation-billing), acc/reno-paid-before-golive, the Renovation projects
+-- page (acc/reno-projects) and, here, the SO list Paid and Balance (only extra_sen changes, columns unchanged).
+-- Set through POST /accounting/renovation-opening/autocount-received.
+
+set local search_path = scm, public, extensions;
+set local lock_timeout = '5s';
+
+alter table scm.reno_so_contracts add column if not exists autocount_received_sen bigint
+  check (autocount_received_sen is null or autocount_received_sen >= 0);
+
+CREATE OR REPLACE VIEW scm.mfg_sales_orders_with_payment_totals AS
+ SELECT so.doc_no,
+    so.transfer_to,
+    so.so_date,
+    so.branding,
+    so.debtor_code,
+    so.debtor_name,
+    so.agent,
+    so.sales_location,
+    so.ref,
+    so.venue,
+    so.venue_id,
+    so.address1,
+    so.address2,
+    so.address3,
+    so.address4,
+    so.phone,
+    so.mattress_sofa_sen,
+    so.bedframe_sen,
+    so.accessories_sen,
+    so.others_sen,
+    so.mattress_sofa_cost_sen,
+    so.bedframe_cost_sen,
+    so.accessories_cost_sen,
+    so.others_cost_sen,
+    so.service_sen,
+    so.service_cost_sen,
+    so.local_total_sen,
+    so.balance_sen,
+    so.total_cost_sen,
+    so.total_revenue_sen,
+    so.total_margin_sen,
+    so.margin_pct_basis,
+    so.line_count,
+    so.fabric_tier_addon_sen,
+    so.delivery_fee_sen,
+    so.cross_category_source_doc_no,
+    so.currency,
+    so.status,
+    so.remark2,
+    so.remark3,
+    so.remark4,
+    so.note,
+    so.proceeded_at,
+    so.sales_exemption_expiry,
+    so.customer_id,
+    so.customer_state,
+    so.customer_country,
+    so.customer_po_image_b64,
+    so.customer_so_no,
+    so.hub_id,
+    so.hub_name,
+    so.customer_delivery_date,
+    so.processing_date,
+    so.linked_do_doc_no,
+    so.ship_to_address,
+    so.bill_to_address,
+    so.install_to_address,
+    so.subtotal_sen,
+    so.overdue,
+    so.email,
+    so.customer_type,
+    so.salesperson_id,
+    so.city,
+    so.postcode,
+    so.building_type,
+    so.emergency_contact_name,
+    so.emergency_contact_phone,
+    so.emergency_contact_relationship,
+    so.target_date,
+    so.signature_b64,
+    so.slip_key,
+    so.slip_state,
+    so.payment_method,
+    so.installment_months,
+    so.merchant_provider,
+    so.approval_code,
+    so.payment_date,
+    so.deposit_sen,
+    so.paid_sen,
+    so.created_at,
+    so.created_by,
+    so.updated_at,
+    so.priority_rank,
+    so.priority_set_at,
+    so.priority_set_by,
+    so.priority_reason,
+    so.allocation_warehouse_id,
+    so.slip_image_key,
+    so.receipt_image_key,
+    so.delivery_state,
+    so.possession_date,
+    so.house_type,
+    so.replacement_disposal,
+    so.referral,
+    so.amend_date_from_customer,
+    so.amended_delivery_date,
+    so.amend_reason,
+    so.revision,
+    so.company_id,
+    (COALESCE(p.paid_total, 0::bigint) + COALESCE(g.extra_sen, 0::bigint))::bigint AS paid_total_sen,
+    (so.local_total_sen - COALESCE(p.paid_total, 0::bigint) - COALESCE(g.extra_sen, 0::bigint))::bigint AS balance_sen_live,
+    so.on_hold,
+    so.hold_reason,
+    so.held_at,
+    so.held_by,
+    so.collaborator_staff_ids,
+    so.access_staff_ids,
+    so.open_to_all
+   FROM scm.mfg_sales_orders so
+     LEFT JOIN ( SELECT x.so_doc_no,
+            sum(x.amount_sen)::bigint AS paid_total
+           FROM ( SELECT mfg_sales_order_payments.so_doc_no, mfg_sales_order_payments.amount_sen::bigint AS amount_sen
+                   FROM scm.mfg_sales_order_payments
+                UNION ALL
+                 SELECT si.so_doc_no, LEAST(si.paid_sen, GREATEST(si.total_sen, 0))::bigint AS amount_sen
+                   FROM scm.sales_invoices si
+                  WHERE si.so_doc_no IS NOT NULL AND si.paid_sen > 0
+                    AND si.status::text <> ALL (ARRAY['CANCELLED'::text, 'DRAFT'::text])) x
+          GROUP BY x.so_doc_no) p ON p.so_doc_no = so.doc_no
+     LEFT JOIN ( WITH k AS (
+                 SELECT o.doc_no, o.company_id, trim(o.debtor_code) AS debtor,
+                        COALESCE(o.so_date, '9999-12-31'::date) AS sort_date,
+                        GREATEST(COALESCE(c.billed_before_golive_sen, 0::bigint), COALESCE(c.golive_contract_sen, 0::bigint))::bigint AS billed
+                   FROM scm.mfg_sales_orders o
+                     JOIN scm.reno_so_contracts c ON c.so_doc_no = o.doc_no
+                  WHERE o.status::text <> 'CANCELLED'::text AND NULLIF(trim(o.debtor_code), ''::text) IS NOT NULL
+                    AND GREATEST(COALESCE(c.billed_before_golive_sen, 0::bigint), COALESCE(c.golive_contract_sen, 0::bigint)) > 0
+               ), owed AS (
+                 SELECT d.company_id, d.debtor,
+                        GREATEST(0::bigint,
+                          COALESCE((SELECT sum(si.total_sen) FROM scm.sales_invoices si
+                                     WHERE si.company_id = d.company_id AND trim(si.debtor_code) = d.debtor AND si.opening_balance
+                                       AND upper(COALESCE(si.status::text, ''::text)) <> ALL (ARRAY['DRAFT'::text, 'CANCELLED'::text, 'VOID'::text])), 0::bigint)
+                        - COALESCE((SELECT sum(cc.amount_sen) FROM scm.customer_credits cc
+                                     WHERE cc.company_id = d.company_id AND trim(cc.debtor_code) = d.debtor AND cc.source_type = 'OPENING'::text), 0::bigint))::bigint AS owed_sen
+                   FROM (SELECT DISTINCT k.company_id, k.debtor FROM k) d
+               ), alloc AS (
+                 SELECT k.doc_no, k.company_id, k.billed,
+                        COALESCE(sum(k.billed) OVER (PARTITION BY k.company_id, k.debtor ORDER BY k.sort_date, k.doc_no
+                                                     ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0::numeric)::bigint AS billed_before_this,
+                        w.owed_sen
+                   FROM k JOIN owed w ON w.company_id = k.company_id AND w.debtor = k.debtor
+               )
+               SELECT a.doc_no,
+                      COALESCE(rc.autocount_received_sen,
+                        GREATEST(0::bigint, a.billed - LEAST(a.billed, GREATEST(0::bigint, a.owed_sen - a.billed_before_this))))::bigint AS extra_sen
+                 FROM alloc a
+                 LEFT JOIN scm.reno_so_contracts rc ON rc.so_doc_no = a.doc_no) g ON g.doc_no = so.doc_no;
+
+notify pgrst, 'reload schema';

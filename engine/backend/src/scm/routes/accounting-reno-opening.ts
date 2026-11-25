@@ -9,6 +9,7 @@ import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { applyRenoOpening, previewRenoOpening, type RenoOpeningRow, type RenoOpeningTx } from '../../acc/reno-opening';
 import { inRenoTx, sqlFor } from '../lib/renovation-db';
+import { AUTOCOUNT_RECEIVED_MAX_ROWS, applyAutocountReceived, previewAutocountReceived, type AutocountReceivedRow } from '../../acc/reno-autocount-received';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context, untyped as in the other accounting-* handlers */
 const MAX_ROWS = 2000;
@@ -55,4 +56,33 @@ export const renoOpeningApply = async (c: any): Promise<Response> => {
   if (r.ok) return c.json(r);
   if (r.status === 'problems') return c.json({ error: 'Some rows have problems: nothing was applied.', rows: r.rows }, 409);
   return c.json({ error: r.error }, sql ? 500 : 503);
+};
+
+/* POST /accounting/renovation-opening/autocount-received { rows: [{ soDocNo, receivedSen | null }], dryRun? }
+   What AutoCount collected on each contract before go-live, from its AR collection list (acc/reno-autocount-received).
+   dryRun → { ok, rows } with each row's problems and what it holds now; else { ok, applied }, or 409 with the rows. */
+export const renoAutocountReceived = async (c: any): Promise<Response> => {
+  if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) {
+    return c.json({ error: "Only finance (the ledger's post permission) can set what AutoCount collected." }, 403);
+  }
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const raw = body?.rows;
+  if (!Array.isArray(raw) || raw.length === 0) return c.json({ error: 'No rows.' }, 400);
+  if (raw.length > AUTOCOUNT_RECEIVED_MAX_ROWS) return c.json({ error: `At most ${AUTOCOUNT_RECEIVED_MAX_ROWS} rows at a time.` }, 400);
+  const rows: AutocountReceivedRow[] = raw.map((r: any) => ({
+    soDocNo: String(r?.soDocNo ?? '').trim(),
+    receivedSen: r?.receivedSen == null || r?.receivedSen === '' ? null : Number(r.receivedSen),
+  }));
+  const sb = c.get('supabase');
+  if (body?.dryRun === true) {
+    const p = await previewAutocountReceived(sb, co.companyId, rows);
+    return p.ok ? c.json(p) : c.json({ error: p.error }, 503);
+  }
+  const r = await applyAutocountReceived(sb, co.companyId, rows);
+  if (r.ok) return c.json(r);
+  if (r.status === 'problems') return c.json({ error: 'Some rows have problems: nothing was applied.', rows: r.rows }, 409);
+  return c.json({ error: r.error }, 500);
 };

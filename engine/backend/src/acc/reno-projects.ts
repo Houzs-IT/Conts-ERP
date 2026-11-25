@@ -70,7 +70,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const projectIds = [...new Set(comps.map((c) => c.projectId).filter((p): p is number => p != null))];
 
   const [contracts, orders, projects, instalments, bills, soPays, invoices, pos] = await Promise.all([
-    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name, doc_date, billed_before_golive_sen, golive_contract_sen')
+    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name, doc_date, billed_before_golive_sen, golive_contract_sen, autocount_received_sen')
       .eq('company_id', companyId).in('so_doc_no', b).order('so_doc_no').range(f, t), 'contracts'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_orders').select('doc_no, debtor_code, debtor_name, agent').eq('company_id', companyId).in('doc_no', b).order('doc_no').range(f, t), 'orders'),
     inChunks(projectIds, (b, f, t) => sb.schema('public').from('projects').select('id, code, name, reno_stage, planned_handover_date, salesperson_name')
@@ -208,7 +208,8 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     for (const k of contracts) {
       const doc = String(k.so_doc_no);
       const base = k.golive_contract_sen != null ? Number(k.golive_contract_sen) + (paidAhead.get(doc) ?? 0) : Number(k.billed_before_golive_sen ?? 0);
-      const before = base - (openingOutstanding.get(doc) ?? 0);
+      /* AutoCount's own collection, where finance gave it from its AR collection list, is the figure (chew, 25 Nov 2026). */
+      const before = k.autocount_received_sen != null ? Number(k.autocount_received_sen) : base - (openingOutstanding.get(doc) ?? 0);
       if (before > 0) addPay(doc, { paid_at: eve, amount_sen: before });
     }
   }

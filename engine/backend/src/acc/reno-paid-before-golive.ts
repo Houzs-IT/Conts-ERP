@@ -21,6 +21,9 @@ export interface PreGoLiveContract {
   /** The contract's sum now (its lines). Money the customer paid ahead in AutoCount, beyond every invoice it had,
       counts on the contract up to the part AutoCount never invoiced (chew, 25 Nov 2026: MS LEE's RM 712). */
   contractSen?: number | null;
+  /** What AutoCount actually collected on the contract up to go-live, from its AR collection list (chew, 25 Nov 2026:
+      "开多少单我不理，先把collection做好先"). When given it is the answer, whatever was invoiced or still owed. */
+  autocountReceivedSen?: number | null;
 }
 
 /** Paid before go-live per contract (see the header). `owedByDebtor`: what each customer code still owed at go-live,
@@ -51,6 +54,12 @@ export function allocatePaidBeforeGoLive(contracts: readonly PreGoLiveContract[]
       out.set(c.soDocNo, c.billedBeforeGoLiveSen - owes + extra);
     }
   }
+  /* AutoCount's own collection, where finance gave it, is the figure; the customer's owed above is laid as before so the
+     customer's other contracts read the same. */
+  for (const c of contracts) {
+    const got = c.autocountReceivedSen;
+    if (got != null && Number.isFinite(Number(got))) out.set(c.soDocNo, Math.max(0, Math.trunc(Number(got))));
+  }
   return out;
 }
 
@@ -76,7 +85,7 @@ export async function paidBeforeGoLiveOf(sb: Db, companyId: number, soDocNos: re
     read(sb.from('customer_credits').select('debtor_code, amount_sen').eq('company_id', companyId).eq('source_type', 'OPENING').in('debtor_code', codes), 'opening credits'),
   ]);
   const liveOrders = orders.filter((o) => String(o.status ?? '') !== 'CANCELLED');
-  const contracts = liveOrders.length === 0 ? [] : await read(sb.from('reno_so_contracts').select('so_doc_no, billed_before_golive_sen, golive_contract_sen')
+  const contracts = liveOrders.length === 0 ? [] : await read(sb.from('reno_so_contracts').select('so_doc_no, billed_before_golive_sen, golive_contract_sen, autocount_received_sen')
     .in('so_doc_no', liveOrders.map((o) => String(o.doc_no))), 'contracts');
   /* What AutoCount invoiced: the seeded figure, or the whole contract AutoCount booked at its cut-over (golive_contract_sen,
      acc/reno-opening; 16 Nov 2026 it booked every contract whole), whichever is more. */
@@ -84,9 +93,11 @@ export async function paidBeforeGoLiveOf(sb: Db, companyId: number, soDocNos: re
   const owed = new Map<string, number>();
   for (const i of sis) if (LIVE_INVOICE(i.status)) owed.set(String(i.debtor_code), (owed.get(String(i.debtor_code)) ?? 0) + Number(i.total_sen ?? 0));
   for (const c of credits) owed.set(String(c.debtor_code), (owed.get(String(c.debtor_code)) ?? 0) - Number(c.amount_sen ?? 0));
-  const all = allocatePaidBeforeGoLive(liveOrders.filter((o) => (billedOf.get(String(o.doc_no)) ?? 0) > 0).map((o) => ({
+  const receivedOf = new Map(contracts.filter((c) => c.autocount_received_sen != null).map((c) => [String(c.so_doc_no), Number(c.autocount_received_sen)]));
+  const all = allocatePaidBeforeGoLive(liveOrders.filter((o) => (billedOf.get(String(o.doc_no)) ?? 0) > 0 || receivedOf.has(String(o.doc_no))).map((o) => ({
     soDocNo: String(o.doc_no), debtorCode: String(o.debtor_code ?? ''), soDate: o.so_date ? String(o.so_date).slice(0, 10) : null,
     billedBeforeGoLiveSen: billedOf.get(String(o.doc_no)) ?? 0, contractSen: o.local_total_sen == null ? null : Number(o.local_total_sen),
+    autocountReceivedSen: receivedOf.get(String(o.doc_no)) ?? null,
   })), owed);
   for (const d of docs) out.set(d, all.get(d) ?? 0);
   return out;
