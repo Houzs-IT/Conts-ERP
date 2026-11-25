@@ -1,3 +1,6 @@
+-- APPLIED to production on 25 Nov 2026 as migration 0374 (migrate-production.yml, --only=0374). Kept here, not in
+-- migrations-pg: it is a one-off fix of one production contract; public.pos_migrations keeps its row.
+
 -- 0374_ms_chew_autocount_invoiced: one-off data fix of one production contract, MS CHEW, AVA KIARA BAY B15-11
 -- (TC-SO-2512-001), chew 25 Nov 2026 ("你自己看"). On an empty database (CI, staging) the rows are not there and nothing
 -- changes.
