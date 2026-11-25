@@ -249,9 +249,11 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
   );
 }
 
-export function ComboSelect({ value, onChange, options, label, placeholder = 'Type to search' }: {
+export function ComboSelect({ value, onChange, options, label, placeholder = 'Type to search', disabledReason, clearable = false }: {
   value: string; onChange: (v: string) => void; options: SelectOption[]; label: string; placeholder?: string;
+  disabledReason?: string; clearable?: boolean;
 }) {
+  const isDisabled = !!disabledReason;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
@@ -294,23 +296,32 @@ export function ComboSelect({ value, onChange, options, label, placeholder = 'Ty
 
   let lastGroup: string | undefined;
   return (
-    <div className="flex flex-col gap-1.5 min-w-0">
+    <div className={cx('flex flex-col gap-1.5 min-w-0', isDisabled && 'opacity-60')}>
       <label htmlFor={id} style={{ fontSize: 'var(--text-small)', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{label}</label>
       <div ref={field} className="relative flex items-center min-w-0">
         <input ref={input} id={id} value={query ?? current?.label ?? ''} placeholder={current?.label ?? placeholder} autoComplete="off"
           role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId}
           aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
+          disabled={isDisabled} aria-describedby={isDisabled ? `${id}-why` : undefined}
           onFocus={e => { e.currentTarget.select(); openList(); }}
           onClick={() => { if (!open) openList(); }}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onKeyDown={onKey}
-          className="field-input" style={{ paddingRight: 36 }} />
-        <button type="button" tabIndex={-1} aria-label={`Show ${label.toLowerCase()} list`} onMouseDown={e => e.preventDefault()}
+          className={cx('field-input', isDisabled && 'cursor-not-allowed')} style={{ paddingRight: clearable && current ? 68 : 36 }} />
+        {clearable && current && !isDisabled && (
+          <button type="button" aria-label={`Clear ${label.toLowerCase()}`} onMouseDown={e => e.preventDefault()}
+            onClick={() => { onChange(''); close(); }}
+            className="absolute right-9 w-8 h-8 max-md:w-11 max-md:h-11 max-md:right-8 grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink hover:text-ink">
+            <Icon name="X" size="sm" />
+          </button>
+        )}
+        <button type="button" tabIndex={-1} aria-label={`Show ${label.toLowerCase()} list`} onMouseDown={e => e.preventDefault()} disabled={isDisabled}
           onClick={() => { if (open) close(); else { input.current?.focus(); openList(); } }}
-          className="absolute right-1 w-8 h-8 grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink">
+          className={cx('absolute right-1 w-8 h-8 grid place-items-center bg-transparent border-none text-muted-ink', isDisabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
           <Icon name="ChevronDown" size="sm" />
         </button>
       </div>
+      {isDisabled && <span id={`${id}-why`} className="text-meta text-muted-ink">{disabledReason}</span>}
       <Floating anchor={field} open={open} onClose={close} label={label} width={field.current?.offsetWidth} maxHeight={300}>
         <div id={listId} role="listbox" aria-label={label} className="max-h-[300px] overflow-y-auto py-1" onScroll={onListScroll}>
           {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">No match for "{(query ?? '').trim()}".</div>}

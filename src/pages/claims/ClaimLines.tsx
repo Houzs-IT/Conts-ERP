@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo, type ReactNode } from 'react';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { ComboSelect, type SelectOption } from '../../components/Select';
@@ -91,16 +91,39 @@ function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; 
     return <ComboSelect label="Project (optional)" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
       placeholder={`No project: ${sub.name}'s own cost`} options={projects} />;
   }
+  /* One of unit, job or project, never two: picking one locks the others until it is cleared. */
+  const lockedBy = (where: RentalTarget) => (l.where !== 'none' && l.where !== where ? `Clear the ${RENTAL_TARGET_NAME[l.where]} to pick this instead.` : undefined);
+  const choices = [
+    <ComboSelect key="unit" label="Unit" value={l.where === 'unit' ? l.unitId : ''} onChange={v => onPick(v ? only('unit', { unitId: v }) : only('none', {}))}
+      placeholder="Type a building or unit" options={targets.unitOptions} clearable disabledReason={lockedBy('unit')} />,
+    ...(sub?.maintenance ? [<ComboSelect key="job" label="Maintenance job" value={l.where === 'job' ? l.jobId : ''} onChange={v => onPick(v ? only('job', { jobId: v }) : only('none', {}))}
+      placeholder="Type the job or its unit" options={targets.jobOptions} clearable disabledReason={lockedBy('job')} />] : []),
+    /* The company's own Rental projects only; none open, no box (chew, 17 Nov 2026). */
+    ...(projects.length > 0 ? [<ComboSelect key="project" label="Project" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
+      placeholder="Type the project name or code" options={projects} clearable disabledReason={lockedBy('project')} />] : []),
+  ];
+  return choices.length === 1 ? choices[0] : <OrChoices choices={choices} />;
+}
+
+type RentalTarget = Exclude<LineDraft['where'], 'none'>;
+const RENTAL_TARGET_NAME: Record<RentalTarget, string> = { unit: 'unit', job: 'maintenance job', project: 'project' };
+
+/** How many of unit, job and project a Rental line offers; more than one sits on its own row, joined by OR. */
+const rentalChoiceCount = (sub: LineSubDepartment | null, targets: LineTargets): number =>
+  sub?.department === 'shared' || sub?.department === 'supply' ? 0 : 1 + (sub?.maintenance ? 1 : 0) + (targets.projectsFor(sub).length > 0 ? 1 : 0);
+
+function OrChoices({ choices }: { choices: ReactNode[] }) {
   return (
-    <>
-      <ComboSelect label="Unit" value={l.where === 'unit' ? l.unitId : ''} onChange={v => onPick(v ? only('unit', { unitId: v }) : only('none', {}))}
-        placeholder="Type a building or unit" options={targets.unitOptions} />
-      {sub?.maintenance && <ComboSelect label="Or a maintenance job" value={l.where === 'job' ? l.jobId : ''} onChange={v => onPick(v ? only('job', { jobId: v }) : only('none', {}))}
-        placeholder="Type the job or its unit" options={targets.jobOptions} />}
-      {/* The company's own Rental projects only; none open, no box (chew, 17 Nov 2026). */}
-      {projects.length > 0 && <ComboSelect label="Or a project" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
-        placeholder="Type the project name or code" options={projects} />}
-    </>
+    <div className={cx('flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 min-w-0', SPAN_ALL)}>
+      {choices.map((choice, index) => (
+        <Fragment key={index}>
+          {index > 0 && (
+            <span aria-hidden className="self-center sm:self-start sm:mt-[29px] px-2.5 py-0.5 rounded-pill bg-muted text-caption font-semibold text-muted-ink">OR</span>
+          )}
+          <div className="flex-1 min-w-0">{choice}</div>
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
@@ -124,13 +147,15 @@ export function LinesEditor({ lines, setLines, totalSen, department, recoverOn =
             </div>
           )}
           <div className={TWO_COLUMN_GRID}>
-            {subOptions.length === 0 ? (
-              <ReadOnlyValue label="Department" value={`${DEPARTMENT[department]} (from your department)`} />
-            ) : (
-              <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''}
-                onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v, where: 'none', unitId: '', jobId: '', projectId: '' })}
-                placeholder="Type a department" options={subOptions} />
-            )}
+            <div className={cx('min-w-0', rentalChoiceCount(subOf(l), targets) > 1 && SPAN_ALL)}>
+              {subOptions.length === 0 ? (
+                <ReadOnlyValue label="Department" value={`${DEPARTMENT[department]} (from your department)`} />
+              ) : (
+                <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''}
+                  onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v, where: 'none', unitId: '', jobId: '', projectId: '' })}
+                  placeholder="Type a department" options={subOptions} />
+              )}
+            </div>
             <LineTargetFields line={l} sub={subOf(l)} targets={targets} onPick={patch => set(i, patch)} />
             <div className={cx('min-w-0', SPAN_ALL)}>
               <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
