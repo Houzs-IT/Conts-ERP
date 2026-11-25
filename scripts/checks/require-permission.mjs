@@ -35,6 +35,10 @@ export const allow = {
   'functions/api/supply-chain/engine.ts': 'Says only whether the supply chain engine is switched on (true/false) for the menu.',
   'functions/api/table-layouts/index.ts': 'A person\'s own saved table views; company views are management-only inside (mayShare).',
   'functions/api/coverage-fleet/index.ts': 'Supply chain (Transportation): field and owner accounts are refused by the middleware; same data as drivers/vehicles.',
+  'functions/api/mcp/index.ts': 'The AI Connector (MCP): the connector token is the credential, and every read runs as its person through the session middleware, so their own access applies to every handler.',
+  'functions/api/mcp/oauth/register.ts': 'OAuth client registration for the AI Connector, called by the AI app before anyone signs in; registering grants nothing.',
+  'functions/api/mcp/oauth/authorize.ts': 'OAuth authorize step for the AI Connector: checks the AI app and sends the browser to /ai-connect, where the person signs in and presses Allow (api/ai-connector/consent, signed in).',
+  'functions/api/mcp/oauth/token.ts': 'OAuth token step for the AI Connector, called by the AI app; the one-time code with its PKCE verifier, or a refresh token, is the credential, and the person must still be active and allowed.',
 };
 
 /** Path segments under /api that an area in access.ts claims. */
