@@ -119,7 +119,7 @@ const td: React.CSSProperties = { padding: '6px 8px', verticalAlign: 'middle' };
 const right: React.CSSProperties = { textAlign: 'right', fontFamily: 'var(--font-mono)' };
 const iconBtn: React.CSSProperties = { border: 'none', background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 2 };
 /* The line table's columns, in px; the person drags them wider or narrower (chew, 25 Nov 2026: description too small). */
-const LINE_COLS = { account: 260, description: 300, amount: 130, department: 150, project: 170, unit: 150, actions: 56 };
+const LINE_COLS = { account: 190, description: 190, amount: 100, department: 115, project: 110, unit: 95, actions: 50 }; // 850: fits the New AP invoice window
 
 export const ApInvoiceForm = ({
   mode, initial, suppliers, suppliersLoading = false, lineAccounts, posted = false, paidSen = 0, saving, onSubmit, onCancel,
@@ -187,7 +187,7 @@ export const ApInvoiceForm = ({
     const rid = tr ? Number(tr.getAttribute('data-line')) : NaN;
     return Number.isFinite(rid) ? rid : undefined;
   };
-  const cols = useColumnWidths('conts.apInvoiceForm.cols', LINE_COLS);
+  const cols = useColumnWidths('conts.apInvoiceForm.cols.v2', LINE_COLS);
   const removeLine = (rid: number) => setV((prev) => (prev.lines.length > 1 ? { ...prev, lines: prev.lines.filter((l) => l.rid !== rid) } : prev));
   const hopFrom = (rid: number) => {
     const i = v.lines.findIndex((l) => l.rid === rid);
