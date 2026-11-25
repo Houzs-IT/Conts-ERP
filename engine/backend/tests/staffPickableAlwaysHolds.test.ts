@@ -27,6 +27,7 @@ import {
   unionAlwaysPickable,
   parseIncludeIds,
   MAX_INCLUDE_IDS,
+  isPickableSalesperson,
 } from "../src/scm/lib/staffCompanyScope";
 import { isSalesUser } from "../src/services/pmsAccess";
 
@@ -131,6 +132,43 @@ describe("the id the screen already has to name — ?include=", () => {
   });
 });
 
+describe("isPickableSalesperson: Conts positions live in Property OS", () => {
+  const EMPTY_ENGINE = { position_name: "", department_name: "" };
+
+  test("a Sales Executive in Property OS is pickable when the engine has no position", () => {
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Sales Executive", department_name: "Sales" })).toBe(true);
+  });
+
+  test("a Sales department alone is enough", () => {
+    expect(isPickableSalesperson(undefined, { position_name: null, department_name: "Sales" })).toBe(true);
+  });
+
+  test("a Director in the Property OS Management department is pickable", () => {
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Director", department_name: "Management" })).toBe(true);
+  });
+
+  test("Property Management and IT are not Management", () => {
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Admin", department_name: "Property Management" })).toBe(false);
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "IT Admin", department_name: "IT" })).toBe(false);
+  });
+
+  test("the engine's own Management department stays hidden (Houzs owner and admin accounts)", () => {
+    expect(isPickableSalesperson({ position_name: "Super Admin", department_name: "Management" }, undefined)).toBe(false);
+  });
+
+  test("an office position in Property OS stays out of the picker", () => {
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Accountant", department_name: "Finance" })).toBe(false);
+  });
+
+  test("the engine's own sales position still counts when Property OS has no record (Houzs)", () => {
+    expect(isPickableSalesperson({ position_name: "Sales Person", department_name: "Sales Department" }, undefined)).toBe(true);
+  });
+
+  test("no record anywhere is not pickable", () => {
+    expect(isPickableSalesperson(undefined, undefined)).toBe(false);
+  });
+});
+
 describe("parseIncludeIds", () => {
   test("empty / absent is an empty list, never a refusal", () => {
     expect(parseIncludeIds(undefined)).toEqual([]);
@@ -171,7 +209,12 @@ describe("no exit from GET /pickable can bypass the rule", () => {
 
   test("the handler still exists and still narrows on onlySales", () => {
     expect(handler).toContain('c.req.query("onlySales") === "1"');
-    expect(handler).toContain("isSalesUser(");
+    expect(handler).toContain("isPickableSalesperson(");
+  });
+
+  test("it reads Property OS positions without writing the engine's own", () => {
+    expect(handler).toContain("FROM public.conts_staff");
+    expect(handler).not.toMatch(/UPDATE\s+users/i);
   });
 
   test("every roster-shaped response goes through answer()", () => {

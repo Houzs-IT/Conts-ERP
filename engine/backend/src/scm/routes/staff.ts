@@ -26,9 +26,10 @@ import {
   unionAlwaysPickable,
   parseIncludeIds,
   MAX_INCLUDE_IDS,
+  isPickableSalesperson,
+  type OrgRecord,
 } from "../lib/staffCompanyScope";
 import { derivePosRole } from "../lib/pos-staff-role";
-import { isSalesUser } from "../../services/pmsAccess";
 import type { Env, Variables } from "../env";
 
 export const staff = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -300,11 +301,13 @@ staff.get("/pickable", async (c) => {
     new Set(scoped.map(rowUserId).filter((n): n is number => n != null)),
   );
   if (linkedIds.length === 0) return answer([]);
-  let positionByUserId = new Map<number, { position_name: string | null; department_name: string | null }>();
+  let positionByUserId = new Map<number, OrgRecord>();
+  const emailByUserId = new Map<number, string>();
   try {
     const placeholders = linkedIds.map(() => "?").join(",");
     const res = await c.env.DB.prepare(
       `SELECT u.id AS user_id,
+              lower(u.email) AS email,
               COALESCE(p.name, '')  AS position_name,
               COALESCE(d.name, pd.name, '') AS department_name
          FROM users u
@@ -314,7 +317,7 @@ staff.get("/pickable", async (c) => {
         WHERE u.id IN (${placeholders})`,
     )
       .bind(...linkedIds)
-      .all<{ user_id: number | string; position_name: string | null; department_name: string | null }>();
+      .all<{ user_id: number | string; email: string | null; position_name: string | null; department_name: string | null }>();
     for (const row of res.results ?? []) {
       const uid = Number(row.user_id);
       if (!Number.isInteger(uid)) continue;
@@ -322,6 +325,7 @@ staff.get("/pickable", async (c) => {
         position_name: row.position_name ?? null,
         department_name: row.department_name ?? null,
       });
+      if (row.email) emailByUserId.set(uid, row.email);
     }
   } catch {
     // users / positions / departments absent (pre-migration / D1 test
@@ -329,16 +333,34 @@ staff.get("/pickable", async (c) => {
     return answer(scoped);
   }
 
+  const contsRecordByEmail = new Map<string, OrgRecord>();
+  const emails = Array.from(new Set(emailByUserId.values()));
+  if (emails.length > 0) {
+    try {
+      const res = await c.env.DB.prepare(
+        `SELECT lower(email) AS email, position AS position_name, department AS department_name
+           FROM public.conts_staff
+          WHERE lower(email) IN (${emails.map(() => "?").join(",")})`,
+      )
+        .bind(...emails)
+        .all<{ email: string; position_name: string | null; department_name: string | null }>();
+      for (const row of res.results) {
+        contsRecordByEmail.set(row.email, { position_name: row.position_name, department_name: row.department_name });
+      }
+    } catch (err) {
+      // Houzs deployments have no Property OS view; the engine's own positions still apply.
+      console.warn("[staff/pickable] public.conts_staff unreadable, engine positions only:", err);
+    }
+  }
+
   const salesOnly = scoped.filter((r) => {
     const uid = rowUserId(r);
     if (uid == null) return false; // UNLINKED rows can't be resolved as sales
-    const meta = positionByUserId.get(uid);
-    if (!meta) return false;
-    return isSalesUser({
-      position_name: meta.position_name,
-      department_name: meta.department_name,
-      permissions_set: null,
-    } as any);
+    const email = emailByUserId.get(uid);
+    return isPickableSalesperson(
+      positionByUserId.get(uid),
+      email === undefined ? undefined : contsRecordByEmail.get(email),
+    );
   });
   return answer(salesOnly);
 });
