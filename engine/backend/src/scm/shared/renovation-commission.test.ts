@@ -101,3 +101,22 @@ describe('renovation commission', () => {
     expect(schemeProblems({ ...conts, managerBp: 200 })).toContain('Tier 6: the salesperson rate cannot be more than the manager rate.');
   });
 });
+
+describe('locked months', () => {
+  it('a part whose month closed pays at the locked rates and people, whatever the scheme says now', () => {
+    const portions = contractPortions('SO1', '2026-10-05', 11_000_000, 10_000_000, [{ voNo: 'VO1', date: '2026-11-02', netSen: 1_000_000 }]);
+    const sales = new Map([['amy|2026-10', 20_000_000], ['amy|2026-11', 6_000_000]]);
+    // October was locked under an older scheme: 1% to Amy, 3% to the old manager.
+    const locks = new Map([['SO', { salespersonId: 'amy', managerStaffId: 'oldboss', monthSalesSen: 9_000_000, salesBp: 100, managerBp: 300, lockedAt: '2026-11-01T00:00:00Z' }]]);
+    const r = contractCommission(money(11_000_000, 11_000_000), portions, conts, 'amy', sales, none, locks);
+    expect(r.portions.map((p) => [p.month, p.salesBp, p.managerBp, p.managerStaffId, p.lockedAt != null])).toEqual([
+      ['2026-10', 100, 300, 'oldboss', true],
+      ['2026-11', 50, 350, 'boss', false],
+    ]);
+    expect(r.shares).toEqual([
+      expect.objectContaining({ staffId: 'amy', role: 'sales', totalSen: 105_000 }),
+      expect.objectContaining({ staffId: 'oldboss', role: 'manager', totalSen: 300_000 }),
+      expect.objectContaining({ staffId: 'boss', role: 'manager', totalSen: 35_000 }),
+    ]);
+  });
+});

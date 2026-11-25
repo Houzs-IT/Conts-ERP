@@ -16,6 +16,9 @@ export type CommissionShare = {
 export type CommissionPortion = {
   month: string; date: string; sen: number; source: "SO" | "VO" | "OTHER"; ref: string;
   monthSalesSen: number; salesBp: number; managerBp: number; salesSen: number; managerSen: number;
+  salespersonId: string; salespersonName: string; managerStaffId: string | null; managerName: string | null;
+  /** When the month closed and these rates were fixed; null while the month is still open. */
+  lockedAt: string | null;
 };
 export type CommissionRow = {
   soDocNo: string; soDate: string | null; projectName: string; customerName: string; status: string; branding: string | null;
@@ -46,11 +49,13 @@ function useSave<V>(fn: (v: V) => Promise<unknown>) {
 const send = (path: string, method: string, body?: unknown) => authedFetch(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 
 export type SchemeInput = Omit<CommissionScheme, "id">;
-export const useSaveScheme = () => useSave((v: { id: string | null; scheme: SchemeInput }) =>
-  v.id ? send(`/commission/schemes/${v.id}`, "PUT", v.scheme) : send("/commission/schemes", "POST", v.scheme));
+export const useSaveScheme = () => useSave((v: { id: string | null; scheme: SchemeInput; relockClosedMonths?: boolean }) =>
+  v.id ? send(`/commission/schemes/${v.id}`, "PUT", { ...v.scheme, relockClosedMonths: v.relockClosedMonths === true }) : send("/commission/schemes", "POST", v.scheme));
 export const useDeleteScheme = () => useSave((id: string) => send(`/commission/schemes/${id}`, "DELETE"));
 export const useRecordPayout = () => useSave((v: { soDocNo: string; staffId: string; amountSen: number; paidOn: string; note: string }) =>
   send("/commission/payouts", "POST", v));
+export const useSettle = () => useSave((v: { paidOn: string; note: string; items: Array<{ soDocNo: string; staffId: string; amountSen: number }> }) =>
+  send("/commission/payouts/batch", "POST", v));
 export const useVoidPayout = () => useSave((id: string) => send(`/commission/payouts/${id}/void`, "POST"));
 
 /* ── Display helpers (pure) ─────────────────────────────────────────────── */
@@ -84,4 +89,31 @@ export function personTotals(rows: readonly CommissionRow[]): PersonTotal[] {
     out.set(s.staffId, t);
   }
   return [...out.values()].sort((a, b) => b.claimableSen - a.claimableSen || a.staffName.localeCompare(b.staffName));
+}
+
+/** One claim ready to pay: a person's unpaid, released commission on one order. */
+export type Claim = { key: string; row: CommissionRow; share: CommissionShare };
+export function claimsOf(rows: readonly CommissionRow[]): Claim[] {
+  const out: Claim[] = [];
+  for (const r of rows) for (const s of r.shares) if (s.claimableSen > 0) out.push({ key: `${r.soDocNo}|${s.staffId}`, row: r, share: s });
+  return out.sort((a, b) => a.share.staffName.localeCompare(b.share.staffName) || (a.row.soDate ?? "").localeCompare(b.row.soDate ?? ""));
+}
+
+/** A salesperson's month: every SO and VO dated in it, the total that picked the tier, and the rate it paid. */
+export type MonthGroup = {
+  key: string; staffId: string; staffName: string; month: string; schemeName: string; totalSen: number; salesBp: number; locked: boolean;
+  lines: Array<{ row: CommissionRow; portion: CommissionPortion }>;
+};
+export function monthGroups(rows: readonly CommissionRow[]): MonthGroup[] {
+  const out = new Map<string, MonthGroup>();
+  for (const r of rows) {
+    if (r.problem) continue;
+    for (const p of r.portions) {
+      const key = `${r.schemeId}|${p.salespersonId}|${p.month}`;
+      const g = out.get(key) ?? { key, staffId: p.salespersonId, staffName: p.salespersonName, month: p.month, schemeName: r.schemeName ?? "", totalSen: p.monthSalesSen, salesBp: p.salesBp, locked: p.lockedAt != null, lines: [] };
+      g.lines.push({ row: r, portion: p });
+      out.set(key, g);
+    }
+  }
+  return [...out.values()].sort((a, b) => b.month.localeCompare(a.month) || a.staffName.localeCompare(b.staffName));
 }
