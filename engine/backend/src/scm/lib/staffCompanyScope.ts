@@ -154,14 +154,27 @@ export function filterStaffToCompany<T extends StaffScopeRow>(
 
 export type OrgRecord = { position_name: string | null; department_name: string | null };
 
+export interface ContsStaffRecord extends OrgRecord {
+  department_side?: string | null;
+  role?: string | null;
+}
+
+const FIELD_DEPARTMENTS = new Set(["cleaning", "maintenance"]);
+const FIELD_ROLES = new Set(["technician", "housekeeper"]);
+
 /* Conts keeps positions in Property OS (public.conts_staff), not in the engine's
    public.positions, so a person counts as sales when either record says so. Only
    the picker reads Property OS: writing it into users.position_id would also put
    them in the engine's sales access cohort. Conts directors also sell, so the
-   Property OS Management department is pickable too. */
-export function isPickableSalesperson(engineRecord: OrgRecord | undefined, contsRecord: OrgRecord | undefined): boolean {
-  const isContsManagement = (contsRecord?.department_name ?? "").trim().toLowerCase() === "management";
-  return isSalesUser(engineRecord) || isSalesUser(contsRecord) || isContsManagement;
+   Property OS Management department is pickable too, and so is everyone in a
+   The Conts department except the cleaning and maintenance field staff. */
+export function isPickableSalesperson(engineRecord: OrgRecord | undefined, contsRecord: ContsStaffRecord | undefined): boolean {
+  const department = (contsRecord?.department_name ?? "").trim().toLowerCase();
+  const isContsOffice =
+    contsRecord?.department_side === "conts" &&
+    !FIELD_DEPARTMENTS.has(department) &&
+    !FIELD_ROLES.has((contsRecord.role ?? "").trim().toLowerCase());
+  return isSalesUser(engineRecord) || isSalesUser(contsRecord) || department === "management" || isContsOffice;
 }
 
 /** A staff row's linked Houzs user id, reading camelCase ?? snake_case (the

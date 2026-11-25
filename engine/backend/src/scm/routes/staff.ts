@@ -28,6 +28,7 @@ import {
   MAX_INCLUDE_IDS,
   isPickableSalesperson,
   type OrgRecord,
+  type ContsStaffRecord,
 } from "../lib/staffCompanyScope";
 import { derivePosRole } from "../lib/pos-staff-role";
 import type { Env, Variables } from "../env";
@@ -333,19 +334,19 @@ staff.get("/pickable", async (c) => {
     return answer(scoped);
   }
 
-  const contsRecordByEmail = new Map<string, OrgRecord>();
+  const contsRecordByEmail = new Map<string, ContsStaffRecord>();
   const emails = Array.from(new Set(emailByUserId.values()));
   if (emails.length > 0) {
     try {
       const contsStaffResult = await c.env.DB.prepare(
-        `SELECT lower(email) AS email, position AS position_name, department AS department_name
+        `SELECT lower(email) AS email, position AS position_name, department AS department_name, department_side, role
            FROM public.conts_staff
           WHERE lower(email) IN (${emails.map(() => "?").join(",")})`,
       )
         .bind(...emails)
-        .all<{ email: string; position_name: string | null; department_name: string | null }>();
-      for (const row of contsStaffResult.results) {
-        contsRecordByEmail.set(row.email, { position_name: row.position_name, department_name: row.department_name });
+        .all<{ email: string } & ContsStaffRecord>();
+      for (const { email, ...record } of contsStaffResult.results) {
+        contsRecordByEmail.set(email, record);
       }
     } catch (err) {
       // Houzs deployments have no Property OS view; the engine's own positions still apply.

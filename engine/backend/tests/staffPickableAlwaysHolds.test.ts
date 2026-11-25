@@ -164,6 +164,20 @@ describe("isPickableSalesperson: Conts positions live in Property OS", () => {
     expect(isPickableSalesperson({ position_name: "Sales Person", department_name: "Sales Department" }, undefined)).toBe(true);
   });
 
+  test("anyone in a The Conts department is pickable", () => {
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Operations Staff", department_name: "Operations", department_side: "conts", role: "operations_staff" })).toBe(true);
+  });
+
+  test("The Conts cleaning and maintenance field staff stay out", () => {
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Cleaner", department_name: "Cleaning", department_side: "conts", role: "housekeeper" })).toBe(false);
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Technician", department_name: "Maintenance", department_side: "conts", role: "operations_staff" })).toBe(false);
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: null, department_name: "Field Team", department_side: "conts", role: "technician" })).toBe(false);
+  });
+
+  test("a department on both companies does not make someone a salesperson", () => {
+    expect(isPickableSalesperson(EMPTY_ENGINE, { position_name: "Accountant", department_name: "Finance", department_side: "both", role: "finance_admin" })).toBe(false);
+  });
+
   test("no record anywhere is not pickable", () => {
     expect(isPickableSalesperson(undefined, undefined)).toBe(false);
   });
