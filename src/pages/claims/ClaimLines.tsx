@@ -8,7 +8,7 @@ import { useApi } from '../../lib/useApi';
 import { rm, buildingName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { DEPARTMENT, type LineDepartment, type LineSubDepartment, type NewLine } from '../../lib/claims';
-import { LINE_GRID, ReadOnlyValue, RowHelp, SPAN_ALL } from './FormLayout';
+import { TWO_COLUMN_GRID, ReadOnlyValue, RowHelp, SPAN_ALL } from './FormLayout';
 
 /* subDepartmentId: '' starts the line on the person's own department (the engine fills it); else the one chosen (SOP 1.1, the department
    starts as the person's and may be changed; chew 16 Nov 2026). */
@@ -123,7 +123,7 @@ export function LinesEditor({ lines, setLines, totalSen, department, recoverOn =
               <Button variant="ghost" size="sm" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>
             </div>
           )}
-          <div className={LINE_GRID}>
+          <div className={TWO_COLUMN_GRID}>
             {subOptions.length === 0 ? (
               <ReadOnlyValue label="Department" value={`${DEPARTMENT[department]} (from your department)`} />
             ) : (

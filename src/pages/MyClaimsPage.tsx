@@ -33,7 +33,7 @@ import { depositSen, percentOf } from '../lib/deposit';
 import { ClaimBankFields, useSavedBank } from '../components/ops/ClaimBankFields';
 import { usePortalText } from '../lib/portalI18n';
 import { LinesEditor, blankLine, toLines, type LineDraft } from './claims/ClaimLines';
-import { ClaimSection, FORM_FOOTER, GridRow, KeptPapers, RowHelp } from './claims/FormLayout';
+import { ClaimSection, FORM_FOOTER, GridRow, KeptPapers, TWO_COLUMN_GRID, RowHelp } from './claims/FormLayout';
 import { ReviewFooter } from './claims/ReviewFooter';
 import { SupplierPicker, type Supplier } from './claims/SupplierPicker';
 
@@ -321,17 +321,17 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
             <ClaimSection title="Who is paid">
               {/* The supplier first, then its PO (chew, 25 Nov 2026): the PO box lists the supplier's own POs, and a PO
                   picked fills the bill total with its amount. */}
-              <GridRow>
-                <div className="min-w-0 sm:col-span-2">
+              <div className={TWO_COLUMN_GRID}>
+                <div className="min-w-0">
                   <SupplierPicker value={supplier} onChange={v => { setSupplier(v); if (v?.id !== supplier?.id) { setPo(null); setPoSearch(''); } }} allowNotListed={type === 'PAYMENT'} />
                 </div>
                 {!supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} />}
-              </GridRow>
+              </div>
               {!supplier && type === 'PAYMENT' && <RowHelp>Finance checks the payee before paying.</RowHelp>}
-              <GridRow>
+              <div className={TWO_COLUMN_GRID}>
                 {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
                     PO" while one is still chosen. */}
-                <div className="min-w-0 sm:col-span-2">
+                <div className="min-w-0">
                   <Select label="Purchase order" showLabel value={poId} onChange={v => {
                     const o = poOptions.find(x => x.value === v);
                     setPo(o ? { id: o.value, label: o.label } : null);
@@ -340,7 +340,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
                     options={[{ value: '', label: supplier ? (found.length ? 'Not against a PO' : 'No PO for this supplier') : 'Not against a PO' }, ...poOptions]} />
                 </div>
                 <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
-              </GridRow>
+              </div>
             </ClaimSection>
             <ClaimSection title="Money and papers">
               {papersRow('Add the invoice, receipt or quotation', 'Photos or a PDF. Empty fields are filled from it; check them before you send.')}

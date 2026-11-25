@@ -5,7 +5,7 @@ import type { ClaimFile } from '../../lib/claims';
 
 export const FORM_GRID = 'grid grid-cols-1 sm:grid-cols-3 gap-3 items-start';
 export const SPAN_ALL = 'col-span-full';
-export const LINE_GRID = 'grid grid-cols-1 sm:grid-cols-2 gap-3 items-start';
+export const TWO_COLUMN_GRID = 'grid grid-cols-1 sm:grid-cols-2 gap-3 items-start';
 
 export function ClaimSection({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
   return (
