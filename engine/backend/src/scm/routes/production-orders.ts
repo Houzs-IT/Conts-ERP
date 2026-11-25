@@ -461,8 +461,8 @@ productionOrders.get('/raw-skus', async (c) => {
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const skus = data ?? [];
   const sb = c.get('supabase');
-  const { data: binds, error: bindErr } = await readMfgProductBindings<{ item_code: string; supplier_id: string }>(sb, {
-    codes: skus.map((s) => s.code), companyId: co.companyId, select: 'item_code, supplier_id',
+  const { data: binds, error: bindErr } = await readMfgProductBindings<{ item_code: string; supplier_id: string; supplier_sku: string | null }>(sb, {
+    codes: skus.map((s) => s.code), companyId: co.companyId, select: 'item_code, supplier_id, supplier_sku',
   });
   if (bindErr) return c.json({ error: 'load_failed', reason: bindErr.message }, 500);
   const { data: sups, error: supErr } = await chunkIn<PickerSupplier>([...new Set(binds.map((b) => b.supplier_id))], (batch, from, to) =>
@@ -470,10 +470,10 @@ productionOrders.get('/raw-skus', async (c) => {
   if (supErr) return c.json({ error: 'load_failed', reason: supErr.message }, 500);
   const supById = new Map(sups.map((s) => [s.id, s]));
   /* Bindings arrive main supplier first, so each list keeps the main one at the front. */
-  const suppliersOf = new Map<string, Array<{ code: string; name: string | null }>>();
+  const suppliersOf = new Map<string, Array<{ code: string; name: string | null; sku: string | null }>>();
   for (const b of binds) {
     const s = supById.get(b.supplier_id);
-    if (s) suppliersOf.set(b.item_code, [...(suppliersOf.get(b.item_code) ?? []), { code: s.code, name: s.name }]);
+    if (s) suppliersOf.set(b.item_code, [...(suppliersOf.get(b.item_code) ?? []), { code: s.code, name: s.name, sku: b.supplier_sku }]);
   }
   return c.json({ skus: skus.map((s) => ({ ...s, suppliers: suppliersOf.get(s.code) ?? [] })) });
 });
