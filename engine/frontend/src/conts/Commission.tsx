@@ -2,10 +2,10 @@
 // Sensitive: management sees everyone; a scheme's sales manager sees that scheme; everyone else only their own share
 // (the backend decides and says so in `viewer`). A salesperson gets one page: their month, their orders, what they can claim.
 // Worked out on each load from the contracts, their VOs and the money collected; nothing to press.
-// Monthly settlement: every claim ready to pay, old or new, ticked and paid in one go.
-// By order: every live renovation contract, its commission per person, split by the month each part was sold in.
-// By person: what each person earned, was paid and can still claim. Monthly sales: each salesperson's sales per month
-// and the tier it reached. Payouts: every payment, taken back but never deleted. Settings: one scheme per brand.
+// Monthly settlement: every claim ready to pay, old or new, ticked and paid in one go; filter and sort by any column.
+// People and orders: the people on the left with what each can claim; pick one for their months (sales, rate,
+// commission, claimed) and their orders with how each adds up, or Everyone for every order.
+// Payouts: every payment, taken back but never deleted. Settings: one scheme per brand.
 // The math is the backend's (scm/shared/renovation-commission.ts); this page only sums for display.
 import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -18,12 +18,12 @@ import { DateField } from "../vendor/scm/components/DateField";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 import { useDialog } from "../hooks/useDialog";
 import {
-  bpFromPct, claimParts, claimsOf, monthGroups, personMonths, pctText, personTotals, senFromRm, stageText, useCommission, useDeleteScheme, useRecordPayout, useSaveScheme,
+  bpFromPct, claimParts, claimsOf, personMonths, pctText, personTotals, senFromRm, stageText, useCommission, useDeleteScheme, useRecordPayout, useSaveScheme,
   useSettle, useVoidPayout, type Claim, type CommissionData, type CommissionPayout, type CommissionRow, type CommissionScheme,
   type CommissionShare, type CommissionStage, type PersonMonth, type PersonTotal, type SchemeInput,
 } from "./commissionQueries";
 
-type Tab = "settle" | "person" | "orders" | "people" | "months" | "payouts" | "settings";
+type Tab = "settle" | "overview" | "payouts" | "settings";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = (m: string): string => `${MON[Number(m.slice(5, 7)) - 1] ?? ""} ${m.slice(0, 4)}`;
@@ -63,22 +63,11 @@ const ORDER_COLUMNS: Column<CommissionRow>[] = [
   moneyCol<CommissionRow>("claimable", "Can claim (RM)", (r) => sum(r.shares, "claimableSen"), { strong: true }),
 ];
 
-const PEOPLE_COLUMNS: Column<PersonTotal>[] = [
-  { key: "name", label: "Person", render: (r) => <span style={{ fontWeight: 600 }}>{r.staffName}</span>, getValue: (r) => r.staffName },
-  { key: "orders", label: "Orders", align: "right", render: (r) => <span style={num}>{r.orders}</span>, getValue: (r) => r.orders },
-  moneyCol<PersonTotal>("total", "Commission (RM)", (r) => r.totalSen),
-  moneyCol<PersonTotal>("earned", "Earned (RM)", (r) => r.earnedSen),
-  moneyCol<PersonTotal>("paid", "Paid (RM)", (r) => r.paidSen),
-  moneyCol<PersonTotal>("claimable", "Can claim (RM)", (r) => r.claimableSen, { strong: true }),
-];
-
 export function ContsCommission() {
   const q = useCommission();
   const [tabPicked, setTab] = useState<Tab | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const [person, setPerson] = useState<string>("");
   const data = q.data;
-  const rows = useMemo(() => (data?.rows ?? []).filter((r) => !person || r.shares.some((s) => s.staffId === person) || r.salespersonId === person), [data, person]);
   const people = useMemo(() => personTotals(data?.rows ?? []), [data]);
   const toPay = people.reduce((t, p) => t + p.claimableSen, 0);
   const missing = (data?.rows ?? []).filter((r) => r.problem).length;
@@ -86,23 +75,24 @@ export function ContsCommission() {
   const claims = useMemo(() => claimsOf(data?.rows ?? []), [data]);
   const viewer = data?.viewer;
   const plain = viewer != null && !viewer.isAdmin && viewer.editableSchemeIds.length === 0;
-  const tab: Tab = tabPicked ?? (viewer?.canPay ? "settle" : "person");
+  const tab: Tab = tabPicked ?? (viewer?.canPay ? "settle" : "overview");
+  /* Biggest claim first, so the people waiting on money are at the top; the viewer leads when they have any. */
   const personList = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of data?.rows ?? []) for (const s of r.shares) seen.set(s.staffId, s.staffName);
-    if (viewer?.staffId && !seen.has(viewer.staffId)) seen.set(viewer.staffId, "Me");
-    const list = [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-    const mine = list.findIndex((x) => x.id === viewer?.staffId);
+    const list = [...people].sort((a, b) => b.claimableSen - a.claimableSen || a.staffName.localeCompare(b.staffName));
+    const mine = list.findIndex((x) => x.staffId === viewer?.staffId);
     if (mine > 0) list.unshift(...list.splice(mine, 1));
     return list;
-  }, [data, viewer]);
+  }, [people, viewer]);
+  const myself: PersonTotal[] = viewer?.staffId
+    ? [people.find((p) => p.staffId === viewer.staffId) ?? { staffId: viewer.staffId, staffName: "Me", orders: 0, totalSen: 0, earnedSen: 0, paidSen: 0, claimableSen: 0 }]
+    : [];
 
   if (plain && data) {
     return (
       <div className="space-y-4">
         <PageHeader title="My commission" description="Your sales each month, the rate they reached, your commission on every order, and what you can claim. Only you see this." />
         {q.isError && <div role="alert" style={{ color: BAD }}>{errText(q.error)}</div>}
-        <PersonView data={data} people={personList.filter((x) => x.id === viewer.staffId)} onOpen={setOpen} />
+        <Overview data={data} people={myself} allowEveryone={false} onOpen={setOpen} />
         {openRow && <OrderDialog row={openRow} payouts={data.payouts.filter((p) => p.soDocNo === openRow.soDocNo)} canPay={false} onClose={() => setOpen(null)} />}
       </div>
     );
@@ -124,42 +114,13 @@ export function ContsCommission() {
       )}
       <TabStrip<Tab> value={tab} onChange={setTab} options={[
         ...(viewer?.canPay ? [{ value: "settle" as const, label: "Monthly settlement", count: claims.length }] : []),
-        { value: "person", label: "Person by month" },
-        { value: "orders", label: "By order" },
-        { value: "people", label: "By person", count: people.length },
-        { value: "months", label: "Monthly sales" },
+        { value: "overview", label: "People and orders", count: people.length },
         ...(viewer?.canPay ? [{ value: "payouts" as const, label: "Payouts" }] : []),
         { value: "settings", label: "Settings" },
       ]} />
       {q.isError && <div role="alert" style={{ color: BAD }}>{errText(q.error)}</div>}
       {tab === "settle" && data && viewer?.canPay && <Settle claims={claims} onOpen={setOpen} />}
-      {tab === "person" && data && <PersonView key={personList.map((x) => x.id).join()} data={data} people={personList} onOpen={setOpen} />}
-      {tab === "orders" && (
-        <>
-          <label className={styles.field} style={{ maxWidth: 280 }}>
-            <span className={styles.fieldLabel}>Person</span>
-            <select className={styles.fieldInput} value={person} onChange={(e) => setPerson(e.target.value)}>
-              <option value="">Everyone</option>
-              {people.map((p) => <option key={p.staffId} value={p.staffId}>{p.staffName}</option>)}
-            </select>
-          </label>
-          <DataTable<CommissionRow>
-            tableId="conts-commission-orders" exportName="commission-by-order" exportXlsx
-            columns={ORDER_COLUMNS} rows={data ? rows : null} loading={q.isLoading}
-            emptyLabel="No renovation contracts yet." getRowKey={(r) => r.soDocNo}
-            onRowClick={(r) => setOpen(r.soDocNo)} clientSearch={{ placeholder: "Project, customer or SO" }}
-          />
-        </>
-      )}
-      {tab === "people" && (
-        <DataTable<PersonTotal>
-          tableId="conts-commission-people" exportName="commission-by-person" exportXlsx
-          columns={PEOPLE_COLUMNS} rows={data ? people : null} loading={q.isLoading}
-          emptyLabel="Nobody has commission yet." getRowKey={(r) => r.staffId}
-          onRowClick={(r) => { setPerson(r.staffId); setTab("orders"); }}
-        />
-      )}
-      {tab === "months" && data && <Months data={data} />}
+      {tab === "overview" && data && <Overview data={data} people={personList} allowEveryone onOpen={setOpen} />}
       {tab === "payouts" && data && <Payouts data={data} />}
       {tab === "settings" && data && <Settings data={data} />}
       {openRow && data && <OrderDialog row={openRow} payouts={data.payouts.filter((p) => p.soDocNo === openRow.soDocNo)} canPay={data.viewer.canPay} onClose={() => setOpen(null)} />}
@@ -372,59 +333,13 @@ function PayDialog({ soDocNo, share, onClose }: { soDocNo: string; share: Commis
 }
 
 /* ── Monthly sales: every SO and VO in the month, the tier it reached, the rate each line paid ── */
-function Months({ data }: { data: CommissionData }) {
-  const groups = useMemo(() => monthGroups(data.rows), [data]);
-  const [person, setPerson] = useState("");
-  const people = [...new Map(groups.map((g) => [g.staffId, g.staffName])).entries()].sort((x, y) => x[1].localeCompare(y[1]));
-  const shown = groups.filter((g) => !person || g.staffId === person);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", fontSize: "var(--fs-13)" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label className={styles.field} style={{ maxWidth: 280 }}>
-          <span className={styles.fieldLabel}>Salesperson</span>
-          <select className={styles.fieldInput} value={person} onChange={(e) => setPerson(e.target.value)}>
-            <option value="">Everyone</option>
-            {people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-          </select>
-        </label>
-        <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>Each SO counts in the month of its date and each VO in the month of its own date. The month total picks the tier. Once the month ends its rates are locked.</span>
-      </div>
-      {shown.length === 0 && <div style={{ color: MUTED }}>No sales yet under a scheme.</div>}
-      {shown.map((g) => (
-        <div key={g.key} style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "baseline", padding: "10px 14px", background: "var(--bg-subtle, rgba(0,0,0,0.03))" }}>
-            <span style={{ fontWeight: 600, flex: 1, minWidth: 200 }}>{g.staffName} · {g.month}</span>
-            <span style={{ color: MUTED }}>{g.schemeName}</span>
-            <span style={{ ...num, fontWeight: 600 }}>RM {rm(g.totalSen)}</span>
-            <span style={{ ...num, fontWeight: 600, color: GOOD }}>Salesperson {pctText(g.salesBp)}</span>
-            <span style={{ color: MUTED }}>{g.locked ? "Locked" : "Month open"}</span>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-              <thead><tr style={{ color: MUTED }}>
-                <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Order / VO</th><th style={{ ...th, textAlign: "left" }}>Project</th><th style={{ ...th, textAlign: "left" }}>Date</th>
-                <th style={th}>Sales (RM)</th><th style={th}>Salesperson</th><th style={th}>Manager</th><th style={{ ...th, paddingRight: 14 }}>Manager (RM)</th>
-              </tr></thead>
-              <tbody>{g.lines.map(({ row, portion: p }, i) => (
-                <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ padding: "6px 0 6px 14px" }}><span style={{ fontWeight: 600 }}>{p.source === "OTHER" ? "Other" : p.source}</span> {row.soDocNo}{p.source === "VO" ? ` ${p.ref}` : ""}</td>
-                  <td style={{ paddingLeft: 8 }}>{row.projectName || row.customerName}</td>
-                  <td style={{ paddingLeft: 8 }}>{p.date}</td>
-                  <td style={td}>{rm(p.sen)}</td>
-                  <td style={td}>{pctText(p.salesBp)} = {rm(p.salesSen)}</td>
-                  <td style={td}>{p.managerName ? `${p.managerName} ${pctText(p.managerBp)}` : "—"}</td>
-                  <td style={{ ...td, paddingRight: 14 }}>{rm(p.managerSen)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /* ── Monthly settlement: tick the claims being paid, mark them paid in one go ── */
+type SettleSortKey = "person" | "role" | "order" | "date" | "project" | "released" | "total" | "paid" | "claim";
+const SETTLE_SORT: Record<SettleSortKey, (c: Claim) => string | number> = {
+  person: (c) => c.share.staffName, role: (c) => ROLE[c.share.role], order: (c) => c.row.soDocNo, date: (c) => c.row.soDate ?? "",
+  project: (c) => c.row.projectName || c.row.customerName, released: (c) => c.row.releasedBp, total: (c) => c.share.totalSen,
+  paid: (c) => c.share.paidSen, claim: (c) => c.share.claimableSen,
+};
 function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string) => void }) {
   const [person, setPerson] = useState("");
   const [picked, setPicked] = useState<Record<string, boolean>>({});
@@ -434,7 +349,29 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
   const settle = useSettle();
   const dialog = useDialog();
   const people = [...new Map(claims.map((c) => [c.share.staffId, c.share.staffName])).entries()].sort((x, y) => x[1].localeCompare(y[1]));
-  const shown = claims.filter((c) => !person || c.share.staffId === person);
+  const [role, setRole] = useState("");
+  const [brand, setBrand] = useState("");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<{ key: SettleSortKey; desc: boolean }>({ key: "date", desc: false });
+  const brands = [...new Set(claims.map((c) => c.row.branding ?? ""))].sort();
+  const q = query.trim().toLowerCase();
+  const shown = claims
+    .filter((c) => (!person || c.share.staffId === person) && (!role || c.share.role === role) && (!brand || (c.row.branding ?? "") === brand)
+      && (!q || `${c.row.soDocNo} ${c.row.projectName} ${c.row.customerName}`.toLowerCase().includes(q)))
+    .sort((x, y) => {
+      const a = SETTLE_SORT[sort.key](x), b = SETTLE_SORT[sort.key](y);
+      const d = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b));
+      return sort.desc ? -d : d;
+    });
+  const head = (key: SettleSortKey, label: string, left = false, extra: React.CSSProperties = {}) => (
+    <th style={{ ...th, ...(left ? { textAlign: "left" as const } : {}), ...extra }} aria-sort={sort.key === key ? (sort.desc ? "descending" : "ascending") : "none"}>
+      <button type="button" onClick={() => setSort(sort.key === key ? { key, desc: !sort.desc } : { key, desc: false })}
+        style={{ border: 0, background: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", fontWeight: sort.key === key ? 600 : 500 }}>
+        {label}{sort.key === key ? (sort.desc ? " \u2193" : " \u2191") : ""}
+      </button>
+    </th>
+  );
+  const resetPick = () => setPicked({});
   const chosen = shown.filter((c) => picked[c.key]);
   const chosenSen = chosen.reduce((t, c) => t + c.share.claimableSen, 0);
   const allPicked = shown.length > 0 && chosen.length === shown.length;
@@ -458,6 +395,26 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
             {people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
         </label>
+        <label className={styles.field} style={{ maxWidth: 180 }}>
+          <span className={styles.fieldLabel}>Role</span>
+          <select className={styles.fieldInput} value={role} onChange={(e) => { setRole(e.target.value); resetPick(); }}>
+            <option value="">Any role</option>
+            {Object.entries(ROLE).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        </label>
+        {brands.length > 1 && (
+          <label className={styles.field} style={{ maxWidth: 180 }}>
+            <span className={styles.fieldLabel}>Brand</span>
+            <select className={styles.fieldInput} value={brand} onChange={(e) => { setBrand(e.target.value); resetPick(); }}>
+              <option value="">Every brand</option>
+              {brands.map((b) => <option key={b} value={b}>{b || "No brand"}</option>)}
+            </select>
+          </label>
+        )}
+        <label className={styles.field} style={{ maxWidth: 240 }}>
+          <span className={styles.fieldLabel}>Search</span>
+          <input className={styles.fieldInput} value={query} placeholder="SO, project or customer" onChange={(e) => { setQuery(e.target.value); resetPick(); }} />
+        </label>
         <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>Every order whose customer has paid far enough, however old. Amounts use the rates locked when each month closed.</span>
       </div>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
@@ -467,8 +424,8 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
               <input type="checkbox" aria-label="Tick every claim" checked={allPicked}
                 onChange={(e) => setPicked(e.target.checked ? Object.fromEntries(shown.map((c) => [c.key, true])) : {})} />
             </th>
-            <th style={{ ...th, textAlign: "left" }}>Person</th><th style={{ ...th, textAlign: "left" }}>Role</th><th style={{ ...th, textAlign: "left" }}>Order</th><th style={{ ...th, textAlign: "left" }}>SO date</th><th style={{ ...th, textAlign: "left" }}>Project</th>
-            <th style={th}>Released</th><th style={th}>Commission</th><th style={th}>Paid before</th><th style={{ ...th, paddingRight: 12 }}>Can claim</th>
+            {head("person", "Person", true)}{head("role", "Role", true)}{head("order", "Order", true)}{head("date", "SO date", true)}{head("project", "Project", true)}
+            {head("released", "Released")}{head("total", "Commission")}{head("paid", "Paid before")}{head("claim", "Can claim", false, { paddingRight: 12 })}
           </tr></thead>
           <tbody>
             {shown.length === 0 && <tr><td colSpan={10} style={{ padding: 14, color: MUTED }}>Nothing to claim right now.</td></tr>}
@@ -659,50 +616,154 @@ function SchemeCard({ scheme, initial, data, onDone, readOnly }: { scheme: Commi
 }
 
 /* ── One person by month: sales, the rate reached, commission, claimed this month, can claim now ── */
-function PersonView({ data, people, onOpen }: { data: CommissionData; people: Array<{ id: string; name: string }>; onOpen: (soDocNo: string) => void }) {
-  const [staffId, setStaffId] = useState(people[0]?.id ?? "");
-  const months = useMemo(() => personMonths(data.rows, staffId), [data, staffId]);
-  const [month, setMonth] = useState("");
-  const myPayouts = data.payouts.filter((p) => p.staffId === staffId && !p.voidedAt);
-  /* Every month with a sale or a payout, newest first, so a month that only paid commission out can be picked too. */
-  const monthList = [...new Set([...months.map((x) => x.month), ...myPayouts.map((p) => p.paidOn.slice(0, 7))])].sort().reverse();
-  const picked = month || (monthList.length > 0 ? monthList[0] : "");
-  const m: PersonMonth | null = picked ? months.find((x) => x.month === picked) ?? { month: picked, salesSen: 0, salesBp: null, commissionSen: 0, lines: [] } : null;
-  const claimedThisMonth = m ? myPayouts.filter((p) => p.paidOn.startsWith(m.month)).reduce((t, p) => t + p.amountSen, 0) : 0;
-  const myOrders = data.rows.map((r) => ({ row: r, share: r.shares.find((s) => s.staffId === staffId) })).filter((x): x is { row: CommissionRow; share: CommissionShare } => x.share != null);
-  const canClaim = myOrders.reduce((t, x) => t + x.share.claimableSen, 0);
-  const [openDoc, setOpenDoc] = useState<string | null>(null);
+/* ── Overview: people on the left; the picked person's months and orders on the right (Everyone = every order) ── */
+type OrderSortKey = "order" | "date" | "project" | "released" | "total" | "earned" | "paid" | "claim";
+type MyOrder = { row: CommissionRow; share: CommissionShare };
+const ORDER_SORT: Record<OrderSortKey, (x: MyOrder) => string | number> = {
+  order: (x) => x.row.soDocNo, date: (x) => x.row.soDate ?? "", project: (x) => x.row.projectName || x.row.customerName,
+  released: (x) => x.row.releasedBp, total: (x) => x.share.totalSen, earned: (x) => x.share.earnedSen, paid: (x) => x.share.paidSen,
+  claim: (x) => x.share.claimableSen,
+};
+function sortTh<K extends string>(sort: { key: K; desc: boolean }, setSort: (s: { key: K; desc: boolean }) => void) {
+  return function SortTh(key: K, label: string, left = false, extra: React.CSSProperties = {}) {
+    return (
+      <th key={key} style={{ ...th, ...(left ? { textAlign: "left" as const } : {}), ...extra }} aria-sort={sort.key === key ? (sort.desc ? "descending" : "ascending") : "none"}>
+        <button type="button" onClick={() => setSort(sort.key === key ? { key, desc: !sort.desc } : { key, desc: false })}
+          style={{ border: 0, background: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", fontWeight: sort.key === key ? 600 : 500 }}>
+          {label}{sort.key === key ? (sort.desc ? " ↓" : " ↑") : ""}
+        </button>
+      </th>
+    );
+  };
+}
+const cmp = (a: string | number, b: string | number): number => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b)));
+
+function Overview({ data, people, allowEveryone, onOpen }: {
+  data: CommissionData; people: PersonTotal[]; allowEveryone: boolean; onOpen: (soDocNo: string) => void;
+}) {
+  const first = people.find((p) => p.staffId === data.viewer.staffId && p.totalSen > 0)?.staffId ?? (allowEveryone ? "" : people[0]?.staffId ?? "");
+  const [staffId, setStaffId] = useState(first);
+  const picked = people.find((p) => p.staffId === staffId) ?? null;
+  const everyone = allowEveryone && !picked;
+  const all = {
+    staffId: "", staffName: "Everyone", orders: data.rows.length,
+    totalSen: people.reduce((t, p) => t + p.totalSen, 0), earnedSen: people.reduce((t, p) => t + p.earnedSen, 0),
+    paidSen: people.reduce((t, p) => t + p.paidSen, 0), claimableSen: people.reduce((t, p) => t + p.claimableSen, 0),
+  };
+  const pick = (id: string) => setStaffId(id);
+  const listItem = (p: PersonTotal) => {
+    const on = p.staffId === (picked?.staffId ?? "");
+    return (
+      <button key={p.staffId || "all"} type="button" onClick={() => pick(p.staffId)} aria-pressed={on}
+        style={{
+          display: "flex", flexDirection: "column", gap: 2, width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 8, cursor: "pointer", font: "inherit",
+          border: on ? "1px solid var(--accent, #1f5c4a)" : "1px solid var(--border)", background: on ? "var(--accent-soft, rgba(31,92,74,0.08))" : "var(--bg-surface, #fff)",
+        }}>
+        <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <span style={{ fontWeight: 600 }}>{p.staffId === data.viewer.staffId ? `${p.staffName} (me)` : p.staffName}</span>
+          <span style={{ ...num, color: MUTED }}>{p.orders} order{p.orders === 1 ? "" : "s"}</span>
+        </span>
+        <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <span style={{ color: MUTED }}>Can claim</span>
+          <span style={{ ...num, fontWeight: 600, color: p.claimableSen > 0 ? GOOD : MUTED }}>RM {rm(p.claimableSen)}</span>
+        </span>
+      </button>
+    );
+  };
+  const showList = people.length > 1 || allowEveryone;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", fontSize: "var(--fs-13)" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-        {people.length > 1 && (
-          <label className={styles.field} style={{ width: 240 }}>
-            <span className={styles.fieldLabel}>Person</span>
-            <select className={styles.fieldInput} value={staffId} onChange={(e) => { setStaffId(e.target.value); setMonth(""); }}>
-              {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
+    <div style={{ display: "flex", gap: "var(--space-4)", alignItems: "flex-start", flexWrap: "wrap", fontSize: "var(--fs-13)" }}>
+      {showList && (
+        <div style={{ flex: "1 1 220px", maxWidth: 280, display: "flex", flexDirection: "column", gap: 8 }}>
+          <span className={styles.fieldLabel}>People</span>
+          {allowEveryone && listItem(all)}
+          {people.map(listItem)}
+        </div>
+      )}
+      <div style={{ flex: "999 1 560px", minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        {everyone ? <EveryoneOrders data={data} onOpen={onOpen} /> : picked ? <PersonPane key={picked.staffId} data={data} person={picked} onOpen={onOpen} /> : (
+          <div style={{ color: MUTED }}>No commission yet.</div>
         )}
-        <label className={styles.field} style={{ width: 180 }}>
-          <span className={styles.fieldLabel}>Month</span>
-          <select className={styles.fieldInput} value={m?.month ?? ""} onChange={(e) => setMonth(e.target.value)}>
-            {monthList.length === 0 && <option value="">No sales yet</option>}
-            {monthList.map((x) => <option key={x} value={x}>{monthLabel(x)}</option>)}
-          </select>
-        </label>
+      </div>
+    </div>
+  );
+}
+
+function EveryoneOrders({ data, onOpen }: { data: CommissionData; onOpen: (soDocNo: string) => void }) {
+  return (
+    <DataTable<CommissionRow>
+      tableId="conts-commission-orders" exportName="commission-by-order" exportXlsx
+      columns={ORDER_COLUMNS} rows={data.rows}
+      emptyLabel="No renovation contracts yet." getRowKey={(r) => r.soDocNo}
+      onRowClick={(r) => onOpen(r.soDocNo)} clientSearch={{ placeholder: "Project, customer or SO" }}
+    />
+  );
+}
+
+function PersonPane({ data, person, onOpen }: { data: CommissionData; person: PersonTotal; onOpen: (soDocNo: string) => void }) {
+  const staffId = person.staffId;
+  const months = useMemo(() => personMonths(data.rows, staffId), [data, staffId]);
+  const myPayouts = data.payouts.filter((p) => p.staffId === staffId && !p.voidedAt);
+  const monthList = [...new Set([...months.map((x) => x.month), ...myPayouts.map((p) => p.paidOn.slice(0, 7))])].sort().reverse();
+  const [month, setMonth] = useState<string | null>(null);
+  const m: PersonMonth | null = month ? months.find((x) => x.month === month) ?? { month, salesSen: 0, salesBp: null, commissionSen: 0, lines: [] } : null;
+  const claimedIn = (mo: string) => myPayouts.filter((p) => p.paidOn.startsWith(mo)).reduce((t, p) => t + p.amountSen, 0);
+  const [query, setQuery] = useState("");
+  const [onlyClaimable, setOnlyClaimable] = useState(false);
+  const [sort, setSort] = useState<{ key: OrderSortKey; desc: boolean }>({ key: "date", desc: true });
+  const head = sortTh(sort, setSort);
+  const q = query.trim().toLowerCase();
+  const orders = data.rows
+    .map((r) => ({ row: r, share: r.shares.find((s) => s.staffId === staffId) }))
+    .filter((x): x is MyOrder => x.share != null)
+    .filter((x) => (!onlyClaimable || x.share.claimableSen > 0) && (!q || `${x.row.soDocNo} ${x.row.projectName} ${x.row.customerName}`.toLowerCase().includes(q)))
+    .filter((x) => !m || m.lines.some((l) => l.row.soDocNo === x.row.soDocNo))
+    .sort((a, b) => (sort.desc ? -1 : 1) * cmp(ORDER_SORT[sort.key](a), ORDER_SORT[sort.key](b)));
+  const [openDoc, setOpenDoc] = useState<string | null>(null);
+  const maxSales = Math.max(1, ...months.map((x) => x.salesSen));
+  return (
+    <>
+      <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+        <Kpi label="Can claim now" value={`RM ${rm(person.claimableSen)}`} strong />
+        <Kpi label="Earned so far" value={`RM ${rm(person.earnedSen)}`} />
+        <Kpi label="Claimed" value={`RM ${rm(person.paidSen)}`} />
+        <Kpi label="Total commission" value={`RM ${rm(person.totalSen)}`} />
       </div>
 
-      <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-        <Kpi label={`Sales in ${m ? monthLabel(m.month) : "the month"} (SO + VO)`} value={`RM ${rm(m?.salesSen ?? 0)}`} />
-        <Kpi label="Salesperson rate that month" value={m?.salesBp == null ? "—" : pctText(m.salesBp)} />
-        <Kpi label="Commission on that month's sales" value={`RM ${rm(m?.commissionSen ?? 0)}`} />
-        <Kpi label={`Claimed in ${m ? monthLabel(m.month) : "the month"}`} value={`RM ${rm(claimedThisMonth)}`} />
-        <Kpi label="Can claim now (all orders)" value={`RM ${rm(canClaim)}`} strong />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={sectionTitle}>Sales by month</span>
+          <span style={{ color: MUTED, flex: 1 }}>SO and VO in the month they were signed. The month total sets the salesperson rate. Click a month to see what was sold.</span>
+          {m && <Button variant="ghost" onClick={() => setMonth(null)}>Show every month</Button>}
+        </div>
+        {monthList.length === 0 ? <div style={{ color: MUTED }}>No sales yet.</div> : (
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+            {monthList.map((mo) => {
+              const x = months.find((y) => y.month === mo);
+              const on = m?.month === mo;
+              return (
+                <button key={mo} type="button" onClick={() => setMonth(on ? null : mo)} aria-pressed={on}
+                  style={{
+                    flex: "0 0 156px", display: "flex", flexDirection: "column", gap: 3, padding: "8px 10px", borderRadius: 8, textAlign: "left", cursor: "pointer", font: "inherit",
+                    border: on ? "1px solid var(--accent, #1f5c4a)" : "1px solid var(--border)", background: on ? "var(--accent-soft, rgba(31,92,74,0.08))" : "var(--bg-surface, #fff)",
+                  }}>
+                  <span style={{ fontWeight: 600 }}>{monthLabel(mo)}</span>
+                  <span style={{ ...num }}>RM {rm0(x?.salesSen ?? 0)}</span>
+                  <span style={{ height: 4, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+                    <span style={{ display: "block", height: "100%", width: `${Math.round(((x?.salesSen ?? 0) / maxSales) * 100)}%`, background: "var(--accent, #1f5c4a)" }} />
+                  </span>
+                  <span style={{ color: MUTED }}>{x?.salesBp != null ? `Rate ${pctText(x.salesBp)}` : "No sales"} · comm RM {rm0(x?.commissionSen ?? 0)}</span>
+                  {claimedIn(mo) > 0 && <span style={{ color: GOOD }}>Claimed RM {rm0(claimedIn(mo))}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {m && m.lines.length > 0 && (
         <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
-          <div style={{ padding: "10px 14px", fontWeight: 600 }}>What was sold in {monthLabel(m.month)}</div>
+          <div style={{ padding: "10px 14px", fontWeight: 600 }}>Sold in {monthLabel(m.month)}: RM {rm(m.salesSen)}{m.salesBp != null ? `, rate ${pctText(m.salesBp)}` : ""}, commission RM {rm(m.commissionSen)}</div>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
             <thead><tr style={{ color: MUTED }}>
               <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Order / VO</th><th style={{ ...th, textAlign: "left" }}>Project</th><th style={{ ...th, textAlign: "left" }}>Date</th>
@@ -723,38 +784,47 @@ function PersonView({ data, people, onOpen }: { data: CommissionData; people: Ar
         </div>
       )}
 
-      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
-        <div style={{ padding: "10px 14px", fontWeight: 600 }}>Every order: commission, claimed and left. Click an order to see how its commission adds up.</div>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
-          <thead><tr style={{ color: MUTED }}>
-            <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Order</th><th style={{ ...th, textAlign: "left" }}>Project</th>
-            <th style={th}>Released</th><th style={th}>Total commission</th><th style={th}>Earned</th><th style={th}>Claimed</th><th style={{ ...th, paddingRight: 14 }}>Can claim</th>
-          </tr></thead>
-          <tbody>
-            {myOrders.length === 0 && <tr><td colSpan={7} style={{ padding: 14, color: MUTED }}>No commission yet.</td></tr>}
-            {myOrders.map(({ row, share }) => (
-              <Fragment key={row.soDocNo}>
-                <tr style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={() => setOpenDoc(openDoc === row.soDocNo ? null : row.soDocNo)}>
-                  <td style={{ padding: "6px 0 6px 14px", fontWeight: 600 }}>{openDoc === row.soDocNo ? "▾" : "▸"} {row.soDocNo}</td>
-                  <td style={{ paddingLeft: 8 }}>{row.projectName || row.customerName}</td>
-                  <td style={td}>{pctText(row.releasedBp)}</td>
-                  <td style={td}>{rm(share.totalSen)}</td>
-                  <td style={td}>{rm(share.earnedSen)}</td>
-                  <td style={td}>{rm(share.paidSen)}</td>
-                  <td style={{ ...td, paddingRight: 14, fontWeight: 600, color: share.claimableSen > 0 ? GOOD : undefined }}>{rm(share.claimableSen)}</td>
-                </tr>
-                {openDoc === row.soDocNo && (
-                  <tr><td colSpan={7} style={{ padding: "4px 14px 12px" }}>
-                    <ClaimBreakdown row={row} share={share} />
-                    <Button variant="ghost" onClick={() => onOpen(row.soDocNo)}>Open the order</Button>
-                  </td></tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ ...sectionTitle, flex: 1 }}>{m ? `Orders with sales in ${monthLabel(m.month)}` : "Every order"} ({orders.length})</span>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="checkbox" checked={onlyClaimable} onChange={(e) => setOnlyClaimable(e.target.checked)} /> Only with money to claim
+          </label>
+          <input className={styles.fieldInput} style={{ maxWidth: 240 }} value={query} placeholder="Search SO, project or customer" aria-label="Search orders" onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
+            <thead><tr style={{ color: MUTED }}>
+              {head("order", "Order", true, { paddingLeft: 14 })}{head("date", "SO date", true)}{head("project", "Project", true)}
+              {head("released", "Released")}{head("total", "Commission")}{head("earned", "Earned")}{head("paid", "Claimed")}{head("claim", "Can claim", false, { paddingRight: 14 })}
+            </tr></thead>
+            <tbody>
+              {orders.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: MUTED }}>No orders match.</td></tr>}
+              {orders.map(({ row, share }) => (
+                <Fragment key={row.soDocNo}>
+                  <tr style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={() => setOpenDoc(openDoc === row.soDocNo ? null : row.soDocNo)}>
+                    <td style={{ padding: "6px 0 6px 14px", fontWeight: 600, whiteSpace: "nowrap" }}>{openDoc === row.soDocNo ? "▾" : "▸"} {row.soDocNo}</td>
+                    <td style={{ paddingLeft: 8, color: MUTED, whiteSpace: "nowrap" }}>{row.soDate ?? ""}</td>
+                    <td style={{ paddingLeft: 8 }}>{row.projectName || row.customerName}</td>
+                    <td style={td}>{pctText(row.releasedBp)}</td>
+                    <td style={td}>{rm(share.totalSen)}</td>
+                    <td style={td}>{rm(share.earnedSen)}</td>
+                    <td style={td}>{rm(share.paidSen)}</td>
+                    <td style={{ ...td, paddingRight: 14, fontWeight: 600, color: share.claimableSen > 0 ? GOOD : undefined }}>{rm(share.claimableSen)}</td>
+                  </tr>
+                  {openDoc === row.soDocNo && (
+                    <tr><td colSpan={8} style={{ padding: "4px 14px 12px" }}>
+                      <ClaimBreakdown row={row} share={share} />
+                      <Button variant="ghost" onClick={() => onOpen(row.soDocNo)}>Open the order</Button>
+                    </td></tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
