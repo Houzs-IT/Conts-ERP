@@ -39,3 +39,28 @@ Not changed:
 - AVA A21-11 and THE HENGE E18-01: handled earlier.
 - ARTE MK3-25-06, BANGSAR HILLPARK E49-01 and MAHKOTA NO.6: the customer code does not match AutoCount. These go with the unseeded contracts.
 - SKYLINE EMBASSY B-43A-08: OR-004613 (16/11, RM 15,000) is not in the system.
+
+## Second round, same day: aligned to chew's tracker
+
+chew: "整体可以对标我的tracker". The tracker matches the AR list for each of these, after refunds and with fees left
+out. 11 rows were applied, and #1288 counts the AutoCount figure whole on the SO page, past the contract. The three
+contracts held to the ERP contract above (MYARA R-08-08, FORESTA, CRISTAL SERIN) now show the full figure.
+
+| SO | Unit | Before | Now (tracker = AR) | Note |
+|---|---|---|---|---|
+| TC-SO-2603-008 | ARTE MK3-25-06 (JOSEPH LIM) | 16,650.00 | 2,000.00 | OR-003030 was booked to RENOVATION CUSTOMER, and I-2603-098 is still open on 301-M152 |
+| TC-SO-2511-004 | AVA A08-09 | 36,000.00 | 35,975.00 | |
+| TC-SO-2511-001 | AVA B31-09 | 45,946.50 | 46,476.50 | |
+| TC-SO-2608-004 | BARON C-20-08 | 23,683.72 | 22,848.62 | CN-000084 835.10 is not money received |
+| TC-SO-2603-004 | KENSHO 21-01 | 43,508.20 | 44,808.20 | includes the 1,300 furniture payment |
+| TC-SO-2604-005 | MYARA R-11-03 | 39,519.30 | 39,528.30 | |
+| TC-SO-2602-002 | SKYLINE KL A-47-10 (MS TAN) | 26,240.00 | 26,440.00 | |
+| TC-SO-2606-003 | SUNWAY ALISHAN A27-03 | 64,823.80 | 65,008.80 | AR 75,125.80 less the 10,117 refund (HPV-2604-089) |
+| TC-SO-2602-001 | THE ERA C-21-03A | 24,123.00 | 26,336.25 | leaves out the Pinelabs fee of 894.68 |
+| TC-SO-2610-022 | SKYLINE EMBASSY C-35-03 | 21,343.50 | 22,343.50 | |
+| TC-SO-2610-012 | SKYLINE EMBASSY C-39-08 | 23,343.50 | 21,843.50 | |
+
+Left as they are:
+- HILLPARK E49-01 (MR ZHU): the tracker row 1,715 is the final payment only. AR has 39,216 in all, against a 36,991
+  contract, and the system already shows it paid.
+- SKYLINE EMBASSY B-43A-08: the tracker has 4,500. AR also has OR-004613 of 15,000 dated 16/11. This is for chew.
