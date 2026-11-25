@@ -14,7 +14,7 @@ vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ success: vi.fn() }) 
 import { RawMaterialAddPanel, type RawSku } from './RawMaterialAddPanel';
 
 const RAW_SKUS: RawSku[] = [
-  { code: 'PTN-KNK-002', name: 'Indogyps Gypsum Board 4x6 9mm', uom: 'PCS', suppliers: [{ code: '400-K003', name: 'K & K GYPSUM MARKETING SDN BHD' }, { code: '400-B001', name: 'BUILT-IN WORKS SDN BHD' }] },
+  { code: 'PTN-KNK-002', name: 'Indogyps Gypsum Board 4x6 9mm', uom: 'PCS', suppliers: [{ code: '400-K003', name: 'K & K GYPSUM MARKETING SDN BHD', sku: 'TCK215' }, { code: '400-B001', name: 'BUILT-IN WORKS SDN BHD' }] },
   { code: 'DOR-KNK-001', name: 'Plywood Normal Full Door', uom: 'NOS', suppliers: [{ code: '400-D010', name: 'DOOR HOUSE' }] },
   { code: 'GLU-001', name: 'Wood glue', uom: 'BTL', suppliers: [] },
 ];
@@ -38,6 +38,8 @@ describe('RawMaterialAddPanel supplier', () => {
     fireEvent.change(search, { target: { value: '400-D010' } });
     expect(offeredCodes()).toEqual(['DOR-KNK-001 · Plywood Normal Full Door']);
     fireEvent.change(search, { target: { value: 'built-in works' } });
+    expect(offeredCodes()).toEqual(['PTN-KNK-002 · Indogyps Gypsum Board 4x6 9mm']);
+    fireEvent.change(search, { target: { value: 'tck215' } });
     expect(offeredCodes()).toEqual(['PTN-KNK-002 · Indogyps Gypsum Board 4x6 9mm']);
   });
 });

@@ -789,7 +789,7 @@ export function useMaterialStatus(id: string) {
     retry: retryUnlessClientError,
   });
 }
-export type RawSkuSupplier = { code: string; name: string | null };
+export type RawSkuSupplier = { code: string; name: string | null; sku?: string | null };
 export type RawSkuRow = { code: string; name: string | null; uom: string | null; suppliers: RawSkuSupplier[] };
 export function useRawSkus(enabled: boolean) {
   return useQuery({

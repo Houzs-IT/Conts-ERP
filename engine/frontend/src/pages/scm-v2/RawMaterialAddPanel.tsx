@@ -53,7 +53,7 @@ export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra
     const term = search.trim().toLowerCase();
     return skus
       .filter((s) => !taken?.has(s.code))
-      .filter((s) => !term || [s.code, s.name, ...(s.suppliers ?? []).flatMap((supplier) => [supplier.code, supplier.name])].join(" ").toLowerCase().includes(term));
+      .filter((s) => !term || [s.code, s.name, ...(s.suppliers ?? []).flatMap((supplier) => [supplier.code, supplier.name, supplier.sku])].join(" ").toLowerCase().includes(term));
   }, [skus, taken, search]);
   const codes = Object.keys(picked);
   const valid = codes.length > 0 && codes.every((c) => Number(picked[c]) > 0);
@@ -91,7 +91,7 @@ export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra
 
   return (
     <div className="flex flex-col gap-2">
-      <input aria-label="Search raw materials" className={INPUT} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code, name or supplier" />
+      <input aria-label="Search raw materials" className={INPUT} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code, name, supplier or supplier SKU" />
       <div className="overflow-hidden rounded-md border border-border">
         <div className={`${ROW} border-b border-border bg-surface-2 py-1.5`}>
           <span /><span className={LABEL}>Raw material</span><span className={`${LABEL} hidden sm:block`}>Supplier</span><span className={LABEL}>Unit</span><span className={`${LABEL} text-right`}>{qtyLabel}</span>
