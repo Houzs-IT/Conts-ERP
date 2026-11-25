@@ -100,7 +100,8 @@ describe("executable route contract", () => {
     // 202 since 2026-11-20 (Conts): +3 /scm/renovation/packages, /new and /:id (the Packages module).
     // 207 since 2026-11-21: +1 /scm/ap-invoices/duplicates, +2 /scm/finance/menu and /scm/finance/rules, +2 /scm/payment-listing and /scm/unmatched-payments (Houzs ports).
     // 208 since 2026-11-25 (Conts): +1 /scm/commission (sales commission), +1 /scm/purchase-orders/from-production (missed on 24 Nov).
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(209);
+    // 209 since 2026-11-25 (Conts): +1 /scm/my-commission (each person's own commission).
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(210);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -156,7 +157,8 @@ describe("executable route contract", () => {
     // 211 since 2026-11-20: +3 Packages module pages.
     // 216 since 2026-11-21: +1 duplicates, +2 Finance To do, +2 Payment listing and Unmatched payments.
     // 218 since 2026-11-25: +1 /scm/commission, +1 /scm/purchase-orders/from-production.
-    expect(ROUTE_CONTRACT).toHaveLength(218);
+    // 219 since 2026-11-25: +1 /scm/my-commission.
+    expect(ROUTE_CONTRACT).toHaveLength(219);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {

@@ -89,6 +89,7 @@ export const STAFF_ROUTE_PATTERNS = [
   "/scm/debtors",
   "/scm/einvoice",
   "/scm/commission",
+  "/scm/my-commission",
   "/scm/reno-projects",
   "/scm/rental-unit-costs",
   "/scm/limit-requests",

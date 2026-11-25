@@ -52,6 +52,7 @@ const SCM_SEGMENT_LABELS: Record<string, [string, string]> = {
   "sales-orders": ["Sales orders", "Sales order"],
   // Conts: sales commission on renovation contracts (owner, 25 Nov 2026).
   "commission": ["Commission", "Commission"],
+  "my-commission": ["My commission", "My commission"],
   "delivery-orders": ["Delivery orders", "Delivery order"],
   "sales-invoices": ["Sales invoices", "Sales invoice"],
   "delivery-returns": ["Delivery returns", "Delivery return"],
@@ -129,6 +130,7 @@ const SCM_REPORT_LABELS: Record<string, string> = {
 // the NAV_TABS HR leaves. Without this, /scm/hr/* title-cased "scm" to "Scm".
 const SCM_HR_LABELS: Record<string, string> = {
   "commission": "Commission",
+  "my-commission": "My commission",
   "settings": "HR settings",
 };
 

@@ -61,6 +61,7 @@ export const ENGINE_PATH: Record<string, string> = {
   '/service/metrics': '/assr?view=metrics',
   '/service/maintenance': '/assr?view=settings',
   '/service/my-cases': '/my-cases',
+  '/supply/my-commission': '/scm/my-commission',
   // The renovation project list and calendar (Beta's Home and Calendar until 3 Nov 2026) at the old Project list and
   // Schedule addresses, so old links open them. Project monitor's old links move to the Calendar (App.tsx).
   '/projects/list': '/beta/projects',

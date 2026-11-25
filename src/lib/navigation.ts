@@ -228,6 +228,10 @@ export const NAV: NavGroup[] = [
      sidebar stays put: alone it does not open the supply chain workspace (navFor). */
   { label: SUPPLY_HOME, workspace: 'supply', items: [
     { key: 'myClaimsSupply', label: 'My claims', icon: 'receipt', path: '/supply/my-claims' },
+    // Each salesperson's own commission (owner, 25 Nov 2026). Area myCommission is open to the Sales department only; the
+    // engine answers each person with their own share; a scheme's sales manager also sees and sets that scheme.
+    // vocab-ok: a salesperson's commission on renovation sales, not the channel's service fee
+    { key: 'myCommission', label: 'My commission', icon: 'percent', path: '/supply/my-commission', area: 'myCommission' },
   ] },
   { label: 'SERVICE CASES', workspace: 'supply', items: [
     { key: 'serviceCaseList', label: 'Service cases', icon: 'zap', path: '/service/cases', area: 'serviceCases' },

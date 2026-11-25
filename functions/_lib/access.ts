@@ -119,6 +119,10 @@ export const AREAS: Area[] = [
   // Brands, event types, crews, venues and the other lists; Full only, as it was on Projects. Calendar stays with Projects:
   // it reads the same board as the Projects list.
   { key: 'projectSettings', label: 'Project settings', group: 'Projects', api: [] },
+  // Each salesperson's own commission (owner, 25 Nov 2026: "sales 才有这个"). Migration 0376 opens it for the Sales
+  // department only; the engine answers each person with their own share whatever the menu shows.
+  // vocab-ok: a salesperson's commission on renovation sales, not the channel's service fee
+  { key: 'myCommission', label: 'My commission', group: 'Supply chain', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
   { key: 'scInvoices', label: 'Invoices and payments', group: 'Supply chain', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true },
   { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'], hidden: true },

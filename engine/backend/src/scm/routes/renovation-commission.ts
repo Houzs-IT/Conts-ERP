@@ -10,7 +10,11 @@
 // Once the month a part of a contract was sold in has ended, the GET fixes that part's people and rates in
 // scm.reno_commission_locks (migration 0375), so an order claimed a year later still pays what it earned then.
 //
-// Management only (the `*` grant): it shows every person's pay. The math is scm/shared/renovation-commission.ts; the
+// Who sees what (owner, 25 Nov 2026: commission is sensitive):
+//   - management (the `*` grant): every order and every person; sets every scheme; records payouts.
+//   - the sales manager of a scheme (Mengkeat, William): every order of that scheme; can change that scheme.
+//   - everyone else: only their own share of the orders they sold, nothing about anyone else.
+//   `?mine=1` answers anyone with their own share only (the My commission page), management included. The math is scm/shared/renovation-commission.ts; the
 // contract sum and the money collected are the Renovation projects page's own figures (acc/reno-projects.ts), so the
 // two screens can never disagree about how much a contract has collected.
 // ----------------------------------------------------------------------------
@@ -32,10 +36,17 @@ type Row = Record<string, unknown>;
 
 export const renovationCommission = new Hono<{ Bindings: Env; Variables: Variables }>();
 renovationCommission.use('*', supabaseAuth);
-renovationCommission.use('*', async (c, next) => {
-  if (!hasHouzsPerm(c, '*')) return c.json({ error: 'forbidden', message: 'Commission is for management only.' }, 403);
-  await next();
-});
+
+/* Management only: adding or deleting a scheme, and paying commission out. */
+const adminOnly = (c: C) => (hasHouzsPerm(c, '*') ? null : c.json({ error: 'forbidden', message: 'Only management can do this.' }, 403));
+
+/** The caller's own scm.staff id (salesperson vocabulary), from the real Houzs user id. */
+async function viewerStaffId(c: C): Promise<string | null> {
+  const uid = Number((c.get('houzsUser') as { id?: number } | undefined)?.id);
+  if (!Number.isFinite(uid)) return null;
+  const { data } = await c.get('supabase').from('staff').select('id').eq('user_id', uid).limit(1).maybeSingle();
+  return data ? String((data as Row).id) : null;
+}
 
 const who = (c: C): string => String((c.get('houzsUser') as { name?: string } | undefined)?.name ?? '');
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -62,6 +73,10 @@ renovationCommission.get('/', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
+  const isAdmin = hasHouzsPerm(c, '*');
+  const mine = c.req.query('mine') === '1';
+  const me = await viewerStaffId(c);
+  if (!me && (mine || !isAdmin)) return c.json({ error: 'forbidden', message: 'Your login is not linked to a staff record, so there is no commission to show.' }, 403);
   try {
     const [contracts, schemesRes, payoutsRes, staffRes, locksRes] = await Promise.all([
       renoProjectRows(sb, co.companyId, todayMyt()),
@@ -180,7 +195,32 @@ renovationCommission.get('/', async (c) => {
     })).sort((a, b) => b.month.localeCompare(a.month) || a.staffName.localeCompare(b.staffName));
     const staff = ((staffRes.data ?? []) as Row[]).filter((s) => s.user_id != null && s.active !== false).map((s) => ({ id: String(s.id), name: String(s.name ?? '') }));
     const brandings = [...new Set(orders.map((o) => String(o.branding ?? '')).filter(Boolean))].sort();
-    return c.json({ rows, schemes, payouts, staff, months, brandings });
+    /* What this caller may see: everything, their schemes' orders, or only their own share. */
+    const managed = new Set(isAdmin && !mine ? live.map((s) => s.id) : live.filter((s) => s.managerStaffId === me).map((s) => s.id));
+    const seeAll = isAdmin && !mine;
+    const seesRow = (r: (typeof rows)[number]) => seeAll || (!mine && r.schemeId != null && managed.has(r.schemeId));
+    const outRows = seeAll ? rows : rows.flatMap((r) => {
+      if (seesRow(r)) return [r];
+      const own = r.shares.filter((s) => s.staffId === me);
+      if (own.length === 0) return [];
+      return [{
+        ...r, shares: own, companyPoolSen: 0,
+        portions: r.portions.map((p) => ({
+          ...p,
+          ...(p.salespersonId === me ? {} : { salesBp: 0, salesSen: 0, monthSalesSen: 0, salespersonName: '' }),
+          ...(p.managerStaffId === me ? {} : { managerBp: 0, managerSen: 0, managerName: null }),
+        })),
+      }];
+    });
+    const docsSeen = new Set(outRows.map((r) => r.soDocNo));
+    const outPayouts = seeAll ? payouts : payouts.filter((p) => docsSeen.has(p.soDocNo) && (p.staffId === me || (!mine && rows.some((r) => r.soDocNo === p.soDocNo && seesRow(r)))));
+    const outMonths = seeAll ? months : months.filter((m) => m.staffId === me || (!mine && managed.has(m.schemeId)));
+    const outSchemes = seeAll ? schemes : mine ? [] : schemes.filter((s) => managed.has(s.id));
+    const viewer = {
+      staffId: me, isAdmin: seeAll, canPay: seeAll, canAddScheme: seeAll,
+      editableSchemeIds: seeAll ? schemes.map((s) => s.id) : mine ? [] : [...managed],
+    };
+    return c.json({ rows: outRows, schemes: outSchemes, payouts: outPayouts, staff: seeAll || managed.size > 0 ? staff : [], months: outMonths, brandings: seeAll ? brandings : [], viewer });
   } catch (e) {
     return c.json({ error: 'load_failed', message: e instanceof Error ? e.message : String(e) }, 500);
   }
@@ -206,6 +246,8 @@ const dupBrand = (msg: string): boolean => /uq_reno_commission_schemes_brand|dup
 const DUP = 'Another scheme in use already covers this brand. Switch that one off first.';
 
 renovationCommission.post('/schemes', async (c) => {
+  const denied = adminOnly(c);
+  if (denied) return denied;
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const b = schemeBody((await c.req.json().catch(() => ({}))) as Row);
@@ -222,6 +264,15 @@ renovationCommission.put('/schemes/:id', async (c) => {
   const b = schemeBody(raw);
   if (!b.ok) return c.json({ error: 'invalid', message: b.problems.join(' '), problems: b.problems }, 400);
   const sb = c.get('supabase');
+  /* A scheme's own sales manager may change it, but not hand it to someone else or move it to another brand. */
+  if (!hasHouzsPerm(c, '*')) {
+    const me = await viewerStaffId(c);
+    const { data: cur } = await sb.from('reno_commission_schemes').select('manager_staff_id, branding').eq('id', c.req.param('id')).eq('company_id', co.companyId).maybeSingle();
+    const curRow = (cur ?? null) as Row | null;
+    if (!me || !curRow || curRow.manager_staff_id !== me) return c.json({ error: 'forbidden', message: 'Only management or this scheme\'s sales manager can change it.' }, 403);
+    b.row.manager_staff_id = curRow.manager_staff_id;
+    b.row.branding = curRow.branding;
+  }
   const { data, error } = await sb.from('reno_commission_schemes').update(b.row)
     .eq('id', c.req.param('id')).eq('company_id', co.companyId).select('*').maybeSingle();
   if (error) return c.json({ error: 'save_failed', message: dupBrand(error.message) ? DUP : error.message }, dupBrand(error.message) ? 409 : 500);
@@ -237,6 +288,8 @@ renovationCommission.put('/schemes/:id', async (c) => {
 
 /* Deleted only while no commission has been paid; otherwise switch it off, so the payouts still read. */
 renovationCommission.delete('/schemes/:id', async (c) => {
+  const denied = adminOnly(c);
+  if (denied) return denied;
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -252,6 +305,8 @@ renovationCommission.delete('/schemes/:id', async (c) => {
 
 /* ── Payouts ────────────────────────────────────────────────────────────── */
 renovationCommission.post('/payouts', async (c) => {
+  const denied = adminOnly(c);
+  if (denied) return denied;
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -278,6 +333,8 @@ renovationCommission.post('/payouts', async (c) => {
 
 /* The monthly settlement: every claim ticked is paid in one go, all or nothing. */
 renovationCommission.post('/payouts/batch', async (c) => {
+  const denied = adminOnly(c);
+  if (denied) return denied;
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -307,6 +364,8 @@ renovationCommission.post('/payouts/batch', async (c) => {
 });
 
 renovationCommission.post('/payouts/:id/void', async (c) => {
+  const denied = adminOnly(c);
+  if (denied) return denied;
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const { data, error } = await c.get('supabase').from('reno_commission_payouts')
