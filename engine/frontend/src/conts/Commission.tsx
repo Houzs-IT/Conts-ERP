@@ -179,93 +179,150 @@ function Kpi({ label, value, strong, bad }: { label: string; value: string; stro
 const th: React.CSSProperties = { textAlign: "right", fontWeight: 500, padding: "4px 0 4px 8px" };
 const td: React.CSSProperties = { ...num, textAlign: "right", padding: "6px 0 6px 8px" };
 
+const chip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 999, background: "var(--bg-subtle, rgba(0,0,0,0.04))", fontSize: "var(--fs-12)", whiteSpace: "nowrap" };
+const sectionTitle: React.CSSProperties = { margin: "0 0 8px", fontSize: "var(--fs-14, 14px)", fontWeight: 700 };
+
+function Fact({ label, value, sub, bar }: { label: string; value: string; sub?: string; bar?: number }) {
+  return (
+    <div style={{ background: "var(--bg, #fff)", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ color: MUTED, fontSize: "var(--fs-12)" }}>{label}</span>
+      <span style={{ ...num, fontWeight: 700, fontSize: "var(--fs-16, 16px)" }}>{value}{sub && <span style={{ color: MUTED, fontWeight: 500, fontSize: "var(--fs-12)" }}> {sub}</span>}</span>
+      {bar != null && <div style={{ height: 5, borderRadius: 999, background: "var(--bg-subtle, rgba(0,0,0,0.08))" }}><div style={{ height: 5, borderRadius: 999, width: `${Math.min(100, bar / 100)}%`, background: GOOD }} /></div>}
+    </div>
+  );
+}
+function Mini({ label, value }: { label: string; value: string }) {
+  return (
+    <div><div style={{ color: MUTED, fontSize: "var(--fs-12)" }}>{label}</div><div style={{ ...num, fontWeight: 600 }}>{value}</div></div>
+  );
+}
+
 /* ── One order: months, stages, the split per person, and paying it ──────── */
 function OrderDialog({ row, payouts, canPay, onClose }: { row: CommissionRow; payouts: CommissionPayout[]; canPay: boolean; onClose: () => void }) {
   const [paying, setPaying] = useState<CommissionShare | null>(null);
   const voidPayout = useVoidPayout();
-  const dialog = useDialog();
+  const [takingBack, setTakingBack] = useState<string | null>(null);
+  /* A salesperson is sent only their own side (the backend blanks the other); show only the columns that came. */
+  const showSales = row.portions.some((p) => p.salespersonName !== "" || p.salesSen !== 0);
+  const showManager = row.portions.some((p) => p.managerName != null || p.managerSen !== 0);
   const [note, setNote] = useState<string | null>(null);
   return (
-    <Modal title={row.projectName || row.customerName} ariaLabel="Commission on this order" onClose={onClose} width="min(860px, 100%)">
+    <Modal title={row.projectName || row.customerName} ariaLabel="Commission on this order" onClose={onClose} width="min(900px, 100%)">
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", fontSize: "var(--fs-13)" }}>
-        <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr auto 1fr", gap: "4px 16px", margin: 0 }}>
-          <dt style={{ color: MUTED }}>SO</dt><dd style={{ margin: 0 }}>{row.soDocNo} · {row.soDate ?? "—"}</dd>
-          <dt style={{ color: MUTED }}>Brand / scheme</dt><dd style={{ margin: 0 }}>{row.branding ?? "—"} / {row.schemeName ?? "—"}</dd>
-          <dt style={{ color: MUTED }}>Contract</dt><dd style={{ ...num, margin: 0 }}>RM {rm(row.baseSen)}</dd>
-          <dt style={{ color: MUTED }}>Collected</dt><dd style={{ ...num, margin: 0 }}>RM {rm(row.collectedSen)} ({pctText(row.collectedBp)})</dd>
-        </dl>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <span style={{ ...chip, fontFamily: "var(--font-mono, ui-monospace, monospace)", fontWeight: 600 }}>{row.soDocNo}</span>
+          <span style={{ color: MUTED }}>{row.soDate ?? ""}</span>
+          {row.branding && <span style={chip}>{row.branding}</span>}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 1, background: "var(--border)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+          <Fact label="Contract" value={`RM ${rm(row.baseSen)}`} />
+          <Fact label="Collected" value={`RM ${rm(row.collectedSen)}`} sub={pctText(row.collectedBp)} bar={row.collectedBp} />
+          <Fact label="Commission released" value={row.problem ? "—" : pctText(row.releasedBp)} sub={row.stages.length ? `${row.stages.filter((x) => x.reached).length} of ${row.stages.length} stages reached` : undefined} />
+          <Fact label="Total commission" value={`RM ${rm(sum(row.shares, "totalSen"))}`} />
+        </div>
+
         {row.problem && <div role="status" style={{ color: BAD }}>{PROBLEM[row.problem]}. {row.problem === "no_scheme" ? "Add a scheme for this brand under Settings." : "Set the salesperson on the sales order."}</div>}
-        {!row.problem && (
-          <div style={{ overflowX: "auto" }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>By month sold</div>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
-              <thead><tr style={{ color: MUTED }}>
-                <th style={{ ...th, textAlign: "left", paddingLeft: 0 }}>Month</th><th style={{ ...th, textAlign: "left" }}>From</th><th style={th}>Amount</th>
-                <th style={th}>Month's sales</th><th style={th}>Salesperson</th><th style={th}>Manager</th><th style={th}>Salesperson RM</th><th style={th}>Manager RM</th><th style={th}>Rate</th>
-              </tr></thead>
-              <tbody>{row.portions.map((p, i) => (
-                <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ padding: "6px 0" }}>{p.month}</td><td style={{ paddingLeft: 8 }}>{SOURCE[p.source]}{p.source === "VO" ? ` ${p.ref}` : ""}</td>
-                  <td style={td}>{rm(p.sen)}</td><td style={td}>{rm0(p.monthSalesSen)}</td>
-                  <td style={td}>{pctText(p.salesBp)}</td><td style={td}>{pctText(p.managerBp)}</td>
-                  <td style={td}>{rm(p.salesSen)}</td><td style={td}>{rm(p.managerSen)}</td>
-                  <td style={{ ...td, color: p.lockedAt ? MUTED : undefined }}>{p.lockedAt ? "Locked" : "Month open"}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
+
         {row.stages.length > 0 && (
-          <div>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Payout stages</div>
-            {row.stages.map((s, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                <span style={{ color: s.reached ? GOOD : MUTED, width: 18 }}>{s.reached ? "✓" : "○"}</span>
-                <span style={{ flex: 1 }}>{s.label}{s.thresholdBp == null ? " (this contract has no such payment)" : ` (${pctText(s.thresholdBp)} of the contract collected)`}</span>
-                <span style={num}>releases {pctText(s.releaseBp)}</span>
-              </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {row.stages.map((x, i) => (
+              <span key={i} style={{ ...chip, background: x.reached ? "var(--c-success-soft, #e3f1e8)" : "var(--bg-subtle, rgba(0,0,0,0.04))", color: x.reached ? GOOD : MUTED }}>
+                {x.reached ? "✓" : "○"} {x.label}{x.thresholdBp == null ? " (no such payment)" : ""} · releases {pctText(x.releaseBp)}
+              </span>
             ))}
           </div>
         )}
+
+        {!row.problem && (
+          <section>
+            <h3 style={sectionTitle}>Commission by part</h3>
+            <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 10 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
+                <thead><tr style={{ color: MUTED, background: "var(--bg-subtle, rgba(0,0,0,0.03))" }}>
+                  <th style={{ ...th, textAlign: "left", paddingLeft: 12 }}>Part</th><th style={{ ...th, textAlign: "left" }}>Month</th><th style={th}>Amount</th>
+                  {showSales && <th style={th}>Month&apos;s sales</th>}{showSales && <th style={th}>Salesperson</th>}{showManager && <th style={th}>Manager</th>}<th style={{ ...th, paddingRight: 12 }}>Rate</th>
+                </tr></thead>
+                <tbody>
+                  {row.portions.map((p, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                      <td style={{ padding: "8px 0 8px 12px", fontWeight: 600 }}>{p.source === "SO" ? "Sales order" : p.source === "VO" ? p.ref : "Other changes"}</td>
+                      <td style={{ paddingLeft: 8 }}>{monthLabel(p.month)}</td>
+                      <td style={td}>{rm(p.sen)}</td>
+                      {showSales && <td style={{ ...td, color: MUTED }}>{rm0(p.monthSalesSen)}</td>}
+                      {showSales && <td style={td}>{pctText(p.salesBp)} · <strong>{rm(p.salesSen)}</strong></td>}
+                      {showManager && <td style={td}>{pctText(p.managerBp)} · <strong>{rm(p.managerSen)}</strong></td>}
+                      <td style={{ ...td, paddingRight: 12 }}><span style={{ ...chip, color: p.lockedAt ? MUTED : GOOD }}>{p.lockedAt ? "Locked" : "Month open"}</span></td>
+                    </tr>
+                  ))}
+                  {row.portions.length > 1 && (
+                    <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 600 }}>
+                      <td style={{ padding: "8px 0 8px 12px" }} colSpan={2}>Total</td>
+                      <td style={td}>{rm(row.portions.reduce((t, p) => t + p.sen, 0))}</td>
+                      {showSales && <td />}
+                      {showSales && <td style={td}>{rm(row.portions.reduce((t, p) => t + p.salesSen, 0))}</td>}
+                      {showManager && <td style={td}>{rm(row.portions.reduce((t, p) => t + p.managerSen, 0))}</td>}<td />
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {row.shares.length > 0 && (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
-              <thead><tr style={{ color: MUTED }}>
-                <th style={{ ...th, textAlign: "left", paddingLeft: 0 }}>Person</th><th style={{ ...th, textAlign: "left" }}>Role</th><th style={th}>Commission</th>
-                <th style={th}>Earned</th><th style={th}>Paid</th><th style={th}>Can claim</th><th />
-              </tr></thead>
-              <tbody>{row.shares.map((s) => (
-                <tr key={s.staffId} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ fontWeight: 600, padding: "6px 0" }}>{s.staffName}</td><td style={{ paddingLeft: 8 }}>{ROLE[s.role]}</td>
-                  <td style={td}>{rm(s.totalSen)}</td><td style={td}>{rm(s.earnedSen)}</td><td style={td}>{rm(s.paidSen)}</td>
-                  <td style={{ ...td, fontWeight: 600, color: s.claimableSen > 0 ? GOOD : undefined }}>{rm(s.claimableSen)}</td>
-                  <td style={{ textAlign: "right", paddingLeft: 8 }}>{canPay && <Button variant="secondary" onClick={() => setPaying(s)}>Record payout</Button>}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
+          <section>
+            <h3 style={sectionTitle}>Who gets what</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+              {row.shares.map((s) => (
+                <div key={s.staffId} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, fontSize: "var(--fs-15, 15px)", flex: 1 }}>{s.staffName}</span>
+                    <span style={chip}>{ROLE[s.role]}</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 1.3fr", gap: 8, alignItems: "end" }}>
+                    <Mini label="Commission" value={rm(s.totalSen)} />
+                    <Mini label="Earned" value={rm(s.earnedSen)} />
+                    <Mini label="Paid" value={rm(s.paidSen)} />
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ color: MUTED, fontSize: "var(--fs-12)" }}>Can claim</div>
+                      <div style={{ ...num, fontWeight: 700, fontSize: "var(--fs-18, 18px)", color: s.claimableSen > 0 ? GOOD : undefined }}>RM {rm(s.claimableSen)}</div>
+                    </div>
+                  </div>
+                  <details>
+                    <summary style={{ cursor: "pointer", color: MUTED }}>How it adds up, part by part</summary>
+                    <div style={{ overflowX: "auto", marginTop: 8 }}><ClaimBreakdown row={row} share={s} /></div>
+                  </details>
+                  {canPay && <Button variant="secondary" onClick={() => setPaying(s)}>Record payout</Button>}
+                </div>
+              ))}
+            </div>
+          </section>
         )}
-        {row.shares.map((s) => (
-          <div key={`parts-${s.staffId}`} style={{ overflowX: "auto" }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>How {s.staffName}&apos;s commission adds up</div>
-            <ClaimBreakdown row={row} share={s} />
-          </div>
-        ))}
+
         {payouts.length > 0 && (
-          <div>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Paid on this order</div>
-            {payouts.map((p) => (
-              <div key={p.id} style={{ display: "flex", gap: 12, alignItems: "baseline", textDecoration: p.voidedAt ? "line-through" : undefined, color: p.voidedAt ? MUTED : undefined }}>
-                <span style={{ width: 90 }}>{p.paidOn}</span><span style={{ flex: 1 }}>{p.staffName}{p.note ? ` · ${p.note}` : ""}</span>
-                <span style={num}>RM {rm(p.amountSen)}</span>
-                {!p.voidedAt && canPay && <Button variant="ghost" onClick={async () => {
-                  setNote(null);
-                  if (!(await dialog.confirm(`Take back RM ${rm(p.amountSen)} paid to ${p.staffName} on ${p.paidOn}? It stays in the list, marked taken back.`))) return;
-                  try { await voidPayout.mutateAsync(p.id); } catch (e) { setNote(errText(e)); }
-                }}>Take back</Button>}
-              </div>
-            ))}
-          </div>
+          <section>
+            <h3 style={sectionTitle}>Paid on this order</h3>
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10 }}>
+              {payouts.map((p, i) => (
+                <div key={p.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 12px", borderTop: i ? "1px solid var(--border)" : undefined, textDecoration: p.voidedAt ? "line-through" : undefined, color: p.voidedAt ? MUTED : undefined }}>
+                  <span style={{ width: 96, color: MUTED }}>{p.paidOn}</span><span style={{ flex: 1 }}>{p.staffName}{p.note ? ` · ${p.note}` : ""}</span>
+                  <span style={{ ...num, fontWeight: 600 }}>RM {rm(p.amountSen)}</span>
+                  {/* Asked here, not in a pop-up: a pop-up opens behind this dialog. */}
+                  {!p.voidedAt && canPay && takingBack !== p.id && <Button variant="ghost" onClick={() => { setNote(null); setTakingBack(p.id); }}>Take back</Button>}
+                  {!p.voidedAt && canPay && takingBack === p.id && (
+                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", textDecoration: "none" }}>
+                      <span style={{ color: BAD }}>Take back? It stays listed.</span>
+                      <Button variant="secondary" disabled={voidPayout.isPending} onClick={async () => {
+                        try { await voidPayout.mutateAsync(p.id); setTakingBack(null); } catch (e) { setNote(errText(e)); }
+                      }}>Yes, take back</Button>
+                      <Button variant="ghost" onClick={() => setTakingBack(null)}>No</Button>
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
         )}
         {note && <div role="alert" style={{ color: BAD }}>{note}</div>}
       </div>
@@ -280,13 +337,18 @@ function PayDialog({ soDocNo, share, onClose }: { soDocNo: string; share: Commis
   const [text, setText] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const save = useRecordPayout();
-  const dialog = useDialog();
+  /* More than can be claimed: asked by a second press, not a pop-up (a pop-up opens behind this dialog). */
+  const [overOk, setOverOk] = useState<number | null>(null);
   const submit = async () => {
     setNote(null);
     const sen = senFromRm(amount);
     const problems = [...(sen == null || sen <= 0 ? ["Enter the amount paid in RM."] : []), ...(!paidOn ? ["Enter the date it was paid."] : [])];
     if (problems.length > 0 || sen == null) { setNote(problems.join(" ")); return; }
-    if (sen > share.claimableSen && !(await dialog.confirm(`RM ${rm(sen)} is more than the RM ${rm(share.claimableSen)} earned and not yet paid. Record it anyway?`))) return;
+    if (sen > share.claimableSen && overOk !== sen) {
+      setOverOk(sen);
+      setNote(`RM ${rm(sen)} is more than the RM ${rm(share.claimableSen)} earned and not yet paid. Press "Record anyway" to save it.`);
+      return;
+    }
     try { await save.mutateAsync({ soDocNo, staffId: share.staffId, amountSen: sen, paidOn, note: text }); onClose(); } catch (e) { setNote(errText(e)); }
   };
   return (
@@ -302,7 +364,7 @@ function PayDialog({ soDocNo, share, onClose }: { soDocNo: string; share: Commis
         {note && <div role="alert" style={{ color: BAD }}>{note}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save payout"}</Button>
+          <Button onClick={submit} disabled={save.isPending}>{save.isPending ? "Saving…" : overOk != null && overOk === senFromRm(amount) ? "Record anyway" : "Save payout"}</Button>
         </div>
       </div>
     </Modal>
@@ -405,22 +467,23 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
               <input type="checkbox" aria-label="Tick every claim" checked={allPicked}
                 onChange={(e) => setPicked(e.target.checked ? Object.fromEntries(shown.map((c) => [c.key, true])) : {})} />
             </th>
-            <th style={{ ...th, textAlign: "left" }}>Person</th><th style={{ ...th, textAlign: "left" }}>Order</th><th style={{ ...th, textAlign: "left" }}>Project</th>
+            <th style={{ ...th, textAlign: "left" }}>Person</th><th style={{ ...th, textAlign: "left" }}>Role</th><th style={{ ...th, textAlign: "left" }}>Order</th><th style={{ ...th, textAlign: "left" }}>SO date</th><th style={{ ...th, textAlign: "left" }}>Project</th>
             <th style={th}>Released</th><th style={th}>Commission</th><th style={th}>Paid before</th><th style={{ ...th, paddingRight: 12 }}>Can claim</th>
           </tr></thead>
           <tbody>
-            {shown.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: MUTED }}>Nothing to claim right now.</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={10} style={{ padding: 14, color: MUTED }}>Nothing to claim right now.</td></tr>}
             {shown.map((c) => (
               <tr key={c.key} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "6px 0 6px 12px" }}>
                   <input type="checkbox" aria-label={`Pay ${c.share.staffName} on ${c.row.soDocNo}`} checked={!!picked[c.key]}
                     onChange={(e) => setPicked({ ...picked, [c.key]: e.target.checked })} />
                 </td>
-                <td style={{ paddingLeft: 8 }}><div style={{ fontWeight: 600 }}>{c.share.staffName}</div><div style={{ color: MUTED }}>{ROLE[c.share.role]}</div></td>
+                <td style={{ paddingLeft: 8, fontWeight: 600 }}>{c.share.staffName}</td>
+                <td style={{ paddingLeft: 8, color: MUTED }}>{ROLE[c.share.role]}</td>
                 <td style={{ paddingLeft: 8 }}>
                   <button type="button" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
-                  <div style={{ color: MUTED }}>{c.row.soDate ?? ""}</div>
                 </td>
+                <td style={{ paddingLeft: 8, color: MUTED, whiteSpace: "nowrap" }}>{c.row.soDate ?? ""}</td>
                 <td style={{ paddingLeft: 8 }}>{c.row.projectName || c.row.customerName}</td>
                 <td style={td}>{pctText(c.row.releasedBp)}</td>
                 <td style={td}>{rm(c.share.totalSen)}</td>
