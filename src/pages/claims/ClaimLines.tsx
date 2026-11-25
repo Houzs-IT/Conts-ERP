@@ -47,7 +47,7 @@ export function useLineTargets(): LineTargets {
       .map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }));
     const list = subs.data?.subDepartments ?? [];
     const mineSub = list.find(x => x.id === subs.data?.mine) ?? null;
-    const subOptions = list.map(x => ({ value: x.id, label: x.id === mineSub?.id ? `${x.name} (yours)` : x.name, group: DEPARTMENT[x.department] }));
+    const subOptions = list.map(x => ({ value: x.id, label: x.id === mineSub?.id ? `${x.name} (your department)` : x.name, group: DEPARTMENT[x.department] }));
     return { unitOptions, jobOptions, projectsFor, subs: list, subOptions, mineSub };
   }, [units.data, jobs.data, projects.data, subs.data]);
 }
