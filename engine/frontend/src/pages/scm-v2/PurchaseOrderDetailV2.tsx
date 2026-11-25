@@ -775,11 +775,19 @@ function PurchaseOrderDetailV2ReadOnly() {
           variant: buildVariantSummary(l.item_group ?? "others", l.variants) || (l.description2 ?? ""),
         });
         const remark = (l.notes ?? "").trim();
+        // Owner 2026-11-25 asked for the SKU name under the code on PO lines.
+        const skuName = (l.description || l.material_name || "").trim();
+        const showSkuName = skuName !== "" && skuName.toUpperCase() !== primary.toUpperCase() && skuName !== secondary;
         return (
           <div className="min-w-0">
             <div className="truncate text-[13px] font-semibold text-ink">
               {primary}
             </div>
+            {showSkuName && (
+              <div className="mt-0.5 truncate text-[12px] text-ink-secondary" title={skuName}>
+                {skuName}
+              </div>
+            )}
             {secondary && (
               <div className="mt-0.5 flex items-center gap-2 font-mono text-[11px] text-ink-muted">
                 <span className="truncate text-ink-secondary">{secondary}</span>
