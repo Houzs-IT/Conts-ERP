@@ -1304,6 +1304,20 @@ export function PurchaseOrdersListV2() {
     },
     lineCols.erp_item_code!,
     lineCols.remarks!,
+    {
+      // The PO-level Notes typed on New Purchase Order; Remarks above is each line's own note.
+      key: "notes",
+      label: "Notes",
+      width: "220px",
+      defaultHidden: true,
+      disableSort: true,
+      getValue: (r) => r.notes ?? "",
+      render: (r) => (
+        <span className="block min-w-0 truncate text-[12.5px] text-ink-secondary" title={r.notes ?? undefined}>
+          {r.notes?.trim() || "—"}
+        </span>
+      ),
+    },
     lineCols.qty!,
     lineCols.received_qty!,
     lineCols.unit_price!,
