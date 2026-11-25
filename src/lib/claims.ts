@@ -23,6 +23,8 @@ export interface Receipt {
   note: string | null; status: ReceiptStatus; rejectReason: string | null; lines: ClaimLine[]; files: ClaimFile[]; renoReviewedBy?: string | null; renoReviewedAt?: string | null;
   /** What each unit's owner pays back (0363): charged to the owner as O2 once finance checks the claim (`charged`). */
   recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
+  /** The bank given on a Direct Claim to Me (the receipt's payee bank); absent when the engine does not send it. */
+  bank?: ClaimBank | null;
 }
 export interface PaymentRequest {
   id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; payeeName: string; amountSen: number; status: RequestStatus; reason: string | null;
@@ -106,8 +108,8 @@ export async function myBank(): Promise<ClaimBank | null> {
   } catch { return null; }
 }
 
-/** Hands a receipt in (or asks finance to pay, or sends a changed request again): the fields as JSON beside the files. */
-export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests' | `/claims/requests/${string}/resubmit` | `/claims/requests/${string}/balance`, data: Record<string, unknown>, files: File[]): Promise<T> {
+/** Hands a receipt in (or asks finance to pay, sends a changed request again, or a reviewer's changed receipt on to finance): the fields as JSON beside the files. */
+export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests' | `/claims/requests/${string}/resubmit` | `/claims/requests/${string}/balance` | `/claims/reno-review/${string}/send`, data: Record<string, unknown>, files: File[]): Promise<T> {
   const form = new FormData();
   form.set('data', JSON.stringify(data));
   for (const f of files) form.append('file', f);

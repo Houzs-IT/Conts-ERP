@@ -73,7 +73,7 @@ describe('the review', () => {
     sb.tables.staff_receipts.push({ ...sb.tables.staff_receipts[0], id: 'other', receipt_no: 'CLM-X', status: 'HANDED_IN' });
     const list = await (await appFor(sb, REVIEWER).request('/reno-review', {}, env)).json() as any;
     expect(list.receipts).toHaveLength(1);
-    expect(list.receipts[0]).toMatchObject({ status: 'RENO_REVIEW', lines: [expect.objectContaining({ subDepartmentId: 's-dc' })] });
+    expect(list.receipts[0]).toMatchObject({ status: 'RENO_REVIEW', lines: [expect.objectContaining({ subDepartmentId: 's-dc' })], bank: BANK });
   });
   test('send moves it to HANDED_IN with the edited lines and amount', async () => {
     const { sb, id } = await inReview();
@@ -89,6 +89,54 @@ describe('the review', () => {
     expect((await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, {})).status).toBe(200);
     expect(sb.tables.staff_receipts[0]).toMatchObject({ status: 'HANDED_IN', amount_sen: 4500 });
     expect(sb.tables.staff_receipt_lines).toHaveLength(1);
+  });
+  test('send edits the date, amount, shop, note and bank in one go', async () => {
+    const { sb, id } = await inReview();
+    const newBank = { bankName: 'CIMB', accountNo: '9876543210', accountName: 'MEI LING' };
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { spendDate: '2026-10-05', amountSen: 6000, vendorName: 'Hardware Hub', note: 'paint', bank: newBank });
+    expect(res.status).toBe(200);
+    expect(sb.tables.staff_receipts[0]).toMatchObject({
+      status: 'HANDED_IN', spend_date: '2026-10-05', amount_sen: 6000, vendor_name: 'Hardware Hub', note: 'paint',
+      payee_bank_name: 'CIMB', payee_account_no: '9876543210', payee_account_name: 'MEI LING',
+    });
+  });
+  test('a future receipt date is refused and the claim stays in review', async () => {
+    const { sb, id } = await inReview();
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { spendDate: '2999-01-01' });
+    expect(res.status).toBe(422);
+    expect(sb.tables.staff_receipts[0].status).toBe('RENO_REVIEW');
+  });
+  test('keeping no photo and adding none is refused', async () => {
+    const { sb, id } = await inReview();
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { keepFileIds: [] });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ message: 'Keep or add a photo of the receipt.' });
+    expect(sb.tables.staff_receipts[0].status).toBe('RENO_REVIEW');
+    expect(sb.tables.staff_receipt_files).toHaveLength(1);
+  });
+  test('a new photo is stored and the photo left out is removed', async () => {
+    const { sb, id } = await inReview();
+    const oldKey = sb.tables.staff_receipt_files[0].r2_key as string;
+    expect(await env.SLIPS.get(oldKey)).not.toBeNull();
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { keepFileIds: [], files: [{ ...PNG, name: 'new.png' }] });
+    expect(res.status).toBe(200);
+    expect(sb.tables.staff_receipt_files).toHaveLength(1);
+    expect(sb.tables.staff_receipt_files[0]).toMatchObject({ file_name: 'new.png' });
+    expect(sb.tables.staff_receipt_files[0].r2_key).not.toBe(oldKey);
+    expect(await env.SLIPS.get(oldKey)).toBeNull();
+  });
+  test('an amount alone moves the one line of a single-line claim', async () => {
+    const { sb, id } = await inReview();
+    expect((await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { amountSen: 5000 })).status).toBe(200);
+    expect(sb.tables.staff_receipts[0].amount_sen).toBe(5000);
+    expect(sb.tables.staff_receipt_lines.map((l) => l.amount_sen)).toEqual([5000]);
+  });
+  test('lines that do not add up to the amount are refused and the old lines stay', async () => {
+    const { sb, id } = await inReview();
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { amountSen: 9000, lines: [{ amountSen: 3000, subDepartmentId: 's-dc' }] });
+    expect(res.status).toBe(422);
+    expect(sb.tables.staff_receipts[0].status).toBe('RENO_REVIEW');
+    expect(sb.tables.staff_receipt_lines.map((l) => l.amount_sen)).toEqual([4500]);
   });
   test('a claim no longer in review cannot be sent or rejected again', async () => {
     const { sb, id } = await inReview();

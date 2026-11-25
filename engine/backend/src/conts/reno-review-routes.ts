@@ -1,14 +1,17 @@
 // Conts only (not part of Houzs's code): the Reno review of a Direct Claim to Me (migration 0378). A claim with a line on
-// a sub-department flagged reno_review waits here as RENO_REVIEW; the reviewer edits its lines and sends it on to
-// finance (HANDED_IN), or sends it back (REJECTED, with a reason, so the claimant replaces it as for any rejection).
+// a sub-department flagged reno_review waits here as RENO_REVIEW; the reviewer edits it (every field the hand-in form has)
+// and sends it on to finance (HANDED_IN), or sends it back (REJECTED, with a reason, so the claimant replaces it as for any rejection).
 // Mounted on the forwarded router only: Property OS decides who may review, the engine session never sees these.
 //   GET  /reno-review                       the claims waiting for review, oldest first
 //   GET  /reno-review/:id/files/:fileId     one of their files
-//   POST /reno-review/:id/send              { lines? } -> HANDED_IN, with the lines and amount as the reviewer leaves them
+//   POST /reno-review/:id/send              { spendDate?, amountSen?, vendorName?, note?, bank?, lines?, keepFileIds?, files? } -> HANDED_IN,
+//                                           each field as the reviewer leaves it (one left out stays as the claim has it)
 //   POST /reno-review/:id/reject            { reason } -> REJECTED
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
-import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
-import { fileResponse } from './claims-files';
+import { todayMyt } from '../scm/lib/my-time';
+import { buildLines, defaultLineSubs, withTargetLabels, type LineRow } from './claims-lines';
+import { MAX_FILES, decodeFiles, fileResponse, removeFiles, storeFiles, type Decoded } from './claims-files';
+import { claimBank } from './my-claims-routes';
 import { fitRecoveries, recoveriesOf } from './owner-recovery';
 import { RECEIPT_COLS, allRows, filesOf, linesOf, receiptView, staffNames, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
@@ -16,6 +19,9 @@ import type { Staff } from './staff-identity';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
 const MAX_REASON_LENGTH = 500;
+const MAX_VENDOR_LENGTH = 200;
+const MAX_NOTE_LENGTH = 500;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const now = (): string => new Date().toISOString();
 const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try { return await c.req.json(); } catch { return null; } };
 const NOT_IN_REVIEW = { error: 'not_in_review', message: 'That claim is no longer waiting for review.' };
@@ -56,25 +62,101 @@ export const renoReviewFileHandler = async (c: Ctx): Promise<Response> => {
   return fileResponse(stored, file.file_name, file.mime);
 };
 
-/** Replaces a claim's lines with the reviewer's and brings the owners' recoveries within them. */
-async function rewriteLines(sb: any, companyId: number, receipt: ReceiptRow, reviewer: Staff, rawLines: unknown): Promise<{ ok: true; amountSen: number } | { ok: false; message: string }> {
-  const sentSen = Array.isArray(rawLines) ? rawLines.reduce((sum: number, line: any) => sum + Number(line?.amountSen), 0) : Number(receipt.amount_sen);
-  const built = await buildLines(sb, reviewer, rawLines, sentSen, companyId);
-  if (!built.ok) return { ok: false, message: built.message };
-  await defaultLineSubs(sb, companyId, built.lines, { staffDepartmentId: reviewer.departmentId, floatId: null });
-  const amountSen = built.lines.reduce((sum, line) => sum + Number(line.amount_sen), 0);
-  const previous = ((await linesOf(sb, [receipt.id])).get(receipt.id) ?? []).map(({ id: _id, ...line }) => line);
-  const deleted = await sb.from('staff_receipt_lines').delete().eq('receipt_id', receipt.id);
-  const inserted = deleted.error ? deleted : await sb.from('staff_receipt_lines').insert(built.lines.map((line) => ({ ...line, receipt_id: receipt.id })));
-  if (inserted.error) {
-    await sb.from('staff_receipt_lines').delete().eq('receipt_id', receipt.id);
-    await sb.from('staff_receipt_lines').insert(previous.map((line) => ({ ...line, receipt_id: receipt.id })));
-    return { ok: false, message: inserted.error.message };
+type Bank = NonNullable<ReturnType<typeof claimBank>>;
+export type ReviewEdit = {
+  spendDate?: string; amountSen?: number; vendorName?: string | null; note?: string | null; bank?: Bank;
+  rawLines?: unknown; keepFileIds?: string[]; newFiles: Decoded[];
+};
+type Refusal = { ok: false; status: 400 | 422; error: string; message: string };
+const refuse = (message: string, status: 400 | 422 = 422, error = 'validation'): Refusal => ({ ok: false, status, error, message });
+const optionalText = (value: unknown, maxLength: number): string | null => (value ? String(value).slice(0, maxLength) : null);
+
+/** What the reviewer changed on the claim: every field optional, a field present is an edit. Checked as the hand-in form is. */
+export function parseReviewEdit(body: Record<string, unknown>): { ok: true; edit: ReviewEdit } | Refusal {
+  const edit: ReviewEdit = { newFiles: [] };
+  if (body.spendDate !== undefined) {
+    if (!DATE.test(String(body.spendDate))) return refuse('Enter the receipt date.');
+    if (String(body.spendDate) > todayMyt()) return refuse('The receipt date cannot be in the future.');
+    edit.spendDate = String(body.spendDate);
   }
-  const fit = fitRecoveries((await recoveriesOf(sb, [receipt.id], 'receipt')).get(receipt.id) ?? [], built.lines);
+  if (body.amountSen !== undefined) {
+    const amountSen = Number(body.amountSen);
+    if (!(Number.isInteger(amountSen) && amountSen > 0)) return refuse('Enter the amount on the receipt.');
+    edit.amountSen = amountSen;
+  }
+  if (body.vendorName !== undefined) edit.vendorName = optionalText(body.vendorName, MAX_VENDOR_LENGTH);
+  if (body.note !== undefined) edit.note = optionalText(body.note, MAX_NOTE_LENGTH);
+  if (body.bank !== undefined) {
+    const bank = claimBank(body.bank);
+    if (!bank) return refuse('Enter the bank the money goes to: the bank, the account number (digits only) and the name on the account.');
+    edit.bank = bank;
+  }
+  if (body.lines !== undefined) edit.rawLines = body.lines;
+  if (body.keepFileIds !== undefined) {
+    if (!Array.isArray(body.keepFileIds)) return refuse('Say which photos to keep.');
+    edit.keepFileIds = body.keepFileIds.map(String);
+  }
+  if (Array.isArray(body.files) && body.files.length > 0) {
+    const decoded = decodeFiles(body.files, 'a photo of the receipt');
+    if (!decoded.ok) return refuse(decoded.message, decoded.status, decoded.error);
+    edit.newFiles = decoded.files;
+  }
+  return { ok: true, edit };
+}
+
+type StoredFile = { id: string; r2_key: string };
+/** The photos the claim ends with: the kept ones (all, when none are named) and the new; the ones left out are dropped. */
+export function planFiles(current: StoredFile[], keepFileIds: string[] | undefined, newCount: number): { ok: true; drop: StoredFile[] } | Refusal {
+  const currentIds = new Set(current.map((file) => file.id));
+  if (keepFileIds?.some((fileId) => !currentIds.has(fileId))) return refuse('One of the photos to keep is not on this claim.');
+  const kept = keepFileIds ? new Set(keepFileIds) : currentIds;
+  if (kept.size + newCount === 0) return refuse('Keep or add a photo of the receipt.');
+  if (kept.size + newCount > MAX_FILES) return refuse(`Up to ${MAX_FILES} photos on a claim.`);
+  return { ok: true, drop: current.filter((file) => !kept.has(file.id)) };
+}
+
+type PlannedLines = { ok: true; lines: LineRow[] | null; amountSen: number } | { ok: false; message: string };
+/** The lines the claim ends with: as the reviewer sent, or the one line moved to a new amount, or as they are (null). */
+async function planLines(sb: any, companyId: number, receipt: ReceiptRow, reviewer: Staff, edit: ReviewEdit): Promise<PlannedLines> {
+  if (edit.rawLines !== undefined) {
+    const raw = edit.rawLines;
+    const sentSen = edit.amountSen ?? (Array.isArray(raw) ? raw.reduce((sum: number, line: any) => sum + Number(line?.amountSen), 0) : Number(receipt.amount_sen));
+    const built = await buildLines(sb, reviewer, raw, sentSen, companyId);
+    if (!built.ok) return { ok: false, message: built.message };
+    await defaultLineSubs(sb, companyId, built.lines, { staffDepartmentId: reviewer.departmentId, floatId: null });
+    return { ok: true, lines: built.lines, amountSen: built.lines.reduce((sum, line) => sum + Number(line.amount_sen), 0) };
+  }
+  if (edit.amountSen === undefined) return { ok: true, lines: null, amountSen: Number(receipt.amount_sen) };
+  const current = (await linesOf(sb, [receipt.id])).get(receipt.id) ?? [];
+  if (current.length !== 1) return { ok: false, message: 'Send the lines with the new amount.' };
+  const { id: _id, ...line } = current[0]!;
+  return { ok: true, lines: [{ ...line, amount_sen: edit.amountSen }], amountSen: edit.amountSen };
+}
+
+/** Replaces a claim's lines and brings the owners' recoveries within them. Returns how to put the old lines back. */
+async function replaceLines(sb: any, receipt: ReceiptRow, lines: LineRow[]): Promise<{ ok: true; restore: () => Promise<void> } | { ok: false; message: string }> {
+  const previous = ((await linesOf(sb, [receipt.id])).get(receipt.id) ?? []).map(({ id: _id, ...line }) => line);
+  const writeLines = async (rows: object[]) => {
+    const deleted = await sb.from('staff_receipt_lines').delete().eq('receipt_id', receipt.id);
+    return deleted.error ? deleted : sb.from('staff_receipt_lines').insert(rows.map((line) => ({ ...line, receipt_id: receipt.id })));
+  };
+  const restore = async () => { await writeLines(previous); };
+  const written = await writeLines(lines);
+  if (written.error) { await restore(); return { ok: false, message: written.error.message }; }
+  const fit = fitRecoveries((await recoveriesOf(sb, [receipt.id], 'receipt')).get(receipt.id) ?? [], lines);
   for (const unitId of fit.drop) await sb.from('staff_receipt_recoveries').delete().eq('receipt_id', receipt.id).eq('unit_id', unitId);
   for (const lowered of fit.lower) await sb.from('staff_receipt_recoveries').update({ amount_sen: lowered.amountSen }).eq('receipt_id', receipt.id).eq('unit_id', lowered.unitId);
-  return { ok: true, amountSen };
+  return { ok: true, restore };
+}
+
+function receiptPatch(edit: ReviewEdit, amountSen: number, reviewer: Staff): Record<string, unknown> {
+  return {
+    status: 'HANDED_IN', amount_sen: amountSen, reno_reviewed_by: reviewer.name, reno_reviewed_at: now(),
+    ...(edit.spendDate !== undefined ? { spend_date: edit.spendDate } : {}),
+    ...(edit.vendorName !== undefined ? { vendor_name: edit.vendorName } : {}),
+    ...(edit.note !== undefined ? { note: edit.note } : {}),
+    ...(edit.bank ? { payee_bank_name: edit.bank.bankName, payee_account_no: edit.bank.accountNo, payee_account_name: edit.bank.accountName } : {}),
+  };
 }
 
 export const renoReviewSendHandler = async (c: Ctx): Promise<Response> => {
@@ -82,19 +164,45 @@ export const renoReviewSendHandler = async (c: Ctx): Promise<Response> => {
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const reviewer: Staff = c.get('staff');
+  const bucket = c.env?.SLIPS;
   const body = await bodyOf(c);
   if (!body) return c.json({ error: 'invalid_json' }, 400);
+  const parsed = parseReviewEdit(body);
+  if (!parsed.ok) return c.json({ error: parsed.error, message: parsed.message }, parsed.status);
+  const { edit } = parsed;
+  if (!bucket && (edit.newFiles.length > 0 || edit.keepFileIds)) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
   const receipt = await loadInReview(sb, co.companyId, c.req.param('id'));
   if (!receipt) return c.json(NOT_IN_REVIEW, 409);
-  let amountSen = Number(receipt.amount_sen);
-  if (body.lines !== undefined) {
-    const rewritten = await rewriteLines(sb, co.companyId, receipt, reviewer, body.lines);
-    if (!rewritten.ok) return c.json({ error: 'validation', message: rewritten.message }, 422);
-    amountSen = rewritten.amountSen;
+  const { data: currentFiles } = await sb.from('staff_receipt_files').select('id, r2_key').eq('receipt_id', receipt.id);
+  const files = planFiles((currentFiles ?? []) as StoredFile[], edit.keepFileIds, edit.newFiles.length);
+  if (!files.ok) return c.json({ error: files.error, message: files.message }, files.status);
+  const planned = await planLines(sb, co.companyId, receipt, reviewer, edit);
+  if (!planned.ok) return c.json({ error: 'validation', message: planned.message }, 422);
+
+  let stored: Awaited<ReturnType<typeof storeFiles>> = [];
+  try { stored = await storeFiles(bucket, `claims/${co.companyId}/${receipt.id}`, edit.newFiles); } catch {
+    return c.json({ error: 'upload_failed', message: 'The photos could not be saved. Try again.' }, 502);
   }
-  const moved = await leaveReview(sb, receipt.id, { status: 'HANDED_IN', amount_sen: amountSen, reno_reviewed_by: reviewer.name, reno_reviewed_at: now() });
-  if (!moved) return c.json(NOT_IN_REVIEW, 409);
-  return c.json({ id: receipt.id, receiptNo: receipt.receipt_no, amountSen });
+  const storedKeys = stored.map((file) => file.r2_key);
+  const undoUploads = async () => {
+    await sb.from('staff_receipt_files').delete().eq('receipt_id', receipt.id).in('r2_key', storedKeys);
+    await removeFiles(bucket, storedKeys);
+  };
+  const insertedFiles = stored.length ? await sb.from('staff_receipt_files').insert(stored.map((file) => ({ ...file, receipt_id: receipt.id }))) : { error: null };
+  if (insertedFiles.error) { await undoUploads(); return c.json({ error: 'save_failed', reason: insertedFiles.error.message }, 500); }
+  const replaced = planned.lines ? await replaceLines(sb, receipt, planned.lines) : null;
+  if (replaced && !replaced.ok) { await undoUploads(); return c.json({ error: 'validation', message: replaced.message }, 422); }
+  const moved = await leaveReview(sb, receipt.id, receiptPatch(edit, planned.amountSen, reviewer));
+  if (!moved) {
+    if (replaced?.ok) await replaced.restore();
+    await undoUploads();
+    return c.json(NOT_IN_REVIEW, 409);
+  }
+  if (files.drop.length > 0) {
+    await sb.from('staff_receipt_files').delete().eq('receipt_id', receipt.id).in('id', files.drop.map((file) => file.id));
+    await removeFiles(bucket, files.drop.map((file) => file.r2_key));
+  }
+  return c.json({ id: receipt.id, receiptNo: receipt.receipt_no, amountSen: planned.amountSen });
 };
 
 export const renoReviewRejectHandler = async (c: Ctx): Promise<Response> => {

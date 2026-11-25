@@ -19,7 +19,8 @@ import { fileToUpload, forwardClaims } from '../../_lib/claimsForward';
  *    POST requests/:id/balance (multipart): the rest of a paid deposit's AP invoice, nothing filled in again; the formal
  *         invoice may come with it (chew, 15 Nov 2026)                                         (office staff)
  *    GET  reno-review, reno-review/:id/files/:fileId                                          (Review renovation claims)
- *    POST reno-review/:id/send (JSON `lines`), reno-review/:id/reject (JSON `reason`)         (Review renovation claims) */
+ *    POST reno-review/:id/send (multipart, as `receipts`: every field of the claim, `keepFileIds`, new `file`s),
+ *         reno-review/:id/reject (JSON `reason`)                                              (Review renovation claims) */
 const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|requests|requests\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects|sub-departments)$/;
 const GET_RENO_REVIEW = /^reno-review(\/[^/]+\/files\/[^/]+)?$/;
 const POST_RENO_REVIEW = /^reno-review\/[^/]+\/(send|reject)$/;
@@ -61,14 +62,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   if (POST_RENO_REVIEW.test(path)) {
     if (field || !mayReviewRenoClaims(session)) return fail('NOT_FOUND', 'Not found.', 404);
-    const body = await request.json<{ lines?: unknown; reason?: unknown }>().catch(() => null);
-    if (!body) return fail('VALIDATION', 'Send a JSON body.', 422);
     const [, receiptId = '', step] = path.split('/');
     const sending = step === 'send';
-    const res = await forwardClaims(env, session, 'POST', `/${path}`, sending ? { lines: body.lines } : { reason: body.reason });
+    let payload: Record<string, unknown>;
+    if (sending) {
+      const form = await readForm(request);
+      if (form instanceof Response) return form;
+      payload = { ...form.data, files: await Promise.all(form.files.map(fileToUpload)) };
+    } else {
+      const body = await request.json<{ reason?: unknown }>().catch(() => null);
+      if (!body) return fail('VALIDATION', 'Send a JSON body.', 422);
+      payload = { reason: body.reason };
+    }
+    const res = await forwardClaims(env, session, 'POST', `/${path}`, payload);
     if (res.ok) {
       await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: sending ? 'claims.reno_review_sent' : 'claims.reno_review_rejected',
-        entityTable: 'staff_receipts', entityId: receiptId, ...(sending ? {} : { after: { reason: body.reason } }), source });
+        entityTable: 'staff_receipts', entityId: receiptId, ...(sending ? {} : { after: { reason: payload.reason } }), source });
     }
     return res;
   }

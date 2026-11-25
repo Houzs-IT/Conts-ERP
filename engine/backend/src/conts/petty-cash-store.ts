@@ -91,6 +91,7 @@ export function receiptView(r: ReceiptRow, lines: ReceiptLineRow[], files: Array
     floatId: r.float_id, spendDate: String(r.spend_date).slice(0, 10), amountSen: Number(r.amount_sen), vendorName: r.vendor_name,
     note: r.note, status: r.status, rejectReason: r.reject_reason, checkedAt: r.checked_at, checkedBy: r.checked_by,
     topUpPvId: r.topup_pv_id, paybackPvId: r.payback_pv_id, replacesId: r.replaces_id, source: r.source, renoReviewedBy: r.reno_reviewed_by ?? null, renoReviewedAt: r.reno_reviewed_at ?? null,
+    bank: r.payee_bank_name ? { bankName: r.payee_bank_name, accountNo: r.payee_account_no ?? '', accountName: r.payee_account_name ?? '' } : null,
     lines: lines.map(l => ({ id: l.id, department: l.department, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id,
       projectId: l.project_id, accountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description, subDepartmentId: l.sub_department_id ?? null })),
     files: files.map(f => ({ id: f.id, fileName: f.file_name, mime: f.mime })),
