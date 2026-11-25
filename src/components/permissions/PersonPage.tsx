@@ -98,7 +98,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
 
   const categories = useMemo(() => categoriesOf(access), [access]);
-  const companies = useMemo(() => groupByCompany(categories), [categories]);
+  const companies = useMemo(() => groupByCompany(categories, access.user.side), [categories, access.user.side]);
   const areaKeys = useMemo(() => areaKeysOf(categories), [categories]);
   const savedLevels = useMemo(() => levelsOf(access, area => area.level), [access]);
   const roleLevels = useMemo(() => levelsOf(access, area => area.inherited.level), [access]);

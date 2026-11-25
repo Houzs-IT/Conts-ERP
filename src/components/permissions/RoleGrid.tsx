@@ -6,7 +6,8 @@ import {
 } from '../../lib/roleGrid';
 import { GroupToggle } from './GroupToggle';
 import { RoleDifferenceMark } from './RoleDifferenceMark';
-import { COMPANY_LABEL, SIDE_OPTIONS, categorySide, useToggleSet } from './shared';
+import type { UserSide } from '../../lib/types';
+import { COMPANY_LABEL, SIDE_OPTIONS, categorySide, sideLabel, useToggleSet } from './shared';
 import { TIER_HINT, TIER_LABEL, TierBoxes } from './TierBoxes';
 
 /** `ownGrant`: given one by one, so the group row's ticks leave it alone (owner statement close part 2b). */
@@ -14,7 +15,9 @@ export interface GridArea { key: string; label: string; ownGrant?: boolean }
 export interface GridCategory { group: string; areas: GridArea[] }
 export interface RoleCompany { key: string; label: string; categories: GridCategory[] }
 
-export function groupByCompany(categories: GridCategory[]): RoleCompany[] {
+export function groupByCompany(categories: GridCategory[], side: UserSide = 'both'): RoleCompany[] {
+  // One company's person or role: the shared groups (Finance, System...) are theirs too, so no second heading.
+  if (side !== 'both') return categories.length > 0 ? [{ key: side, label: sideLabel(side), categories }] : [];
   return SIDE_OPTIONS
     .map(option => ({
       key: option.value,
