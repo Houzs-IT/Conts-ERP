@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { BetaMotion } from "./betaMotion";
 import { errorText } from "../projects/renovation/renovationModel";
-import { BETA, GLASS, PILL_CONFIRM, PILL_GLASS, PILL_MAIN, TONES, betaConditionTone } from "./renovationBetaTheme";
+import { BANDS, BETA, GLASS, PILL_CONFIRM, PILL_GLASS, PILL_MAIN, TONES, betaConditionTone } from "./renovationBetaTheme";
 import { invalidateBeta, markPoDone } from "./renovationBetaBoardApi";
 import { initials } from "./renovationBetaBoard";
 
@@ -55,7 +55,7 @@ export function Badge({ name, inverted = false }: { name: string; inverted?: boo
       style={{
         flex: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 22, height: 17, padding: "0 3px",
         borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: ".02em",
-        background: inverted ? "#FFFFFF" : BETA.avatar, color: inverted ? "#A12622" : "#FFFFFF",
+        background: inverted ? BETA.onFill : BETA.avatar, color: inverted ? BANDS[5][0] : BETA.onFill,
       }}
     >
       {initials(name)}
@@ -102,7 +102,7 @@ export function useToast(): { toast: ReactElement | null; show: (text: string) =
             transition={{ type: "spring", stiffness: 460, damping: 32 }}
             style={{
         x: "-50%", position: "fixed", left: "50%", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
-        background: BETA.avatar, color: "#FFFFFF", padding: "10px 16px", borderRadius: 999, fontSize: 14, fontWeight: 600, zIndex: 100, backdropFilter: BETA.blurSm, WebkitBackdropFilter: BETA.blurSm, maxWidth: "calc(100vw - 32px)",
+        background: BETA.avatar, color: BETA.onFill, padding: "10px 16px", borderRadius: 999, fontSize: 14, fontWeight: 600, zIndex: 100, backdropFilter: BETA.blurSm, WebkitBackdropFilter: BETA.blurSm, maxWidth: "calc(100vw - 32px)",
       }}
     >
       {text}

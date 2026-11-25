@@ -78,7 +78,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
             ))}
             {who === "All" && first && (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span aria-hidden="true" style={{ minWidth: 22, height: 17, padding: "0 3px", borderRadius: 4, background: BETA.avatar, color: "#FFFFFF", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{initials(first.name)}</span>
+                <span aria-hidden="true" style={{ minWidth: 22, height: 17, padding: "0 3px", borderRadius: 4, background: BETA.avatar, color: BETA.onFill, fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{initials(first.name)}</span>
                 Who does it
               </span>
             )}
@@ -113,7 +113,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                     background: isSel ? BETA.pick : BETA.row, boxShadow: isSel ? `inset 0 0 0 2px ${BETA.selInk}` : undefined, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
                   }}
                 >
-                  <span style={{ alignSelf: phone ? "center" : "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accentFill : "transparent", color: isToday ? "#FFFFFF" : BETA.ink }}>{d}</span>
+                  <span style={{ alignSelf: phone ? "center" : "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accentFill : "transparent", color: isToday ? BETA.onFill : BETA.ink }}>{d}</span>
                   {phone ? (
                     dots.length > 0 && (
                       <span aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 3 }}>

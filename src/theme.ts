@@ -86,7 +86,7 @@ export const dcGlass = {
       + 'radial-gradient(52% 58% at 90% 34%,#BFE6EA 0%,rgba(191,230,234,0) 72%),'
       + 'radial-gradient(46% 46% at 40% 100%,#CBD3FA 0%,rgba(236,227,207,0) 72%),'
       + 'linear-gradient(160deg,#E6ECEA 0%,#ECEEF3 50%,#DDE2EC 100%)',
-    ink: '#111216', text: '#4A4A4A', muted: '#6B6B6B', faint: '#5A5A5A', surface: '#FFFFFF', accent: '#3D5AFE',
+    ink: '#111216', text: '#4A4A4A', muted: '#5A5A5A', faint: '#5A5A5A', surface: '#FFFFFF', accent: '#3D5AFE',
     /** The page the Beta screens sit on: grid, wash, then the backdrop. */
     get page() { return `${dcGrid},linear-gradient(180deg,rgba(250,251,253,.30),rgba(236,239,245,.38)),${this.backdrop}`; },
   },
@@ -95,7 +95,7 @@ export const dcGlass = {
       + 'radial-gradient(40% 40% at 88% 70%,rgba(150,90,255,.28) 0%,rgba(150,90,255,0) 70%),'
       + 'radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),'
       + 'linear-gradient(160deg,#151823 0%,#0D0F16 100%)',
-    ink: '#EEF1F8', text: '#B9C0D0', muted: '#9AA2B4', faint: '#A9B0C1', surface: '#FFFFFF', accent: '#9FC0FF', base: '#151823',
+    ink: '#EEF1F8', text: '#B9C0D0', muted: '#ADB4C5', faint: '#ADB4C5', surface: '#FFFFFF', accent: '#9FC0FF', base: '#151823',
     get page() { return `${dcGrid},linear-gradient(180deg,rgba(16,18,26,.25),rgba(16,18,26,.35)),${this.backdrop}`; },
   },
 } as const;

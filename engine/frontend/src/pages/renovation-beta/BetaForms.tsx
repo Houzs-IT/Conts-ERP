@@ -113,7 +113,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
         tabIndex={-1}
         onSubmit={submit}
         onChangeCapture={() => { touched.current = true; }}
-        style={{ outline: "none", maxWidth: wide ? 880 : 520, margin: "0 auto", background: BETA.surface, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
+        style={{ outline: "none", maxWidth: wide ? 880 : 520, margin: "0 auto", background: BETA.raised, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
       >
         <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-.02em" }}>{title}</h2>
         {sub && <div style={{ fontSize: 14, color: TONES.grey.ink }}>{sub}</div>}
@@ -127,7 +127,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
           ) : <span />}
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" onClick={onClose} style={FOOT_BTN}>Cancel</button>
-            <button type="submit" disabled={busy} style={{ ...PILL_MAIN, minHeight: 42, padding: "0 20px", font: "inherit", fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}>
+            <button type="submit" disabled={busy} style={{ ...PILL_MAIN, minHeight: 42, padding: "0 20px", font: "inherit", fontWeight: 600, cursor: "pointer" }}>
               {busy ? "Saving..." : saveLabel}
             </button>
           </div>
@@ -181,7 +181,7 @@ function PersonOptions({ all, current, blank, skip = [] }: { all: readonly Perso
 }
 
 const AVATAR = (size: number): CSSProperties => ({
-  flex: "none", width: size, height: size, borderRadius: size / 2, background: BETA.avatar, color: "#FFFFFF", fontSize: size > 28 ? 12 : 10, fontWeight: 700,
+  flex: "none", width: size, height: size, borderRadius: size / 2, background: BETA.avatar, color: BETA.onFill, fontSize: size > 28 ? 12 : 10, fontWeight: 700,
   display: "inline-flex", alignItems: "center", justifyContent: "center",
 });
 const LIST: CSSProperties = { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 };

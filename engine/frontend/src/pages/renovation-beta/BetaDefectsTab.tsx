@@ -35,8 +35,8 @@ const PIPE_CSS = `
 .bws .bdp{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
 @container bdp (max-width:700px){.bws .bdp{grid-template-columns:repeat(3,minmax(47%,1fr));overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;-webkit-overflow-scrolling:touch}.bws .bdp>section{scroll-snap-align:start}}
 @container bdp (max-width:560px){.bws .bdp{grid-template-columns:repeat(3,minmax(86%,1fr))}}
-.bws .bdp-card{display:flex;flex-direction:column;width:100%;padding:0;border:1px solid ${BETA.line};border-radius:12px;background:${BETA.surface};text-align:left;color:inherit;overflow:hidden;box-shadow:0 1px 2px rgba(23,32,31,.04)}
-.bws .bdp-card:hover{border-color:${BETA.border};box-shadow:0 2px 8px rgba(23,32,31,.08)}
+.bws .bdp-card{display:flex;flex-direction:column;width:100%;padding:0;border:1px solid ${BETA.line};border-radius:12px;background:${BETA.surface};text-align:left;color:inherit;overflow:hidden;box-shadow:${BETA.shadowCard}}
+.bws .bdp-card:hover{border-color:${BETA.border};box-shadow:${BETA.shadowCardHover}}
 `;
 
 const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;

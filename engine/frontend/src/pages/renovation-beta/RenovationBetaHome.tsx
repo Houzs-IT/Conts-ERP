@@ -10,7 +10,7 @@ import { useQuery } from "../../hooks/useQuery";
 import { useAuth } from "../../auth/AuthContext";
 import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPanel";
 import { money } from "../projects/renovation/renovationModel";
-import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
+import { BANDS, BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, designSteps, filterCounts, homeCounts, homeList, homeRow, shortLeft, VARIANTS_FILTER, type BoardModel, type ConditionWord, type HomeFilter, type HomeRow } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, onBrandList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
@@ -57,7 +57,7 @@ function DuePill({ left, small = false }: { left: number; small?: boolean }): Re
    blue = some instalments paid ("2 of 4 paid"), grey = none paid yet. [text, background, dot] */
 /* The theme's blue family is near-grey; partly paid needs a blue that reads at a glance, mixed from the board's own
    blue band so it holds on a light and a dark page. */
-const PART_BLUE = "#1F4E8C";
+const PART_BLUE = BANDS[2][0];
 export const PART_PAID = [`color-mix(in srgb, ${PART_BLUE} 75%, ${BETA.ink})`, `color-mix(in srgb, ${PART_BLUE} 14%, transparent)`, PART_BLUE] as const;
 export function payTone(text: string): readonly [string, string, string] {
   if (/Fully paid/.test(text)) return [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot];

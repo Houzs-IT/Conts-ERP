@@ -633,7 +633,7 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
   const ownText = own.length ? `${plural(own.length, word)}: ${own.map((s) => s.name).join(", ")}` : versionLabel(kind, v.file);
   const card = (border: string, bg: string, pad: number): CSSProperties => ({ position: "relative", border, background: bg, borderRadius: 10, padding: pad, display: "flex", flexDirection: "column", gap: 8 });
   const dot = (bg: string, children: ReactNode, ring?: string): ReactElement => (
-    <span style={{ width: 24, height: 24, borderRadius: 12, background: bg, border: ring, color: "#FFFFFF", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>{children}</span>
+    <span style={{ width: 24, height: 24, borderRadius: 12, background: bg, border: ring, color: BETA.onFill, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>{children}</span>
   );
   return (
     <>

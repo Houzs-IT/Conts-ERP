@@ -118,7 +118,7 @@ function Popover({ label, srLabel, align = "left", iconOnly = false, children }:
       </button>
       {open && (
         <div style={{ position: "absolute", top: 32, [align]: 0, zIndex: 30, minWidth: 150, padding: "4px 0", background: BETA.surface, border: `1px solid ${BETA.line}`,
-          borderRadius: 8, boxShadow: "0 8px 24px rgba(23,32,31,.14)" }}>
+          borderRadius: 8, boxShadow: BETA.shadowPop }}>
           {children(() => setOpen(false))}
         </div>
       )}
@@ -189,7 +189,7 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
                 <SheetThumb projectId={projectId} sheet={x} />
                 {changed && (
                   <span style={{ position: "absolute", top: 6, left: 6, padding: "2px 7px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-                    background: isNew ? WS.amberBtn : "rgba(255,255,255,0.92)", color: isNew ? "#FFFFFF" : BETA_HEX.text2 }}>
+                    background: isNew ? WS.amberBtn : "rgba(255,255,255,0.92)", color: isNew ? BETA.onFill : BETA_HEX.text2 }}>
                     {isNew ? "Changed" : "Same"}
                   </span>
                 )}
