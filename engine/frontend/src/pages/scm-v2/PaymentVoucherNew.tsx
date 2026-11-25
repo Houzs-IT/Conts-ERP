@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { departmentOf } from '../../conts/department';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Save, Trash2, X } from 'lucide-react';
+import { LineTableHead, useLineColumns, type LineColumn } from '../../vendor/scm/components/ResizableColumns';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { useCreatePaymentVoucher, usePaymentVoucherDetail, useSupplierAdvances, usePvReservations, NO_RESERVATIONS, useExtractBills, useUploadPvFile, useRefundSource, fileToBase64, type BillExtraction, type VendorMemory, type PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
@@ -60,6 +61,23 @@ import {
 import { useSubDepartments } from '../../conts/subDepartmentQueries';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
+/* The voucher's lines as one table with one heading row (chew, 25 Nov 2026), each person's column order and widths kept
+   on their account. A narrow card keeps one card per line (LINE_TABLE_MIN). */
+const PV_LINE_COLS: readonly LineColumn[] = [
+  { key: 'department', label: 'Department *', width: 170 },
+  { key: 'for', label: 'Paid for', width: 160 },
+  { key: 'account', label: 'Account (debit) *', width: 220 },
+  { key: 'description', label: 'Description', width: 240 },
+  { key: 'amount', label: 'Amount (MYR)', width: 120, align: 'right' },
+  { key: 'tag', label: 'Dept', width: 90 },
+];
+const PV_ACTIONS_W = 60;
+const LINE_TABLE_MIN = 900;
+const lineTh: React.CSSProperties = {
+  padding: '6px 8px', textAlign: 'left', fontSize: 'var(--fs-11)', fontWeight: 600, letterSpacing: '0.04em',
+  textTransform: 'uppercase', color: 'var(--fg-muted)', borderBottom: '1px solid var(--border-weak, #e3e1da)', whiteSpace: 'nowrap',
+};
+const lineTd: React.CSSProperties = { padding: '6px 8px', verticalAlign: 'middle', borderBottom: '1px solid var(--border-weak, #e3e1da)' };
 
 const fmtRm = (centi: number | null | undefined, currency = 'MYR'): string => {
   const v = centi ?? 0;
@@ -444,6 +462,17 @@ export const PaymentVoucherNew = () => {
     const next = lines.at(lines.findIndex((l) => l.rid === rid) + 1);
     if (next) setLandOn(next.rid); else addLineAndLand();
   };
+  /* The lines' table, or a card per line when the space is narrow (a phone). */
+  const lineCols = useLineColumns('conts:pv-lines', PV_LINE_COLS);
+  const linesBox = useRef<HTMLDivElement>(null);
+  const [linesWide, setLinesWide] = useState(true);
+  useEffect(() => {
+    const el = linesBox.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => { const box = entries.at(0); if (box) setLinesWide(box.contentRect.width >= LINE_TABLE_MIN); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const linesTotalSen = useMemo(() => lines.reduce((s, l) => s + l.amountSen, 0), [lines]);
 
@@ -1043,6 +1072,50 @@ export const PaymentVoucherNew = () => {
               Description · Amount · tag. Account, then description, then
               amount stays the owner's typing order (2026-09-08), the same the
               AP invoice and Other Debtor bill keep; Tab follows the DOM. */}
+          <div ref={linesBox}>
+          {linesWide ? (
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: lineCols.total + PV_ACTIONS_W, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+              <LineTableHead columns={lineCols} thStyle={lineTh} extra={PV_ACTIONS_W} />
+              <tbody>
+                {lines.map((l, idx) => {
+                  const cell: Record<string, React.ReactNode> = {
+                    department: <LineSubSelect n={idx + 1} line={l} subs={subs} className={styles.fieldInput} onChange={(id) => setPurpose(l.rid, { subDepartmentId: id })} />,
+                    for: <LineTarget n={idx + 1} line={l} subs={subs} inputClass={styles.fieldInput}
+                      onUnit={(u) => setPurpose(l.rid, { unitId: u })} onProject={(p) => setPurpose(l.rid, { projectId: p })} />,
+                    account: <span data-land style={{ display: 'block' }}><AccountSelect accounts={accounts} value={l.debitAccountCode} ariaLabel="Account (Debit) *"
+                      onChange={(v) => setLine(l.rid, { debitAccountCode: v })} className={styles.fieldInput}
+                      placeholder={accountsQ.isLoading ? 'Loading accounts…' : '— Expense / charge account —'} /></span>,
+                    description: <input type="text" value={l.description} onChange={(e) => setLine(l.rid, { description: e.target.value })}
+                      aria-label={`line ${idx + 1} description`} placeholder="e.g. Sea freight — Shenzhen → Klang" className={styles.fieldInput} style={{ width: '100%' }} />,
+                    amount: <MoneyInput bare valueSen={l.amountSen} aria-label={`line ${idx + 1} amount`}
+                      onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
+                      onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }}
+                      inputClassName={styles.fieldInput} selectOnFocus />,
+                    tag: <DepartmentTag n={idx + 1} department={lineDepartment(l, sideOf(l.projectId))} />,
+                  };
+                  return (
+                    <tr key={l.rid} data-line={l.rid} onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLineAndLand(l.rid); } }}>
+                      {lineCols.cols.map((c) => <td key={c.key} style={lineTd}>{cell[c.key]}</td>)}
+                      <td style={{ ...lineTd, whiteSpace: 'nowrap' }}>
+                        <button type="button" onClick={() => addLineAndLand(l.rid)} title="Add a line below" aria-label={`Add a line below line ${idx + 1}`}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 4, display: 'inline-flex' }}>
+                          <Plus {...SM_ICON} />
+                        </button>
+                        {lines.length > 1 && (
+                          <button type="button" onClick={() => dropLine(l.rid)} title="Remove line" aria-label={`Remove line ${idx + 1}`}
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--c-festive-b, #B8331F)', padding: 4, display: 'inline-flex' }}>
+                            <Trash2 {...SM_ICON} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+          ) : (
           <div className={voucherLineCss.lines}>
           {lines.map((l, idx) => (
             <div key={l.rid} data-line={l.rid} className={voucherLineCss.row}
@@ -1098,6 +1171,8 @@ export const PaymentVoucherNew = () => {
           ))}
           </div>
 
+          )}
+          </div>
           <AddLineButton variant="block" onClick={addLine} />
         </div>
       </section>

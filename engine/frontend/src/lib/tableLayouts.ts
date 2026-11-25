@@ -669,3 +669,21 @@ export async function deleteSharedLayout(tableKey: string, name: string): Promis
     },
   });
 }
+
+/* ── Line tables (Conts, chew 25 Nov 2026) ──────────────────────────────────
+   The PV, AP invoice and journal line editors keep each person's column order and widths in the same store as the list
+   tables: read from this browser (which hydration fills from the account at sign-in), written here and pushed to the
+   account. Only order and widths are used. */
+
+/** This user's saved order and widths for a line table, as this browser holds them. */
+export function readMyLineLayout(tableKey: string): { order: string[]; widths: Record<string, number> } {
+  const l = readLocal(tableKey, getActiveCompanyId());
+  return { order: l.order, widths: l.widths };
+}
+
+/** Keep a line table's order and widths here and on the account; an empty one forgets it (back to the defaults). */
+export function saveMyLineLayout(tableKey: string, order: string[], widths: Record<string, number>): void {
+  const layout: StoredLayout = { ...EMPTY_LAYOUT, order, widths };
+  writeLocal(tableKey, getActiveCompanyId(), layout);
+  saveMyLayout(tableKey, layout);
+}

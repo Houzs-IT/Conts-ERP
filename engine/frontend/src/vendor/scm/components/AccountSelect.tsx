@@ -32,6 +32,7 @@ export function AccountSelect({
   className,
   placeholder = '— Select an account —',
   disabled,
+  ariaLabel,
 }: {
   accounts: Account[];
   value: string;
@@ -39,6 +40,8 @@ export function AccountSelect({
   className?: string;
   placeholder?: string;
   disabled?: boolean;
+  /** For a picker with no visible label of its own (a table cell under a heading). */
+  ariaLabel?: string;
 }) {
   const options = useMemo<ComboOption[]>(() => {
     /* 父户不记账 (the owner, 2026-09-02): a header with children in this list
@@ -73,6 +76,7 @@ export function AccountSelect({
       className={className}
       placeholder={placeholder}
       disabled={disabled}
+      aria-label={ariaLabel}
     />
   );
 }
