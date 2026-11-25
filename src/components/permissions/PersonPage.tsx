@@ -10,7 +10,7 @@ import type { AccessLevel, PersonAccess, PersonAccessArea, PersonAccessChange } 
 import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany, type GridCategory } from './RoleGrid';
 import { SaveBar } from './SaveBar';
-import { closedBySide, closedCompanyLabel, sideLabel } from './shared';
+import { closedCompanyLabel, sideLabel } from './shared';
 
 export interface PersonPageProps {
   personId: string;
@@ -31,7 +31,6 @@ type PersonAccessUpdate = { changes: PersonAccessChange[] } | { resetAll: true }
 function categoriesOf(access: PersonAccess): GridCategory[] {
   const categoriesByGroup = new Map<string, GridCategory>();
   for (const area of access.areas) {
-    if (closedBySide(access.user.kind, access.user.side, area.group)) continue;
     const category = categoriesByGroup.get(area.group) ?? { group: area.group, areas: [] };
     category.areas.push({ key: area.key, label: area.label, ownGrant: area.ownGrant });
     categoriesByGroup.set(area.group, category);
@@ -98,7 +97,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
 
   const categories = useMemo(() => categoriesOf(access), [access]);
-  const companies = useMemo(() => groupByCompany(categories, access.user.side), [categories, access.user.side]);
+  const companies = useMemo(() => groupByCompany(categories), [categories]);
   const areaKeys = useMemo(() => areaKeysOf(categories), [categories]);
   const savedLevels = useMemo(() => levelsOf(access, area => area.level), [access]);
   const roleLevels = useMemo(() => levelsOf(access, area => area.inherited.level), [access]);
@@ -112,7 +111,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
   const ownSettingCount = countDifferences(savedLevels, roleLevels, areaKeys);
   const closedNote = user.side === 'both'
     ? null
-    : `${personName(user.fullName)} works on ${sideLabel(user.side)} only. ${closedCompanyLabel(user.side)} areas are closed, so they are not shown.`;
+    : `${personName(user.fullName)} works on ${sideLabel(user.side)} only. Their role gives no ${closedCompanyLabel(user.side)} areas: tick one here to give it to them.`;
 
   async function send(update: PersonAccessUpdate, successTitle: string) {
     setIsSaving(true);

@@ -55,7 +55,7 @@ function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChang
 
   const categories = useMemo(() => visibleCategoriesOf(chart.categories, department), [chart.categories, department]);
   const areaKeys = useMemo(() => areaKeysOf(categories), [categories]);
-  const companies = useMemo(() => groupByCompany(categories, department.side), [categories, department.side]);
+  const companies = useMemo(() => groupByCompany(categories), [categories]);
 
   const departmentRules = chart.rules.department[department.id] ?? {};
   const positionRules = position ? chart.rules.position[position.id] ?? {} : undefined;

@@ -8,7 +8,7 @@ import { register } from 'node:module';
 register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) {
   try { return await next(s, c); } catch (e) { if (s.startsWith('.') && !/\\.[a-z]+$/.test(s)) return next(s + '.ts', c); throw e; }
 }`));
-const { AREAS, resolveFor, routeAreas, highestLevelOf, closedBySide } = await import('../../functions/_lib/access.ts');
+const { AREAS, resolveFor, sidedResolution, routeAreas, highestLevelOf, closedBySide } = await import('../../functions/_lib/access.ts');
 
 const area = key => AREAS.find(a => a.key === key);
 const rules = ({ user = {}, position = {}, department = {} } = {}) => ({
@@ -182,11 +182,11 @@ test('a shared endpoint takes the highest level the person has on any of its pag
   assert.equal(tie.level, 'none');
 });
 
-test('each company closes the other one\'s categories: The Conts closes Projects, Dream Crafter closes HR', () => {
-  assert.equal(closedBySide('staff', 'conts', 'Projects'), true);
-  assert.equal(closedBySide('staff', 'dream_crafter', 'Projects'), false);
+test('each company closes the other one\'s categories: The Conts closes Supply chain, Dream Crafter closes HR', () => {
+  assert.equal(closedBySide('staff', 'conts', 'Supply chain'), true);
+  assert.equal(closedBySide('staff', 'conts', 'Projects'), false);
   assert.equal(closedBySide('staff', 'dream_crafter', 'HR'), true);
-  assert.equal(closedBySide('management', 'conts', 'Projects'), false);
+  assert.equal(closedBySide('management', 'conts', 'Supply chain'), false);
   assert.equal(AREAS.some(a => a.key === 'dcHr'), false);
   for (const key of ['lockIncome', 'lockDeductions', 'lockO2', 'unlockStep']) assert.equal(area(key).group, 'Units', key);
 });
@@ -204,6 +204,15 @@ test('every permission category is a section of the menu, so the chart reads lik
 const role = ({ position = {}, department = {} } = {}) => ({
   position: { rules: new Map(Object.entries(position)) },
   department: { rules: new Map(Object.entries(department)) },
+});
+
+test('the other company\'s areas: a role never opens them, the person\'s own setting does', () => {
+  const roleOpensSupply = rules({ department: { 'group:Supply chain': 'full', scSales: 'edit' } });
+  assert.deepEqual(sidedResolution(roleOpensSupply, staff, 'conts', area('scSales')), { level: 'none', origin: 'none' });
+  roleOpensSupply.user.rules.set('scSales', 'view');
+  assert.deepEqual(sidedResolution(roleOpensSupply, staff, 'conts', area('scSales')), { level: 'view', origin: 'user' });
+  assert.deepEqual(sidedResolution(rules({ user: { scSales: 'edit' } }), { kind: 'cleaning' }, 'conts', area('scSales')), { level: 'none', origin: 'none' });
+  assert.deepEqual(sidedResolution(rules(), { kind: 'management' }, 'conts', area('scSales')), { level: 'full', origin: 'fixed' });
 });
 
 test('extra roles: each area takes the highest level any role gives', () => {

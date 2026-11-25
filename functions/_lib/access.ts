@@ -210,6 +210,14 @@ export function resolveFor(rules: Rules, who: Pick<Who, 'kind'>, area: Area): Re
     .reduce((best, r) => (RANK[r.level] > RANK[best.level] ? r : best));
 }
 
+/** resolveFor with the side closing applied. The other company's groups stay closed to whatever a role gives; only the
+ *  person's own setting opens one (owner, 25 Nov 2026: a one-company person can still be given the other's areas). */
+export function sidedResolution(rules: Rules, who: Pick<Who, 'kind'>, side: Side, area: Area): Resolution {
+  if (who.kind !== 'staff' || !offSide(who.kind, side, area)) return resolveFor(rules, who, area);
+  const own = levelIn(rules.user.rules, area.key);
+  return own ? { level: own, origin: 'user' } : { level: 'none', origin: 'none' };
+}
+
 function resolveRole(rules: Rules, area: Area): Resolution {
   const group = groupKey(area.group);
   const steps: [Origin, RuleMap, string][] = [
@@ -386,12 +394,15 @@ export async function accessFor(env: Env, who: Actor, path: string, method = 'GE
   const staff = isStaff(who);
   const areas = routeAreas(method, path);
   if (!areas) return { area: null, level: 'full', chosen: false, role, staff };
-  // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
-  const openAreas = areas.filter(area => !offSide(kind, who.side ?? 'both', area));
-  if (openAreas.length === 0) return { area: areas[0], level: 'none', chosen: true, role, staff };
-  if (!staff) return { area: openAreas[0], level: kind === 'management' ? 'full' : 'none', chosen: false, role, staff };
+  const side = who.side ?? 'both';
+  if (!staff) {
+    // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
+    const openAreas = areas.filter(area => !offSide(kind, side, area));
+    if (openAreas.length === 0) return { area: areas[0], level: 'none', chosen: true, role, staff };
+    return { area: openAreas[0], level: kind === 'management' ? 'full' : 'none', chosen: false, role, staff };
+  }
   const rules = await rulesCached(env, whoOf(who));
-  const best = highestLevelOf(openAreas.map(area => ({ area, level: resolveFor(rules, whoOf(who), area).level })));
+  const best = highestLevelOf(areas.map(area => ({ area, level: sidedResolution(rules, whoOf(who), side, area).level })));
   return { area: best.area, level: best.level, chosen: true, role, staff };
 }
 
@@ -417,11 +428,10 @@ export function refusalFor(a: Access, method: string): string | null {
 
 /** Every area's level for one person: what their menu and screens follow. */
 export async function levelsFor(env: Env, who: Actor): Promise<Record<string, Level>> {
-  const kind = kindOf(who);
   const side = who.side ?? 'both';
   const w = whoOf(who);
   const rules = isStaff(who) ? await rulesCached(env, w) : noRules;
-  return Object.fromEntries(AREAS.map(a => [a.key, offSide(kind, side, a) || hasNoDeskAreas(who.role) ? 'none' : resolveFor(rules, w, a).level]));
+  return Object.fromEntries(AREAS.map(a => [a.key, hasNoDeskAreas(who.role) ? 'none' : sidedResolution(rules, w, side, a).level]));
 }
 
 /** One area's level for the person, for a handler whose action belongs to a different area than the request's path
@@ -460,11 +470,10 @@ export async function peopleWithAccess(env: Env, areaKey: string, min: Level): P
   for (const p of people) {
     const kind = kindOf({ role: p.role, kind: isKind(p.kind) ? p.kind : null });
     if ((kind !== 'management' && kind !== 'staff') || hasNoDeskAreas(p.role)) continue;
-    if (offSide(kind, isSide(p.side) ? p.side : 'both', area)) continue;
     const extra = extraRoles.filter(r => r.user_id === p.id && r.position_id !== p.position_id)
       .map(r => ({ department: { rules: mapFor('department', r.department_id) }, position: { rules: mapFor('position', r.position_id) } }));
     const rules: Rules = { department: { rules: mapFor('department', p.department_id) }, position: { rules: mapFor('position', p.position_id) }, user: { rules: mapFor('user', p.id) }, extra };
-    if (RANK[resolveFor(rules, { kind }, area).level] >= RANK[min]) out.push({ id: p.id, kind });
+    if (RANK[sidedResolution(rules, { kind }, isSide(p.side) ? p.side : 'both', area).level] >= RANK[min]) out.push({ id: p.id, kind });
   }
   return out;
 }
