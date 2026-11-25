@@ -52,7 +52,6 @@ test('a one-company department\'s rules never reach the other company; a Both de
   forgetRules();
   const dc = await accessFor(envWith([...roleRows, departmentOn('dream_crafter')]), staff({ side: 'dream_crafter' }), '/api/reservations');
   assert.deepEqual([dc.level, dc.chosen], ['none', true]);
-  // Owner, 25 Nov 2026: the person works on The Conts only, but their Both department's Supply chain ticks still apply.
   forgetRules();
   const contsInBoth = await accessFor(envWith([...roleRows, departmentOn('both')]), staff({ side: 'conts' }), SO);
   assert.equal(contsInBoth.level, 'full');

@@ -181,7 +181,6 @@ export type RuleMap = ReadonlyMap<string, Setting>;
 export interface DepartmentRules { rules: RuleMap }
 export interface PositionRules { rules: RuleMap }
 export interface UserOverrides { rules: RuleMap }
-/** `side`: the role's department's company; unset reaches every group. */
 export interface RoleRules { department: DepartmentRules; position: PositionRules; side?: Side }
 /** `department` / `position`: the person's main role. `extra`: their other roles (migration 0349). */
 export interface Rules extends RoleRules { user: UserOverrides; extra?: readonly RoleRules[] }
@@ -198,8 +197,8 @@ const levelIn = (rules: RuleMap, key: string): PermissionLevel | null => {
  * One person's level in one area. Management is Full and cannot be changed; cleaning and maintenance have no desk
  * areas. Everyone else: the area's own setting at user, then position, then department; then the category baseline at
  * position, then department; then No access. An area setting at any tier beats every baseline, so a door a department
- * closes explicitly stays closed. 'inherit' counts as not set. The side closing the other side's categories is not
- * part of this.
+ * closes explicitly stays closed. 'inherit' counts as not set. A role whose department is on one company gives nothing
+ * in the other company's categories; the person's own setting still does.
  * A person with extra roles gets the highest level any one role gives. Their own setting comes first in every role, so
  * it still decides when set; one role's No access does not close what another role opens.
  */
@@ -215,12 +214,12 @@ function resolveRole(rules: Rules, area: Area): Resolution {
   const group = groupKey(area.group);
   const areaSteps: [Origin, RuleMap, string][] = [['position', rules.position.rules, area.key], ['department', rules.department.rules, area.key]];
   const groupSteps: [Origin, RuleMap, string][] = [['position', rules.position.rules, group], ['department', rules.department.rules, group]];
-  // A one-company department's rules never reach the other company's groups: the Roles page hides them, but older
-  // rules are still stored. The person's own setting reaches every group (owner, 25 Nov 2026).
+  // The Roles page hides the other company's groups, but older rules for them are still stored.
   const isClosedToRole = !!rules.side && closedBySide('staff', rules.side, area.group);
   // A power given one by one takes no category baseline.
   const roleSteps = isClosedToRole ? [] : area.ownGrant ? areaSteps : [...areaSteps, ...groupSteps];
-  for (const [origin, map, key] of [['user', rules.user.rules, area.key] as [Origin, RuleMap, string], ...roleSteps]) {
+  const userStep: [Origin, RuleMap, string] = ['user', rules.user.rules, area.key];
+  for (const [origin, map, key] of [userStep, ...roleSteps]) {
     const level = levelIn(map, key);
     if (level) return { level, origin };
   }
