@@ -107,6 +107,12 @@ describe('the billing view of a contract paid before go-live', () => {
     expect(p.receivedSen).toBe(5_500_000);
   });
 
+  test('money paid ahead of invoicing reads as received, up to the contract (MS LEE, chew 25 Nov 2026)', () => {
+    const v = assembleView('SO', 'RENO_CONFIRMED', 4_424_500, 4_760_492, split, [], 0, [], 4_424_500, 0, 264_792, 4_495_700);
+    expect(v.paidBeforeGoLiveSen).toBe(4_495_700);
+    expect(v.receivedSen).toBe(4_495_700);
+    expect(assembleView('SO', 'RENO_CONFIRMED', 4_424_500, 4_760_492, split, [], 0, [], 4_424_500, 0, 0, 9_999_999).paidBeforeGoLiveSen).toBe(4_760_492);
+  });
   test('a contract AutoCount never carried is unchanged', () => {
     const v = assembleView('SO', 'RENO_CONFIRMED', 1_000_000, 1_000_000, split, [], 0, [], 0, 250_000, 0, 999_999);
     expect(v.receivedSen).toBe(250_000);

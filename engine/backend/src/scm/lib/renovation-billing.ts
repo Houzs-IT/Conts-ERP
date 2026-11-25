@@ -270,7 +270,9 @@ export function assembleView(
   const nextSeq = [...instalments].sort((a, b) => a.seq - b.seq).find((i) => !billByInst.has(i.id) && !covered.has(i.seq))?.seq ?? null;
   /* A covered instalment's share of what AutoCount invoiced: its cumulative target (the one instalmentPreview tested
      against it) less the previous instalment's; what was paid before go-live fills those shares oldest first. */
-  const paidBefore = Math.min(Math.max(0, Math.trunc(Number(paidBeforeGoLiveSen) || 0)), Math.max(0, billedBeforeGoLiveSen));
+  /* Never past the contract: what AutoCount invoiced, or the contract sum when money was paid ahead of its invoicing
+     (acc/reno-paid-before-golive; chew, 25 Nov 2026). A contract AutoCount never invoiced has none. */
+  const paidBefore = Math.min(Math.max(0, Math.trunc(Number(paidBeforeGoLiveSen) || 0)), billedBeforeGoLiveSen > 0 ? Math.max(billedBeforeGoLiveSen, revised) : 0);
   const shareOf = new Map<number, number>();
   const paidOfSeq = new Map<number, number>();
   if (covered.size > 0) {
