@@ -250,7 +250,7 @@
       "@typescript-eslint/no-explicit-any": 1
     },
     "src/routes/mail-center.ts": {
-      "@typescript-eslint/no-unnecessary-condition": 27
+      "@typescript-eslint/no-unnecessary-condition": 24
     },
     "src/routes/notifications.ts": {
       "@typescript-eslint/no-unnecessary-condition": 6
@@ -344,7 +344,7 @@
     },
     "src/routes/users.ts": {
       "@typescript-eslint/no-explicit-any": 4,
-      "@typescript-eslint/no-unnecessary-condition": 30
+      "@typescript-eslint/no-unnecessary-condition": 25
     },
     "src/scm/env.ts": {
       "@typescript-eslint/no-explicit-any": 3
@@ -1970,7 +1970,7 @@
     },
     "src/services/email.ts": {
       "@typescript-eslint/no-explicit-any": 4,
-      "@typescript-eslint/no-unnecessary-condition": 6
+      "@typescript-eslint/no-unnecessary-condition": 5
     },
     "src/services/errorTracking.ts": {
       "@typescript-eslint/no-unnecessary-condition": 4

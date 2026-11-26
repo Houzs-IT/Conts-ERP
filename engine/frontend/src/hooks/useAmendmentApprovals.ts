@@ -38,8 +38,11 @@ interface PendingCountResponse {
   count: number;
 }
 
+/** Mail Center: open threads waiting for the caller's reply (engine routes/mail-reply-guard.ts GET /waiting-count). */
+export const MAIL_WAITING_KEY = ["mail-waiting-count"] as const;
+
 /** The badge sources a nav entry can name. Mirrored by NavTab["badge"]. */
-export type ApprovalBadgeSource = "amendment-approvals" | "po-amendment-approvals" | "reno-cost-alerts" | "finance-todo";
+export type ApprovalBadgeSource = "amendment-approvals" | "po-amendment-approvals" | "reno-cost-alerts" | "finance-todo" | "mail-waiting";
 
 /**
  * One poll per source. Returns 0 while loading and 0 on any failure — a
@@ -103,7 +106,14 @@ export function useApprovalBadgeCounts(): Record<ApprovalBadgeSource, number> {
       enabled && can("scm.ledger.use"),
       300_000,
     ),
+    "mail-waiting": usePendingCount(MAIL_WAITING_KEY, "/api/mail-center/waiting-count", enabled && can("mail_center.read")),
   };
+}
+
+/** Mail Center: open threads waiting for the caller's reply (Mail Center's My mailbox, the phone Profile). */
+export function useMailWaiting(): number {
+  const { user, can } = useAuth();
+  return usePendingCount(MAIL_WAITING_KEY, "/api/mail-center/waiting-count", !!user?.id && can("mail_center.read"));
 }
 
 /**

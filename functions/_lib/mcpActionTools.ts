@@ -123,7 +123,9 @@ async function sendEmail(c: ToolCtx, actionId: string, mail: EmailPayload): Prom
     const res = await fetch(`${api}/api/mail-center/compose`, {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(mail), signal: AbortSignal.timeout(25_000),
     });
-    const b = await res.json().catch(() => null) as { ok?: boolean; threadId?: string; error?: unknown } | null;
+    const b = await res.json().catch(() => null) as { ok?: boolean; queued?: boolean; threadId?: string; error?: unknown } | null;
+    // The first send failed but Mail Center queued it; its 5-minute retry sends it (engine services/email.ts).
+    if (res.ok && b?.ok && b.queued) return { ok: true, message: `Queued from ${mail.fromAddress} to ${mail.to.join(', ')}: "${mail.subject}". The first try did not go through; Mail Center retries it every 5 minutes and the thread shows whether it was delivered.` };
     if (res.ok && b?.ok) return { ok: true, message: `Sent from ${mail.fromAddress} to ${mail.to.join(', ')}${mail.cc.length ? ` (cc ${mail.cc.join(', ')})` : ''}: "${mail.subject}". It is in the mailbox's Sent history in Mail Center.` };
     return { ok: false, message: `Not sent. Mail Center answered: ${typeof b?.error === 'string' ? b.error : `the request failed (${res.status})`}` };
   } catch {

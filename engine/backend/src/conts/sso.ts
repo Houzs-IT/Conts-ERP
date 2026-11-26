@@ -7,8 +7,12 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { createSession, mintSessionPass } from "../services/auth";
-import { type ContsAccess, LEDGER_AREA, parseContsAccess, isFullEverywhere, hasAnyAccess, contsPermissions, contsRoleName, saveContsRoleAccess } from "./access";
+import { type ContsAccess, LEDGER_AREA, MAIL_AREA, parseContsAccess, isFullEverywhere, hasAnyAccess, contsPermissions, contsRoleName, saveContsRoleAccess } from "./access";
 import { ledgerPermissions } from "./ledger-access";
+import { provisionPersonalMailbox } from "../lib/mail-provision";
+
+/** Mail Center opens for View / Edit / Full on Mail, and for Full everywhere (the "*" role). */
+export const mayUseMailCenter = (access: ContsAccess) => (access[MAIL_AREA] ?? "none") !== "none" || isFullEverywhere(access);
 
 type ContsEnv = Env & { CONTS_SSO_SECRET?: string };
 interface Assertion { email: string; name: string; role: string; exp: number; access?: unknown }
@@ -120,6 +124,15 @@ app.post("/", async (c) => {
 
   /* Bookkeeping: the person should not wait for it. */
   c.executionCtx.waitUntil(c.env.DB.prepare(`UPDATE users SET last_login_at = datetime('now') WHERE id = ?`).bind(user.id).run().catch(() => undefined));
+  /* Personal mailbox: Houzs gives one at invite / accept-invite; here staff arrive by this sign-on, so it is given
+     at the first sign-on with Mail Center, and to anyone with Mail Center who still has none. Best effort, never
+     blocks the sign-on. A new address waits on Team, Mailboxes until it is added in Cloudflare Email Routing. */
+  if (mayUseMailCenter(access)) {
+    const userId = user.id;
+    c.executionCtx.waitUntil(
+      provisionPersonalMailbox(c.env, userId).catch((e) => console.error("[conts-sso] mailbox provisioning failed:", e)),
+    );
+  }
   const token = await createSession(c.env, user.id);
   const sessionPass = await mintSessionPass(c.env, token, Date.now());
   return c.json({ token, ...(sessionPass ? { session_pass: sessionPass } : {}) });

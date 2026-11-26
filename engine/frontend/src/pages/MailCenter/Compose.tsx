@@ -16,11 +16,15 @@ import { api } from "../../api/client";
 import { useQuery } from "../../hooks/useQuery";
 import { useAuth } from "../../auth/AuthContext";
 import { useToast } from "../../hooks/useToast";
-import { useBranding } from "../../hooks/useBranding";
 import { saveDraft, deleteDraftBestEffort, type MailDraft } from "./mail-local";
 import { pickDefaultFromAddress } from "./mail-from-default";
+import { sentToast } from "./mail-delivery";
+import { NEEDS_ACK_HINT } from "./mail-acks";
 // To / Cc / Bcc parsing + validation, shared with the phone's composer.
-import { parseRecipients, firstInvalid } from "./mail-recipients";
+import { parseRecipients, firstInvalid, addRecipients } from "./mail-recipients";
+import { RecipientPicker } from "./RecipientPicker";
+import { RecipientSuggestInput } from "./RecipientSuggestInput";
+import { PickedAttachmentChip } from "./PickedAttachmentChip";
 import {
   MAIL_ATTACH_MAX_COUNT,
   MAIL_ATTACH_MAX_TOTAL_BYTES,
@@ -34,7 +38,7 @@ import {
   humanSize,
   type OutboundAttachment as ComposeAttachment,
 } from "./mail-attach-files";
-import { Mail, Send, Loader2, X, Save, Paperclip } from "lucide-react";
+import { Mail, Send, Loader2, X, Save, Paperclip, Users } from "lucide-react";
 
 type MailAddress = {
   id: string;
@@ -51,6 +55,7 @@ type ComposeResponse = {
   ok?: boolean;
   threadId?: string;
   messageId?: string;
+  queued?: boolean;
   error?: string;
 };
 
@@ -73,14 +78,13 @@ export function ComposeDialog({
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
-  const branding = useBranding();
   const { data: addresses } = useQuery<MailAddress[]>("/api/mail-center/addresses",
     () => api.get("/api/mail-center/addresses"),
     [],
   );
 
   // The signed-in member's OWN outward alias (users.email_alias), e.g.
-  // lim@houzscentury.com. With the free-alias model this is the member's personal
+  // lim@theconts.com. With the free-alias model this is the member's personal
   // sending identity. It may not appear in the scoped /addresses list (that lists
   // shared/dept mailboxes), so we splice it into the From options ourselves.
   const ownAlias = (user?.email_alias ?? "").trim().toLowerCase();
@@ -123,6 +127,8 @@ export function ComposeDialog({
   const [cc, setCc] = useState("");
   const [bcc, setBcc] = useState("");
   const [showCopies, setShowCopies] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [needsAck, setNeedsAck] = useState(false);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [touchedTo, setTouchedTo] = useState(false);
@@ -146,6 +152,7 @@ export function ComposeDialog({
       setSending(false);
       setFiles([]);
       setAttachError(null);
+      setNeedsAck(false);
     }
     wasOpen.current = open;
   }, [open, initialDraft]);
@@ -243,6 +250,7 @@ export function ComposeDialog({
           subject: subject.trim(),
           text: body,
           ...(files.length > 0 ? { attachments: attachmentPayload(files) } : {}),
+          ...(needsAck ? { needsAck: true } : {}),
         },
       );
       if (!payload?.ok) {
@@ -251,7 +259,7 @@ export function ComposeDialog({
         toast.error("Failed to send email. Please try again.");
         return;
       }
-      toast.success("Email sent.");
+      toast.success(sentToast(payload.queued, "Email sent."));
       if (draftId) deleteDraftBestEffort(draftId);
       onClose();
       if (payload.threadId) {
@@ -281,7 +289,7 @@ export function ComposeDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Compose new email"
-        className="relative mx-4 flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl border border-border bg-surface shadow-slab"
+        className="relative mx-4 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-surface shadow-slab"
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -304,7 +312,7 @@ export function ComposeDialog({
         {/* Body */}
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {noMailbox ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
               You have no mailbox assigned, so there is no address to send from.
               Ask an admin to assign one in User Management.
             </div>
@@ -341,25 +349,35 @@ export function ComposeDialog({
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium text-ink-muted">To</label>
-                  {!showCopies && (
+                  <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setShowCopies(true)}
-                      className="text-[11px] font-medium text-primary hover:underline"
+                      onClick={() => setPickerOpen(true)}
+                      disabled={sending}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
                     >
-                      Cc / Bcc
+                      <Users className="h-3 w-3" />
+                      Org chart
                     </button>
-                  )}
+                    {!showCopies && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCopies(true)}
+                        className="text-[11px] font-medium text-primary hover:underline"
+                      >
+                        Cc / Bcc
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <input
-                  type="text"
+                <RecipientSuggestInput
                   value={to}
-                  onChange={(e) => setTo(e.target.value)}
+                  onChange={setTo}
                   onBlur={() => setTouchedTo(true)}
                   placeholder="customer@example.com, someone@else.com"
                   disabled={sending}
-                  aria-invalid={toError}
-                  className={
+                  invalid={toError}
+                  inputClassName={
                     "h-10 w-full rounded-md border bg-surface px-3 text-[13px] text-ink outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60 " +
                     (toError
                       ? "border-err focus:border-err"
@@ -385,24 +403,24 @@ export function ComposeDialog({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <label className="text-xs font-medium text-ink-muted">Cc</label>
-                    <input
-                      type="text"
+                    <RecipientSuggestInput
                       value={cc}
-                      onChange={(e) => setCc(e.target.value)}
+                      onChange={setCc}
                       placeholder="visible to everyone"
                       disabled={sending}
-                      className="h-10 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                      invalid={false}
+                      inputClassName="h-10 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-medium text-ink-muted">Bcc</label>
-                    <input
-                      type="text"
+                    <RecipientSuggestInput
                       value={bcc}
-                      onChange={(e) => setBcc(e.target.value)}
+                      onChange={setBcc}
                       placeholder="hidden from the others"
                       disabled={sending}
-                      className="h-10 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                      invalid={false}
+                      inputClassName="h-10 w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
                     />
                   </div>
                   {copyError && (
@@ -435,7 +453,7 @@ export function ComposeDialog({
                 <textarea
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  rows={8}
+                  rows={10}
                   placeholder="Write your message…"
                   disabled={sending}
                   className="w-full resize-y rounded-md border border-border bg-surface px-3 py-2 text-sm leading-relaxed text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -453,25 +471,12 @@ export function ComposeDialog({
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {files.map((f, i) => (
-                      <span
+                      <PickedAttachmentChip
                         key={`${f.name}-${i}`}
-                        className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-surface-dim py-1 pl-2 pr-1 text-xs text-ink"
-                      >
-                        <Paperclip className="h-3 w-3 shrink-0 text-ink-muted" />
-                        <span className="truncate">{f.name}</span>
-                        <span className="shrink-0 text-ink-muted">
-                          {humanSize(f.size)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeFile(i)}
-                          disabled={sending}
-                          aria-label={`Remove ${f.name}`}
-                          className="shrink-0 rounded p-0.5 text-ink-muted transition hover:bg-surface hover:text-ink disabled:opacity-50"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
+                        file={f}
+                        isDisabled={sending}
+                        onRemove={() => removeFile(i)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -483,23 +488,11 @@ export function ComposeDialog({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-dim px-4 py-3">
-          <p className="text-[11px] text-ink-muted">
-            {noMailbox
-              ? ""
-              : `Sent from ${fromAddress || branding.companyName}.`}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (!sending) onClose();
-              }}
-              disabled={sending}
-              className="rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-secondary hover:text-ink disabled:opacity-50"
-            >
-              Cancel
-            </button>
+        {/* Footer (owner 2026-11-09: the buttons wrapped into two-line slabs of
+            uneven height). Left: what goes WITH the email; right: what you do
+            with it. Every control stays on one line and wraps as a group. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-border bg-surface-dim px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
             {!noMailbox && (
               <>
                 <input
@@ -514,26 +507,46 @@ export function ComposeDialog({
                   disabled={sending}
                   onClick={() => fileInputRef.current?.click()}
                   title="Attach images or PDF files (max 10 files, 5 MB total)"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-secondary hover:text-ink disabled:opacity-50"
+                  className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-surface px-3 text-[12px] font-semibold text-ink-secondary hover:text-ink disabled:opacity-50"
                 >
                   <Paperclip className="h-4 w-4" />
                   Attach
                 </button>
-                <button
-                  disabled={!canSaveDraft}
-                  onClick={handleSaveDraft}
-                  title="Save this email as a local draft"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-secondary hover:text-ink disabled:opacity-50"
+                <label
+                  title={NEEDS_ACK_HINT}
+                  className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-[12px] font-medium text-ink-secondary hover:text-ink"
                 >
-                  <Save className="h-4 w-4" />
-                  Save draft
-                </button>
+                  <input type="checkbox" checked={needsAck} disabled={sending} onChange={(e) => setNeedsAck(e.target.checked)} />
+                  Needs acknowledgement
+                </label>
               </>
+            )}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (!sending) onClose();
+              }}
+              disabled={sending}
+              className="inline-flex h-8 items-center whitespace-nowrap rounded-md border border-border bg-surface px-3 text-[12px] font-semibold text-ink-secondary hover:text-ink disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            {!noMailbox && (
+              <button
+                disabled={!canSaveDraft}
+                onClick={handleSaveDraft}
+                title="Save this email as a local draft"
+                className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-surface px-3 text-[12px] font-semibold text-ink-secondary hover:text-ink disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" />
+                Save draft
+              </button>
             )}
             <button
               disabled={!canSend}
               onClick={handleSend}
-              className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-3 py-1.5 text-[12px] font-bold text-white hover:bg-primary-ink disabled:opacity-50"
+              className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-4 text-[12px] font-bold text-white hover:bg-primary-ink disabled:opacity-50"
             >
               {sending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -545,6 +558,19 @@ export function ComposeDialog({
           </div>
         </div>
       </div>
+      <RecipientPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        already={[to, cc, bcc]}
+        onPick={(picked, field) => {
+          if (field === "cc") {
+            setCc((prev) => addRecipients(prev, picked));
+            setShowCopies(true);
+          } else {
+            setTo((prev) => addRecipients(prev, picked));
+          }
+        }}
+      />
     </div>
   );
 }

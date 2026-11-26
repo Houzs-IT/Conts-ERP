@@ -50,6 +50,10 @@ import {
 } from "../../lib/activeCompany";
 import { ComposeDialog } from "./Compose";
 import { MailThread } from "./Thread";
+import { ThreadFileChips, type ThreadFilePreview } from "./ThreadFileChips";
+import { EMAIL_FRAME_SANDBOX, emailSrcDoc } from "./mail-email-frame";
+import { PendingAcks } from "./mail-acks";
+import { FolderItem, MyMailboxNav, ReachTag, VisibilityPanel } from "./mail-sidebar";
 import {
   subscribe as subscribeLocal,
   getSnapshot as getLocalSnapshot,
@@ -76,6 +80,7 @@ import {
   type OutboxCounts,
   type OutboxDetail,
 } from "./mail-actions";
+import { UNASSIGNED_DEPT, mailboxDept, mailboxOrder } from "./mail-groups";
 import {
   type MailLabel,
   LABEL_PALETTE,
@@ -127,8 +132,10 @@ import {
   Rows4,
   PanelRight,
   Square,
+  Paperclip,
 } from "lucide-react";
 import { fmtDate, fmtDateTime, fmtTime as fmtClock } from "../../vendor/shared/format";
+import { mytDayOf, todayMyt } from "../../vendor/scm/lib/dates";
 
 type MailThreadRow = {
   id: string;
@@ -146,6 +153,9 @@ type MailThreadRow = {
   labels: string[];
   trashedAt: string | null;
   hasOutbound: boolean;
+  hasAttachment: boolean;
+  attachmentCount: number;
+  attachments: ThreadFilePreview[];
 };
 
 type MailAddress = {
@@ -154,6 +164,9 @@ type MailAddress = {
   label: string;
   assignedDept: string | null;
   assignedUserName: string | null;
+  departmentId?: number | null;
+  ownerDepartmentId?: number | null;
+  ownerDepartmentName?: string | null;
   active: boolean;
 };
 
@@ -191,6 +204,7 @@ type Folder =
   | "inbox"
   | "starred"
   | "sent"
+  | "sentbyme"
   // Auto-sent system notices (the outbox_emails log) — Delivery Order /
   // Invoice / CN / PO notices the system sends from a noreply sender, so there
   // is no human "Sent" copy to read. Rendered by its own OutboxPanel, not the
@@ -202,11 +216,10 @@ type Folder =
   | "all";
 
 // Department LABELS used by the 5 shared department mailboxes (operation@ /
-// sales@ / marketing@ / finance@ / hr@houzscentury.com). These MUST match the
+// sales@ / marketing@ / finance@ / hr@). These MUST match the
 // mailboxes' `assignedDept` strings exactly so the sidebar groups each shared
 // mailbox under its department header (and rolls up its unread count).
 const DEPT_PRIORITY = ["Operation", "Sales", "Marketing", "Finance", "HR"];
-const UNASSIGNED_DEPT = "Other";
 
 function deptRank(dept: string): number {
   const i = DEPT_PRIORITY.indexOf(dept);
@@ -233,8 +246,7 @@ function fmtTime(iso: string | number | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
+  const sameDay = mytDayOf(d.toISOString()) === todayMyt();
   /* Today shows the clock, older rows show the date — one INBOX convention,
      but both halves come from the one rule rather than the OS locale. */
   return sameDay ? fmtClock(d) : fmtDate(d);
@@ -336,7 +348,7 @@ export function ThreadList({
             </p>
             <button
               onClick={onInjectTest}
-              className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+              className="mt-1 rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-[11px] font-medium text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
             >
               Inject a test email (verify inbox)
             </button>
@@ -507,9 +519,9 @@ function RowLead({
         }}
         aria-label={starred ? "Unstar" : "Star"}
         title={starred ? "Unstar" : "Star"}
-        className="flex items-center px-1 text-ink-muted hover:text-amber-500"
+        className="flex items-center px-1 text-ink-muted hover:text-amber-500 dark:hover:text-amber-400"
       >
-        <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-500")} />
+        <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-500 dark:text-amber-400")} />
       </button>
     </>
   );
@@ -582,42 +594,50 @@ function CompactRow({
       <span className="flex w-3 shrink-0 items-center justify-center">
         {unread && <span className="h-2 w-2 rounded-full bg-primary" aria-hidden="true" />}
       </span>
-      <button
-        onClick={() => onOpen(t.id)}
-        className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-1.5 pr-2 text-left"
-      >
-        <span
-          className={cn(
-            "w-32 shrink-0 truncate text-sm sm:w-40",
-            unread ? "font-semibold text-ink" : "font-medium text-ink/80",
-          )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <button
+          onClick={() => onOpen(t.id)}
+          className="flex min-w-0 items-center gap-2 py-1.5 pl-1.5 pr-2 text-left"
         >
-          {senderLabel(t)}
-        </span>
-        {chips.length > 0 && (
-          <span className="flex shrink-0 items-center gap-0.5">
-            {chips.slice(0, 3).map((l) => (
-              <span
-                key={l}
-                title={l}
-                className="h-2 w-2 rounded-full ring-1 ring-inset ring-black/10"
-                style={{ backgroundColor: colorForLabel(l, colorMap) }}
-                aria-hidden="true"
-              />
-            ))}
+          <span
+            className={cn(
+              "w-32 shrink-0 truncate text-sm sm:w-40",
+              unread ? "font-semibold text-ink" : "font-medium text-ink/80",
+            )}
+          >
+            {senderLabel(t)}
           </span>
-        )}
-        <span className="min-w-0 flex-1 truncate text-sm">
-          <span className={cn(unread ? "text-ink" : "text-ink/70")}>
-            {t.subject || "(no subject)"}
-          </span>
-          {t.messageCount > 1 && <span className="text-ink-muted"> ({t.messageCount})</span>}
-          {t.lastSnippet && (
-            <span className="text-ink-muted">{" — "}{cleanSnippet(t.lastSnippet)}</span>
+          {chips.length > 0 && (
+            <span className="flex shrink-0 items-center gap-0.5">
+              {chips.slice(0, 3).map((l) => (
+                <span
+                  key={l}
+                  title={l}
+                  className="h-2 w-2 rounded-full ring-1 ring-inset ring-black/10"
+                  style={{ backgroundColor: colorForLabel(l, colorMap) }}
+                  aria-hidden="true"
+                />
+              ))}
+            </span>
           )}
-        </span>
-      </button>
-      <span className="shrink-0 px-2 text-xs text-ink-muted group-hover:hidden group-focus-within:hidden">
+          <span className="min-w-0 flex-1 truncate text-sm">
+            <span className={cn(unread ? "text-ink" : "text-ink/70")}>
+              {t.subject || "(no subject)"}
+            </span>
+            {t.messageCount > 1 && <span className="text-ink-muted"> ({t.messageCount})</span>}
+            {t.lastSnippet && (
+              <span className="text-ink-muted">{" — "}{cleanSnippet(t.lastSnippet)}</span>
+            )}
+          </span>
+        </button>
+        {t.attachments.length > 0 && (
+          <div className="pb-1.5 pl-[8.875rem] pr-2 sm:pl-[10.875rem]">
+            <ThreadFileChips files={t.attachments} fileCount={t.attachmentCount} onShowAll={() => onOpen(t.id)} />
+          </div>
+        )}
+      </div>
+      <span className="inline-flex shrink-0 items-center gap-1 px-2 text-xs text-ink-muted group-hover:hidden group-focus-within:hidden">
+        {t.hasAttachment && <Paperclip role="img" aria-label="Has attachment" className="h-3 w-3 text-ink-secondary" />}
         {fmtTime(t.lastMessageAt)}
       </span>
       <div className="hidden group-hover:flex group-focus-within:flex">
@@ -654,69 +674,79 @@ function ComfortableRow({
       )}
     >
       <RowLead t={t} selected={selected} onToggleSelect={onToggleSelect} onRowAction={onRowAction} />
-      <button
-        onClick={() => onOpen(t.id)}
-        className="flex min-w-0 flex-1 items-start gap-2 py-3 pr-2 text-left"
-      >
-        <div className="mt-1.5 flex h-4 w-4 shrink-0 items-center justify-center">
-          {unread ? (
-            <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-          ) : t.lastDirection === "outbound" ? (
-            <ArrowUpRight className="h-3.5 w-3.5 text-ink-muted" />
-          ) : (
-            <ArrowDownLeft className="h-3.5 w-3.5 text-ink-muted" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className={cn("truncate text-sm", unread ? "font-semibold text-ink" : "font-medium text-ink/90")}>
-              {senderLabel(t)}
-            </span>
-            <span className="shrink-0 text-xs text-ink-muted">{fmtTime(t.lastMessageAt)}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className={cn("truncate text-sm", unread ? "text-ink" : "text-ink-muted")}>
-              {t.subject}
-            </span>
-            {t.messageCount > 1 && (
-              <span className="shrink-0 text-xs text-ink-muted">({t.messageCount})</span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <button
+          onClick={() => onOpen(t.id)}
+          className="flex min-w-0 items-start gap-2 py-3 pr-2 text-left"
+        >
+          <div className="mt-1.5 flex h-4 w-4 shrink-0 items-center justify-center">
+            {unread ? (
+              <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+            ) : t.lastDirection === "outbound" ? (
+              <ArrowUpRight className="h-3.5 w-3.5 text-ink-muted" />
+            ) : (
+              <ArrowDownLeft className="h-3.5 w-3.5 text-ink-muted" />
             )}
           </div>
-          {t.lastSnippet && (
-            <p className="truncate text-xs text-ink-muted">{cleanSnippet(t.lastSnippet)}</p>
-          )}
-          {chips.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {chips.map((l) => {
-                const color = colorForLabel(l, colorMap);
-                return (
-                  <span
-                    key={l}
-                    style={chipStyle(color)}
-                    className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ring-black/5"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
-                    {l}
-                  </span>
-                );
-              })}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className={cn("truncate text-sm", unread ? "font-semibold text-ink" : "font-medium text-ink/90")}>
+                {senderLabel(t)}
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-muted">
+                {t.hasAttachment && <Paperclip role="img" aria-label="Has attachment" className="h-3 w-3 text-ink-secondary" />}
+                {fmtTime(t.lastMessageAt)}
+              </span>
             </div>
-          )}
-        </div>
-        <div className="ml-1 flex shrink-0 flex-col items-end gap-1">
-          {t.mailboxAddress && (
-            <span className="max-w-[150px] truncate rounded-full bg-surface-dim px-1.5 py-0.5 text-[10px] text-ink-secondary">
-              {t.mailboxAddress}
-            </span>
-          )}
-          {t.status === "closed" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
-              <Check className="h-3 w-3" />
-              Archived
-            </span>
-          )}
-        </div>
-      </button>
+            <div className="flex items-center gap-1.5">
+              <span className={cn("truncate text-sm", unread ? "text-ink" : "text-ink-muted")}>
+                {t.subject}
+              </span>
+              {t.messageCount > 1 && (
+                <span className="shrink-0 text-xs text-ink-muted">({t.messageCount})</span>
+              )}
+            </div>
+            {t.lastSnippet && (
+              <p className="truncate text-xs text-ink-muted">{cleanSnippet(t.lastSnippet)}</p>
+            )}
+            {chips.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {chips.map((l) => {
+                  const color = colorForLabel(l, colorMap);
+                  return (
+                    <span
+                      key={l}
+                      style={chipStyle(color)}
+                      className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ring-black/5"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+                      {l}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="ml-1 flex shrink-0 flex-col items-end gap-1">
+            {t.mailboxAddress && (
+              <span className="max-w-[150px] truncate rounded-full bg-surface-dim px-1.5 py-0.5 text-[10px] text-ink-secondary">
+                {t.mailboxAddress}
+              </span>
+            )}
+            {t.status === "closed" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200">
+                <Check className="h-3 w-3" />
+                Archived
+              </span>
+            )}
+          </div>
+        </button>
+        {t.attachments.length > 0 && (
+          <div className="-mt-1.5 pb-3 pl-6 pr-2">
+            <ThreadFileChips files={t.attachments} fileCount={t.attachmentCount} onShowAll={() => onOpen(t.id)} />
+          </div>
+        )}
+      </div>
       <RowActions t={t} folder={folder} onRowAction={onRowAction} />
     </li>
   );
@@ -939,7 +969,7 @@ export function MailInbox() {
   const deptGroups = useMemo(() => {
     const byDept = new Map<string, MailAddress[]>();
     for (const a of activeAddresses) {
-      const dept = (a.assignedDept ?? "").trim() || UNASSIGNED_DEPT;
+      const dept = mailboxDept(a, activeAddresses);
       const arr = byDept.get(dept);
       if (arr) arr.push(a);
       else byDept.set(dept, [a]);
@@ -947,13 +977,7 @@ export function MailInbox() {
     return Array.from(byDept.entries())
       .map(([dept, mailboxes]) => ({
         dept,
-        mailboxes: mailboxes
-          .slice()
-          .sort((x, y) =>
-            (x.assignedUserName || x.address || "").localeCompare(
-              y.assignedUserName || y.address || "",
-            ),
-          ),
+        mailboxes: mailboxes.slice().sort(mailboxOrder),
       }))
       .sort((a, b) => sortDepts(a.dept, b.dept));
   }, [activeAddresses]);
@@ -1011,6 +1035,7 @@ export function MailInbox() {
     if (apiStatus !== "all") p.set("status", apiStatus);
     if (folder === "starred") p.set("starred", "1");
     if (folder === "sent") p.set("sent", "1");
+    if (folder === "sentbyme") p.set("sentBy", "me");
     if (filter.kind === "mailbox") p.set("mailbox", filter.value);
     if (filter.kind === "dept") {
       const addrs = addressesByDept.get(filter.value);
@@ -1427,7 +1452,7 @@ export function MailInbox() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
           {error}
         </div>
       )}
@@ -1464,8 +1489,8 @@ export function MailInbox() {
           splitView && "lg:grid-cols-[230px_minmax(360px,400px)_minmax(0,1fr)]",
         )}
       >
-        {/* LEFT RAIL */}
-        <aside className="space-y-3">
+        {/* LEFT RAIL: scrolls by itself and stays in view, so a long mailbox list never pushes the list and reading pane off screen. */}
+        <aside className="space-y-3 md:sticky md:top-16 md:max-h-[calc(100dvh-5.5rem)] md:self-start md:overflow-y-auto md:overscroll-contain md:pr-1">
           <button
             onClick={() => {
               setResumeDraft(null);
@@ -1489,6 +1514,18 @@ export function MailInbox() {
             </p>
           )}
 
+          <MyMailboxNav
+            folder={folder}
+            mailbox={filter.kind === "mailbox" ? filter.value : null}
+            unread={(a) => unreadByMailbox.get(a) ?? 0}
+            drafts={drafts.length}
+            onPick={(pick, address) => {
+              setLabelFilter(null);
+              setFolder(pick);
+              setFilter(pick === "inbox" ? { kind: "mailbox", value: address } : { kind: "all" });
+            }}
+          />
+
           {/* FOLDERS */}
           <nav className="space-y-0.5">
             <FolderItem icon={InboxIcon} label="Inbox" active={folder === "inbox"} badge={folderCounts.inboxUnread}
@@ -1508,6 +1545,7 @@ export function MailInbox() {
             <FolderItem icon={Layers} label="All mail" active={folder === "all"}
               onClick={() => { setFolder("all"); setLabelFilter(null); }} />
           </nav>
+          <PendingAcks onOpen={setSelectedId} />
 
           {/* LABELS */}
           <div className="space-y-0.5">
@@ -1570,7 +1608,7 @@ export function MailInbox() {
               <Building2 className="h-3 w-3" />
               Departments
             </p>
-            {departmentGroups.map((g) => (
+            {departmentGroups.filter((g) => isAdmin || g.entries.length > 0).map((g) => (
               <DeptGroup
                 key={g.dept}
                 dept={g.dept}
@@ -1605,6 +1643,7 @@ export function MailInbox() {
               </>
             )}
           </div>
+          <VisibilityPanel />
         </aside>
 
         {/* MIDDLE+RIGHT — "Auto-sent" renders the read-only outbox panel across
@@ -1713,7 +1752,7 @@ export function MailInbox() {
 
         {/* RIGHT — reading pane (lg+ only, split mode only) */}
         {splitView && (
-          <div className="hidden min-w-0 lg:block">
+          <div className="hidden min-w-0 lg:sticky lg:top-16 lg:block lg:max-h-[calc(100dvh-5.5rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain">
             {selectedId ? (
               <div className="min-w-0 rounded-xl border border-border bg-surface p-4">
                 <MailThread key={selectedId} id={selectedId} embedded />
@@ -1764,11 +1803,11 @@ export default MailInbox;
 function outboxStatusTone(status: string): string {
   switch (status.toUpperCase()) {
     case "SENT":
-      return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200";
+      return "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200";
     case "FAILED":
       return "bg-err-bg text-err ring-1 ring-inset ring-err/20";
     default:
-      return "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200"; // PENDING
+      return "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-200"; // PENDING
   }
 }
 
@@ -1888,7 +1927,7 @@ function OutboxPanel({ q }: { q: string }) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+          <span className="rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 font-semibold text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200">
             {counts.sent} sent
           </span>
           {counts.failed > 0 && (
@@ -1897,7 +1936,7 @@ function OutboxPanel({ q }: { q: string }) {
             </span>
           )}
           {counts.pending > 0 && (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+            <span className="rounded-full bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 font-semibold text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-200">
               {counts.pending} pending
             </span>
           )}
@@ -2024,7 +2063,7 @@ function OutboxPanel({ q }: { q: string }) {
   );
 }
 
-function OutboxReaderModal({
+export function OutboxReaderModal({
   id,
   onClose,
 }: {
@@ -2135,13 +2174,13 @@ function OutboxReaderModal({
             </div>
           ) : data?.bodyHtml ? (
             // Sandboxed iframe — renders the exact email the customer received,
-            // with no script/same-origin access (own templates, but sandbox
-            // keeps it safe regardless).
+            // with no script/same-origin access; its links open in a new tab,
+            // as in the conversation reader (they were dead under sandbox="").
             <iframe
               title="email body"
-              sandbox=""
-              className="h-[60vh] w-full border-0 bg-white"
-              srcDoc={data.bodyHtml}
+              sandbox={EMAIL_FRAME_SANDBOX}
+              className="h-[60vh] w-full border-0 bg-surface"
+              srcDoc={emailSrcDoc(data.bodyHtml)}
             />
           ) : (
             <pre className="whitespace-pre-wrap px-5 py-4 text-sm text-ink">
@@ -2273,7 +2312,7 @@ function ViewSettingsMenu({ prefs }: { prefs: MailViewPrefs }) {
                 prefs.categoryTabs ? "bg-primary" : "bg-ink-muted/30",
               )}
             >
-              <span className={cn("h-3 w-3 rounded-full bg-white transition-transform", prefs.categoryTabs && "translate-x-3")} />
+              <span className={cn("h-3 w-3 rounded-full bg-surface transition-transform", prefs.categoryTabs && "translate-x-3")} />
             </span>
           </button>
           <p className="mt-2 px-1 text-[10px] leading-snug text-ink-muted">
@@ -2309,54 +2348,6 @@ function SegButton({
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
-    </button>
-  );
-}
-
-// ── Folder row ──────────────────────────────────────────────────────────────
-function FolderItem({
-  icon: Icon,
-  label,
-  active,
-  badge,
-  badgeTone = "accent",
-  onClick,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  active: boolean;
-  badge?: number;
-  badgeTone?: "accent" | "muted";
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm transition",
-        active ? "bg-accent-soft font-semibold text-primary-ink" : "text-ink/80 hover:bg-surface-dim",
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-2.5">
-        <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-ink-muted")} />
-        <span className="truncate">{label}</span>
-      </span>
-      {badge !== undefined && badge > 0 && (
-        <span
-          className={cn(
-            "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
-            badgeTone === "accent"
-              ? active
-                ? "bg-primary/20 text-primary-ink"
-                : "bg-accent-soft text-primary-ink"
-              : active
-                ? "bg-primary/20 text-primary-ink"
-                : "bg-surface-dim text-ink-muted",
-          )}
-        >
-          {badge}
-        </span>
-      )}
     </button>
   );
 }
@@ -2731,6 +2722,7 @@ function PersonItem({
       <span className="flex min-w-0 items-center gap-2">
         <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "text-ink-muted")} />
         <span className="truncate">{label}</span>
+        {title && <ReachTag address={title} personal={!shared} />}
       </span>
       {unread > 0 && (
         <span

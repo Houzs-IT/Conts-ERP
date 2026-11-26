@@ -216,8 +216,8 @@ export async function createDeptMailbox(
 // 400 bad domain, 403 not-admin).
 //
 // userId / assignedUserId are NUMBERS in Houzs (users.id is serial); the
-// address `id` is text. The department picker sends the dept NAME string (the
-// backend string-matches assigned_dept), never an id.
+// address `id` is text. A department mailbox is linked to its Org Chart
+// department by `departmentId` (HC-0157); a bare name is resolved server-side.
 
 // One mailbox address row as served by GET /api/mail-center/addresses.
 export type MailAddress = {
@@ -227,18 +227,29 @@ export type MailAddress = {
   assignedUserId?: number | null;
   assignedUserName?: string;
   assignedDept?: string;
+  departmentId?: number | null;
   assignedPosition?: string;
+  /** A personal mailbox's owner's Org Chart department (sidebar heading). */
+  ownerDepartmentId?: number | null;
+  ownerDepartmentName?: string | null;
   active: boolean;
   createdAt?: string;
 };
 
-export type MailScopeLevel = "personal" | "department" | "company";
+/* department = the department mailboxes of every Org Chart department the person
+   is in; department_all adds those departments' colleagues' own mailboxes
+   (a manager, owner 2026-11-21). */
+export type MailScopeLevel = "personal" | "department" | "department_all" | "company";
+
+// No mail_user_scope row = this level (backend DEFAULT_MAIL_SCOPE_LEVEL).
+export const DEFAULT_MAIL_SCOPE_LEVEL: MailScopeLevel = "department";
 
 export type CreateAddressInput = {
   label?: string;
   assignedUserId?: number | null;
   assignedUserName?: string;
   assignedDept?: string;
+  departmentId?: number | null;
   assignedPosition?: string;
 };
 
@@ -271,6 +282,7 @@ export function patchAddress(
     assignedUserId?: number | null;
     assignedUserName?: string | null;
     assignedDept?: string | null;
+    departmentId?: number | null;
     assignedPosition?: string | null;
     active?: boolean;
   },
@@ -382,4 +394,19 @@ export function setScopeLevel(
   level: MailScopeLevel,
 ): Promise<unknown> {
   return api.put("/api/mail-center/scope-level", { userId, level });
+}
+
+// L2 people: the OTHER departments ticked for them (owner 2026-11-21).
+export function fetchScopeDepartments(): Promise<{ userId: number; departmentId: number }[]> {
+  return api.get<{ userId: number; departmentId: number }[]>("/api/mail-center/scope-departments");
+}
+
+export function setScopeDepartments(userId: number, departmentIds: number[]): Promise<unknown> {
+  return api.put("/api/mail-center/scope-departments", { userId, departmentIds });
+}
+
+export type MailboxSync = { address: string; pending: boolean; lastInboundAt: string | null; threads: number };
+
+export function fetchSyncStatus(): Promise<MailboxSync[]> {
+  return api.get<MailboxSync[]>("/api/mail-center/sync-status");
 }

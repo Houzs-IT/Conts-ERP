@@ -25,6 +25,14 @@ import { useDialog } from "../../hooks/useDialog";
 import { useBranding } from "../../hooks/useBranding";
 import { cn } from "../../lib/utils";
 import { pickDefaultFromAddress } from "./mail-from-default";
+import { deliveryLabel, deliveryTone, sentToast, type DeliveryStatus, type DeliveryTone } from "./mail-delivery";
+
+const DELIVERY_TONE_CLASSES: Record<DeliveryTone, string> = {
+  bad: "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300",
+  waiting: "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300",
+  good: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300",
+};
+import { MessageAcks, NEEDS_ACK_HINT, ReadByLine, type AckState, type ThreadReaders } from "./mail-acks";
 import {
   MAIL_ATTACH_MAX_COUNT,
   MAIL_ATTACH_MAX_TOTAL_BYTES,
@@ -53,6 +61,19 @@ import {
   chipStyle,
 } from "./mail-labels";
 import { ComposeDialog } from "./Compose";
+import { firstInvalid, parseRecipients } from "./mail-recipients";
+import {
+  AlreadyRepliedBox,
+  alreadyRepliedFrom,
+  ReplyRecipients,
+  ReplyingNowBanner,
+  replyAllCc,
+  useReplyingHeartbeat,
+  type AlreadyReplied,
+  type ReplyingPerson,
+} from "./mail-reply-parts";
+import { PickedAttachmentChip } from "./PickedAttachmentChip";
+import { EMAIL_FRAME_SANDBOX_MEASURABLE, emailSrcDoc } from "./mail-email-frame";
 import {
   ArrowLeft,
   ArrowDownLeft,
@@ -104,7 +125,12 @@ type MailMessage = {
   sentAt: string;
   receivedAt: string;
   createdAt: string;
+  deliveryStatus?: DeliveryStatus;
   attachments?: MailAttachment[];
+  acks?: AckState[];
+  ackRequestId?: string | null;
+  /** Who in the ERP sent an outbound message. */
+  sentByName?: string;
 };
 
 type MailThread = {
@@ -123,7 +149,10 @@ type MailThread = {
 
 type ThreadDetail = {
   thread: MailThread;
+  readers?: ThreadReaders;
   messages: MailMessage[];
+  /** Colleagues writing a reply right now (not me). */
+  replying?: ReplyingPerson[];
 };
 
 type MailAddress = {
@@ -213,11 +242,14 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
   const messages = data?.messages ?? [];
 
   const [replyText, setReplyText] = useState("");
-  /* Reply-all. Off by default: replying to everyone who was Cc'd is sometimes
-     right and sometimes an embarrassment, so it is a deliberate choice each
-     time rather than a remembered preference. The backend rebuilds the list
-     from the newest inbound message's To + Cc, minus our own mailbox. */
-  const [replyAll, setReplyAll] = useState(false);
+  /* To / Cc / Bcc are editable (owner 2026-11-21). To starts as the customer;
+     "Reply all" is a deliberate click that fills Cc, never a remembered default. */
+  const [toEdit, setToEdit] = useState<string | null>(null);
+  const [cc, setCc] = useState("");
+  const [bcc, setBcc] = useState("");
+  const [showCopies, setShowCopies] = useState(false);
+  const [alreadyReplied, setAlreadyReplied] = useState<AlreadyReplied | null>(null);
+  const [needsAck, setNeedsAck] = useState(false);
   const [sending, setSending] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -244,6 +276,23 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
     threadMailbox ||
     activeAddresses[0]?.address ||
     "";
+
+  const to = toEdit ?? thread?.counterpartyEmail ?? "";
+  const ours = activeAddresses.map((a) => a.address);
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+  const allCc = replyAllCc(lastMessage, to, ours);
+  const replyAllOffer = parseRecipients(allCc).filter(
+    (a) => !parseRecipients(cc).some((c) => c.toLowerCase() === a.toLowerCase()),
+  ).length;
+  const badRecipient = firstInvalid(to) ?? firstInvalid(cc) ?? firstInvalid(bcc);
+  useReplyingHeartbeat(id ?? null, replyText.trim().length > 0);
+  // The thread re-reads every 20 s while open, so a colleague's reply or
+  // "is writing" shows up without a refresh (polling, not sockets).
+  useEffect(() => {
+    if (!url) return;
+    const t = setInterval(reload, 20_000);
+    return () => clearInterval(t);
+  }, [url, reload]);
 
   const starred = thread?.starred ?? false;
   const trashed = thread?.trashedAt != null;
@@ -375,25 +424,46 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
 
   const totalAttachBytes = files.reduce((sum, f) => sum + f.size, 0);
 
-  async function handleSend() {
+  function clearReply() {
+    setReplyText("");
+    setToEdit(null);
+    setCc("");
+    setBcc("");
+    setShowCopies(false);
+    setAlreadyReplied(null);
+  }
+
+  async function handleSend(force: boolean) {
     if (!url || sending) return;
     const text = replyText.trim();
-    if (!text) return;
+    if (!text || badRecipient || parseRecipients(to).length === 0) return;
     setSending(true);
     try {
-      await api.post(`${url}/reply`, {
+      const res = await api.post<{ queued?: boolean }>(`${url}/reply`, {
         text,
-        ...(replyAll ? { replyAll: true } : {}),
+        to: parseRecipients(to),
+        cc: parseRecipients(cc),
+        bcc: parseRecipients(bcc),
+        // The newest message I have seen: a colleague's reply after it stops mine.
+        afterMessageId: lastMessage?.id ?? null,
+        force,
+        ...(needsAck ? { needsAck: true } : {}),
         ...(replyFrom ? { fromAddress: replyFrom } : {}),
         ...(files.length > 0 ? { attachments: attachmentPayload(files) } : {}),
       });
-      setReplyText("");
-      setReplyAll(false);
+      clearReply();
+      setNeedsAck(false);
       setFiles([]);
       setAttachError(null);
-      toast.success("Reply sent.");
+      toast.success(sentToast(res.queued, "Reply sent."));
       reload();
     } catch (e: any) {
+      const hit = alreadyRepliedFrom(e);
+      if (hit) {
+        setAlreadyReplied(hit);
+        reload();
+        return;
+      }
       toast.error(
         e?.message
           ? String(e.message).replace(/^\d+:\s*/, "")
@@ -477,7 +547,7 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
               title={starred ? "Unstar" : "Star"}
               className={cn(starred && "text-accent")}
             >
-              <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-500")} />
+              <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-500 dark:text-amber-400")} />
               {starred ? "Starred" : "Star"}
             </ToolbarButton>
             <ToolbarButton onClick={handleMarkUnread} disabled={mutating} title="Mark as unread">
@@ -509,7 +579,7 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
       </div>
 
       {error && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
           {error}
         </div>
       )}
@@ -545,14 +615,14 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                 </span>
               )}
               {thread.status === "closed" && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200">
                   <Check className="h-3 w-3" />
                   Archived
                 </span>
               )}
               {starred && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
-                  <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-200">
+                  <Star className="h-3 w-3 fill-amber-400 text-amber-500 dark:text-amber-400" />
                   Starred
                 </span>
               )}
@@ -562,6 +632,7 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                   {thread.assignedToName}
                 </span>
               )}
+              <ReadByLine readers={data.readers} />
             </div>
 
             {/* Labels */}
@@ -675,10 +746,25 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="truncate text-sm font-semibold text-ink">{senderName}</span>
+                            {outbound && m.sentByName && (
+                              <span className="shrink-0 rounded bg-surface-dim px-1.5 py-0.5 text-[10px] font-semibold text-ink-secondary">
+                                Replied by {m.sentByName}
+                              </span>
+                            )}
                             {outbound ? (
                               <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-accent" />
                             ) : (
                               <ArrowDownLeft className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
+                            )}
+                            {deliveryLabel(m.deliveryStatus) && (
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                                  DELIVERY_TONE_CLASSES[deliveryTone(m.deliveryStatus)],
+                                )}
+                              >
+                                {deliveryLabel(m.deliveryStatus)}
+                              </span>
                             )}
                           </div>
                           <p className="truncate text-xs text-ink-muted">&lt;{m.fromAddress}&gt;</p>
@@ -695,9 +781,9 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                       {rawHtml ? (
                         <iframe
                           title="Email"
-                          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                          srcDoc={emailSrcDoc(rawHtml)}
-                          className="mt-2 w-full border-t border-border/60 bg-white"
+                          sandbox={EMAIL_FRAME_SANDBOX_MEASURABLE}
+                          srcDoc={emailSrcDoc(rawHtml, THREAD_EMAIL_HEAD)}
+                          className="mt-2 w-full border-t border-border/60 bg-surface"
                           style={{ minHeight: 80 }}
                           onLoad={(e) => {
                             try {
@@ -732,6 +818,7 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                           </div>
                         </div>
                       )}
+                      <MessageAcks acks={m.acks} ackRequestId={m.ackRequestId} onAcked={reload} />
                     </div>
                   </div>
                 </div>
@@ -752,10 +839,28 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                   <Send className="h-3.5 w-3.5 text-accent" />
                   <p className="text-sm font-semibold text-ink">Reply</p>
                 </div>
-                <span className="text-xs text-ink-muted">
-                  To {thread.counterpartyName || thread.counterpartyEmail || "(unknown sender)"}
-                </span>
+                {thread.assignedToName && (
+                  <span className="text-xs text-ink-muted">Handled by {thread.assignedToName}</span>
+                )}
               </div>
+              <ReplyingNowBanner people={data.replying ?? []} />
+              <ReplyRecipients
+                to={to}
+                cc={cc}
+                bcc={bcc}
+                showCopies={showCopies}
+                disabled={sending}
+                replyAllOffer={replyAllOffer}
+                invalid={badRecipient}
+                onTo={setToEdit}
+                onCc={setCc}
+                onBcc={setBcc}
+                onShowCopies={() => setShowCopies(true)}
+                onReplyAll={() => {
+                  setShowCopies(true);
+                  setCc((prev) => [prev, allCc].filter((v) => v.trim()).join(", "));
+                }}
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <label className="text-xs font-medium text-ink-muted">From</label>
                 {activeAddresses.length > 1 ? (
@@ -799,28 +904,26 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {files.map((f, i) => (
-                      <span
+                      <PickedAttachmentChip
                         key={`${f.name}-${i}`}
-                        className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-surface-dim py-1 pl-2 pr-1 text-xs text-ink"
-                      >
-                        <Paperclip className="h-3 w-3 shrink-0 text-ink-muted" />
-                        <span className="truncate">{f.name}</span>
-                        <span className="shrink-0 text-ink-muted">{humanSize(f.size)}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeFile(i)}
-                          disabled={sending}
-                          aria-label={`Remove ${f.name}`}
-                          className="shrink-0 rounded p-0.5 text-ink-muted transition hover:bg-surface hover:text-ink disabled:opacity-50"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
+                        file={f}
+                        isDisabled={sending}
+                        onRemove={() => removeFile(i)}
+                      />
                     ))}
                   </div>
                 </div>
               )}
               {attachError && <p className="text-[11px] text-err">{attachError}</p>}
+              {alreadyReplied && (
+                <AlreadyRepliedBox
+                  hit={alreadyReplied}
+                  now={Date.now()}
+                  busy={sending}
+                  onSendAnyway={() => void handleSend(true)}
+                  onDiscard={clearReply}
+                />
+              )}
 
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] text-ink-muted">
@@ -844,28 +947,25 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                     <Paperclip className="h-4 w-4" />
                     Attach
                   </button>
-                  {/* Reply-all. Until now a reply went to ONE address and there
-                      was no way to add anyone — an email that Cc'd three people
-                      was answered to one of them, silently. */}
                   <label
-                    title="Also reply to everyone who was on the last message, except this mailbox"
+                    title={NEEDS_ACK_HINT}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-secondary hover:text-ink"
                   >
                     <input
                       type="checkbox"
-                      checked={replyAll}
+                      checked={needsAck}
                       disabled={sending}
-                      onChange={(e) => setReplyAll(e.target.checked)}
+                      onChange={(e) => setNeedsAck(e.target.checked)}
                     />
-                    Reply all
+                    Needs acknowledgement
                   </label>
                   <button
-                    disabled={sending || !replyText.trim()}
-                    onClick={handleSend}
+                    disabled={sending || !replyText.trim() || !!badRecipient || !to.trim() || alreadyReplied != null}
+                    onClick={() => void handleSend(false)}
                     className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-3 py-1.5 text-[12px] font-bold text-white hover:bg-primary-ink disabled:opacity-50"
                   >
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    {replyAll ? "Send to all" : "Send reply"}
+                    Send reply
                   </button>
                 </div>
               </div>
@@ -981,7 +1081,7 @@ function AttachmentChip({ att }: { att: MailAttachment }) {
         target="_blank"
         rel="noopener noreferrer"
         title={`${att.filename}${sizeHint}`}
-        className="group relative block overflow-hidden rounded-md border border-border bg-white"
+        className="group relative block overflow-hidden rounded-md border border-border bg-surface"
       >
         <img
           src={blobUrl}
@@ -1028,14 +1128,7 @@ function looksLikeHtml(s: string | undefined): boolean {
   );
 }
 
-function emailSrcDoc(rawHtml: string): string {
-  const inject = `<base target="_blank"><meta charset="utf-8"><style>html,body{margin:0;padding:10px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;color:#1f1d1b;word-break:break-word;overflow-x:hidden}img{max-width:100%;height:auto}table{max-width:100%}</style>`;
-  if (/<head[^>]*>/i.test(rawHtml))
-    return rawHtml.replace(/<head([^>]*)>/i, `<head$1>${inject}`);
-  if (/<html[^>]*>/i.test(rawHtml))
-    return rawHtml.replace(/<html([^>]*)>/i, `<html$1><head>${inject}</head>`);
-  return `<!doctype html><html><head>${inject}</head><body>${rawHtml}</body></html>`;
-}
+const THREAD_EMAIL_HEAD = `<style>html,body{margin:0;padding:10px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;color:#1f1d1b;word-break:break-word;overflow-x:hidden}img{max-width:100%;height:auto}table{max-width:100%}</style>`;
 
 // Build a quoted forward body from the conversation's messages (newest first),
 // each prefixed with a small header line. Plain text only — never raw HTML.
