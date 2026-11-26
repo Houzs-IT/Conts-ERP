@@ -906,13 +906,13 @@ const CategorySection = ({
      to the .subGroupHead class (fs-9/700 letter-spacing 0.12em). Matches the
      other card eyebrows on this page. */
   return (
-    <div style={{ borderTop: '1px solid #d6d9d2' }}>
+    <div style={{ borderTop: '1px solid rgb(var(--eng-border))' }}>
       <button
         type="button"
         onClick={toggleOpen}
         aria-expanded={open}
         className={styles.subGroupHead}
-        style={{ borderBottom: open ? '1px solid #d6d9d2' : 'none' }}
+        style={{ borderBottom: open ? '1px solid rgb(var(--eng-border))' : 'none' }}
       >
         {open
           ? <ChevronDown size={10} strokeWidth={1.75} style={{ color: '#767b6e' }} />
@@ -1294,7 +1294,7 @@ const SofaSkuMappingsTable = ({
           alignItems: 'center',
           gap: 'var(--space-2)',
           padding: '4px var(--space-3)',
-          borderBottom: '1px solid #d6d9d2',
+          borderBottom: '1px solid rgb(var(--eng-border))',
           background: '#fff',
         }}
       >
@@ -1312,7 +1312,7 @@ const SofaSkuMappingsTable = ({
               fontWeight: 600,
               padding: '1px 10px',
               borderRadius: 'var(--radius-pill)',
-              border: selectedTier === c.value ? '1px solid #11140f' : '1px solid #d6d9d2',
+              border: selectedTier === c.value ? '1px solid #11140f' : '1px solid rgb(var(--eng-border))',
               background: selectedTier === c.value ? '#11140f' : '#fff',
               color: selectedTier === c.value ? '#f4f6f3' : '#11140f',
               cursor: 'pointer',
@@ -2884,7 +2884,7 @@ const ModelSkuPickerDialog = ({
                       fontFamily: 'var(--font-button)', fontSize: 'var(--fs-13)', fontWeight: 600,
                       padding: 'var(--space-2) var(--space-3)',
                       borderRadius: 'var(--radius-pill)',
-                      border: category === c.value ? '1px solid #11140f' : '1px solid #d6d9d2',
+                      border: category === c.value ? '1px solid #11140f' : '1px solid rgb(var(--eng-border))',
                       background: category === c.value ? '#11140f' : '#fff',
                       color: category === c.value ? '#f4f6f3' : '#11140f',
                       cursor: 'pointer',
@@ -2902,7 +2902,7 @@ const ModelSkuPickerDialog = ({
                     onChange={(e) => setSearch(e.target.value)}
                     style={{
                       width: '100%', fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-14)',
-                      background: '#fff', border: '1px solid #d6d9d2',
+                      background: '#fff', border: '1px solid rgb(var(--eng-border))',
                       borderRadius: 'var(--radius-md)',
                       padding: 'var(--space-2) var(--space-3) var(--space-2) var(--space-7)',
                       outline: 'none',
@@ -2910,7 +2910,7 @@ const ModelSkuPickerDialog = ({
                   />
                 </div>
               </div>
-              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-md)' }}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -3014,7 +3014,7 @@ const ModelSkuPickerDialog = ({
               <p className={styles.infoLabel} style={{ marginBottom: 'var(--space-2)' }}>
                 Fill each Model's supplier code + note. Save binds every active SKU under it (same code + price). Prices here are COST, not selling.
               </p>
-              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-md)' }}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -3150,7 +3150,7 @@ const ModelSkuPickerDialog = ({
                               <td colSpan={7} style={{
                                 background: '#f4f6f3',
                                 padding: 'var(--space-2) var(--space-3)',
-                                borderTop: '1px dashed #d6d9d2',
+                                borderTop: '1px dashed rgb(var(--eng-border))',
                               }}>
                                 <SkuPreviewStrip
                                   toMap={toMap}
@@ -3331,7 +3331,7 @@ const MultiSkuPickerDialog = ({
                       fontFamily: 'var(--font-button)', fontSize: 'var(--fs-13)', fontWeight: 600,
                       padding: 'var(--space-2) var(--space-3)',
                       borderRadius: 'var(--radius-pill)',
-                      border: category === c.value ? '1px solid #11140f' : '1px solid #d6d9d2',
+                      border: category === c.value ? '1px solid #11140f' : '1px solid rgb(var(--eng-border))',
                       background: category === c.value ? '#11140f' : '#fff',
                       color: category === c.value ? '#f4f6f3' : '#11140f',
                       cursor: 'pointer',
@@ -3349,7 +3349,7 @@ const MultiSkuPickerDialog = ({
                     onChange={(e) => setSearch(e.target.value)}
                     style={{
                       width: '100%', fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-14)',
-                      background: '#fff', border: '1px solid #d6d9d2',
+                      background: '#fff', border: '1px solid rgb(var(--eng-border))',
                       borderRadius: 'var(--radius-md)',
                       padding: 'var(--space-2) var(--space-3) var(--space-2) var(--space-7)',
                       outline: 'none',
@@ -3357,7 +3357,7 @@ const MultiSkuPickerDialog = ({
                   />
                 </div>
               </div>
-              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-md)' }}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -3434,7 +3434,7 @@ const MultiSkuPickerDialog = ({
               <p className={styles.infoLabel} style={{ marginBottom: 'var(--space-3)' }}>
                 Fill in each product's supplier-side code + price + lead time. Leave Supplier SKU blank to use our internal code.
               </p>
-              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-md)' }}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -3558,7 +3558,7 @@ export function SkuPreviewStrip({
               fontFamily: 'var(--font-mono)',
               fontSize: 'var(--fs-12)',
               background: '#fff',
-              border: '1px solid #d6d9d2',
+              border: '1px solid rgb(var(--eng-border))',
               borderRadius: 'var(--radius-sm)',
               padding: '2px 8px',
             }}
@@ -3591,7 +3591,7 @@ export function SkuPreviewStrip({
                 fontFamily: 'var(--font-mono)',
                 fontSize: 'var(--fs-12)',
                 background: '#f4f6f3',
-                border: '1px dashed #d6d9d2',
+                border: '1px dashed rgb(var(--eng-border))',
                 borderRadius: 'var(--radius-sm)',
                 padding: '2px 8px',
                 color: '#767b6e',
@@ -3611,7 +3611,7 @@ const smallInputStyle: React.CSSProperties = {
   fontFamily: 'var(--font-mono)',
   fontSize: 'var(--fs-13)',
   background: '#f4f6f3',
-  border: '1px solid #d6d9d2',
+  border: '1px solid rgb(var(--eng-border))',
   borderRadius: 'var(--radius-sm)',
   padding: '4px 8px',
   outline: 'none',

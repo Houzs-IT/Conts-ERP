@@ -279,8 +279,8 @@ export function DetailListingShell<R extends DetailListingRow>({
                 fontWeight: 700,
                 fontSize: 'var(--fs-14)',
                 fontVariantNumeric: 'tabular-nums',
-                color: accent === 'good' ? 'var(--c-secondary-a, #2F5D4F)'
-                  : accent === 'bad' ? 'var(--c-festive-b, #B8331F)'
+                color: accent === 'good' ? 'var(--c-secondary-a, var(--c-secondary-a))'
+                  : accent === 'bad' ? 'var(--c-festive-b, var(--c-festive-b))'
                   : 'var(--c-ink)',
               }}>
                 {value}

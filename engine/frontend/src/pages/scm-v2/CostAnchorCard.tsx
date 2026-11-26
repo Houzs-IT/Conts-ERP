@@ -28,7 +28,7 @@ export const CostAnchorCard = ({
     </h3>
   );
   const cardStyle: CSSProperties = {
-    background: '#fff', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-lg)',
+    background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-lg)',
     padding: 'var(--space-3) var(--space-4)',
   };
   const pill = (fg: string, bg: string, text: string) => (
@@ -44,7 +44,7 @@ export const CostAnchorCard = ({
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--fs-12)', fontWeight: 600,
       color: 'var(--c-burnt, #0c3f39)', background: 'var(--teal-soft, #e2efec)',
-      border: '1px solid #16695f', borderRadius: 'var(--radius-sm)', padding: '2px 8px',
+      border: '1px solid var(--c-orange)', borderRadius: 'var(--radius-sm)', padding: '2px 8px',
     }}>
       <MapPin size={12} strokeWidth={2} />{name ?? 'supplier'}
     </span>
@@ -65,7 +65,7 @@ export const CostAnchorCard = ({
       onClick={() => onOpenSupplier(supplierId)}
       style={{
         fontSize: 'var(--fs-12)', fontWeight: 600, color: 'var(--c-burnt, #0c3f39)',
-        background: 'transparent', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-sm)',
+        background: 'transparent', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)',
         padding: '5px 11px', cursor: 'pointer',
       }}
     >
@@ -78,7 +78,7 @@ export const CostAnchorCard = ({
     </div>
   );
   const line = (children: ReactNode) => (
-    <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px dashed #d6d9d2', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', fontSize: 'var(--fs-13)', color: '#5d6357' }}>
+    <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px dashed rgb(var(--eng-border))', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', fontSize: 'var(--fs-13)', color: '#5d6357' }}>
       {children}
     </div>
   );

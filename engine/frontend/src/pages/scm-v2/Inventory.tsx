@@ -1809,7 +1809,7 @@ export const CogsTab = ({
         />
       </div>
 
-      <p className={styles.eyebrow} style={isError ? { color: 'var(--c-festive-b, #B8331F)' } : undefined}>
+      <p className={styles.eyebrow} style={isError ? { color: 'var(--c-festive-b, var(--c-festive-b))' } : undefined}>
         {isLoading ? 'Loading…'
           : isError ? `Not loaded — the COGS entries could not be read, which is not the same as there being none. ${error instanceof Error ? error.message : ''}`
           : `${cogs.length} consumption entries`}

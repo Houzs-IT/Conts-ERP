@@ -303,7 +303,7 @@
   font-family: var(--font-sans);
   font-size: var(--fs-12);
   background: var(--field-fill, #fff);
-  border: 1px solid var(--field-edge, #d6d9d2);
+  border: 1px solid var(--field-edge, rgb(var(--eng-border)));
   border-radius: 8px;
   padding: 6px 10px;
   color: rgb(var(--eng-ink));
@@ -337,7 +337,7 @@
 .fieldSelect:disabled,
 .fieldInput[readonly] {
   background: var(--field-fill-locked, #f4f6f3);
-  border-color: var(--field-edge-locked, #d6d9d2);
+  border-color: var(--field-edge-locked, rgb(var(--eng-border)));
   color: var(--fg-muted, #767b6e);
   cursor: not-allowed;
 }
@@ -382,7 +382,7 @@
   left: 0;
   right: 0;
   background: #fff;
-  border: 1px solid #c2c6bd;
+  border: 1px solid rgb(var(--eng-border-strong));
   border-radius: 10px;
   box-shadow: var(--shadow-2);
   max-height: 260px;
@@ -397,7 +397,7 @@
   font-family: var(--font-sans);
   font-size: var(--fs-12);
   color: #11140f;
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
 }
 .suggestItem:last-child { border-bottom: none; }
 .suggestItem:hover { background: #f4f6f3; }
@@ -435,7 +435,7 @@
   text-align: left;
   padding: 4px var(--space-2);
   background: #e3e6e0;
-  border-bottom: 2px solid #d6d9d2;
+  border-bottom: 2px solid rgb(var(--eng-border));
   white-space: nowrap;
 }
 /* PR — Tight + predictable widths for the right-side numeric cluster + the
@@ -466,7 +466,7 @@
 
 .table tbody td {
   padding: 6px var(--space-2);
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   font-family: var(--font-sans);
   font-size: var(--fs-12);
   color: #11140f;
@@ -502,7 +502,7 @@
   font-family: var(--font-sans);
   font-size: var(--fs-11);
   background: #f4f6f3;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   padding: 1px 8px;
   border-radius: var(--radius-pill);
   color: #11140f;
@@ -551,7 +551,7 @@
 
 .addLineRow {
   padding: var(--space-3) var(--space-4);
-  border-top: 1px solid #d6d9d2;
+  border-top: 1px solid rgb(var(--eng-border));
   display: flex;
   justify-content: flex-end;
 }
@@ -575,7 +575,7 @@
   gap: var(--space-3);
   margin-bottom: var(--space-3);
   padding-bottom: var(--space-3);
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
 }
 
 .totalRow {
@@ -604,7 +604,7 @@
 
 .grandTotalRow {
   grid-column: 1 / -1;
-  border-top: 1px solid #d6d9d2;
+  border-top: 1px solid rgb(var(--eng-border));
   padding-top: var(--space-3);
   margin-top: var(--space-2);
 }
@@ -647,7 +647,7 @@
 
 .modal {
   background: #f4f6f3;
-  border: 1px solid #c2c6bd;
+  border: 1px solid rgb(var(--eng-border-strong));
   border-radius: 14px;
   box-shadow: var(--shadow-3);
   width: min(720px, 95vw);
@@ -662,7 +662,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   background: #fff;
   border-top-left-radius: 14px;
   border-top-right-radius: 14px;
@@ -690,7 +690,7 @@
   justify-content: flex-end;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
-  border-top: 1px solid #d6d9d2;
+  border-top: 1px solid rgb(var(--eng-border));
   background: #fff;
   border-bottom-left-radius: 14px;
   border-bottom-right-radius: 14px;
@@ -701,7 +701,7 @@
   flex-direction: column;
   gap: 4px;
   background: rgba(232, 107, 58, 0.08);
-  border: 1px solid #16695f;
+  border: 1px solid var(--c-orange);
   color: #0c3f39;
   padding: var(--space-3) var(--space-4);
   border-radius: 10px;
@@ -744,7 +744,7 @@
   font-size: var(--fs-13);
   color: #11140f;
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: 10px;
   padding: var(--space-2) var(--space-3);
   display: flex;
@@ -779,7 +779,7 @@
 .subSection {
   padding-top: var(--space-3);
   margin-top: var(--space-3);
-  border-top: 1px solid #d6d9d2;
+  border-top: 1px solid rgb(var(--eng-border));
 }
 .subSection:first-child {
   padding-top: 0;
@@ -790,7 +790,7 @@
 /* PO-from-SO generation mode toggle (Commander 2026-05-28). */
 .modeToggle {
   display: inline-flex;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-pill);
   overflow: hidden;
   background: #fff;
@@ -806,7 +806,7 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.modeBtn + .modeBtn { border-left: 1px solid #d6d9d2; }
+.modeBtn + .modeBtn { border-left: 1px solid rgb(var(--eng-border)); }
 .modeBtn:hover { color: #11140f; }
 .modeBtn[data-active='true'] {
   background: #11140f;
@@ -852,7 +852,7 @@
   }
   /* Each row → a card. */
   .table tbody tr {
-    border: 1px solid #d6d9d2;
+    border: 1px solid rgb(var(--eng-border));
     border-radius: 10px;
     background: #fff;
     padding: var(--space-3);
@@ -896,7 +896,7 @@
     display: block;
     padding-bottom: var(--space-2);
     margin-bottom: var(--space-2);
-    border-bottom: 1px solid #d6d9d2;
+    border-bottom: 1px solid rgb(var(--eng-border));
   }
   /* Numeric cells were right-aligned in the table — read left-aligned in the
      value column now. The Total cell uses .priceCell (text-align:right +

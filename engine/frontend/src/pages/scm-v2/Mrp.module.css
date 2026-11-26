@@ -59,18 +59,18 @@
   font-weight: 600;
   color: #11140f;
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: 6px var(--space-3);
   cursor: pointer;
   min-width: 160px;
 }
-.filterSelect:hover { border-color: #c2c6bd; }
-.filterSelect:focus { outline: none; border-color: #16695f; }
+.filterSelect:hover { border-color: rgb(var(--eng-border-strong)); }
+.filterSelect:focus { outline: none; border-color: var(--c-orange); }
 
 /* ── Report table ──────────────────────────────────────────────────── */
 .tableWrap {
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-lg);
   background: #fff;
   /* The bordered BOX only. It carries the sticky offset when the header is
@@ -108,7 +108,7 @@
   text-transform: uppercase;
   color: #11140f;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 2px solid #d6d9d2;
+  border-bottom: 2px solid rgb(var(--eng-border));
   background: #e3e6e0;
   white-space: nowrap;
 }
@@ -139,7 +139,7 @@
 
 .skuRow {
   cursor: pointer;
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
 }
 .skuRow:hover { background: #f4f6f3; }
 .skuRow > td {
@@ -169,7 +169,7 @@
   padding: 1px 8px;
   border-radius: var(--radius-pill);
   background: #f4f6f3;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   color: #11140f;
   font-size: var(--fs-11);
   font-weight: 700;
@@ -180,7 +180,7 @@
 /* Variant sub-rows (3-level General view: Model → Variant → orders). */
 .variantRow {
   cursor: pointer;
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   background: #f4f6f3;
 }
 .variantRow:hover { background: rgba(0, 0, 0, 0.03); }
@@ -216,7 +216,7 @@
   padding: 1px 8px;
   border-radius: var(--radius-pill);
   background: #f4f6f3;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   color: #767b6e;
   font-size: var(--fs-11);
   font-weight: 700;
@@ -273,13 +273,13 @@
   font-weight: 600;
   color: #11140f;
   background: #f4f6f3;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: 3px var(--space-2);
   cursor: pointer;
   max-width: 160px;
 }
-.supplierSelect:hover { border-color: #16695f; }
+.supplierSelect:hover { border-color: var(--c-orange); }
 
 /* Shortage rows in the report table (now DataTable) — the actionable ones.
    The same light petrol wash + deep-petrol left bar .skuRowShort gave them on
@@ -323,7 +323,7 @@
 }
 .childTable tbody td {
   padding: 5px var(--space-3);
-  border-top: 1px solid #d6d9d2;
+  border-top: 1px solid rgb(var(--eng-border));
   color: #11140f;
 }
 .childShort { background: rgba(22, 105, 95, 0.09); }
@@ -373,7 +373,7 @@
 }
 .dialog {
   background: #fff;
-  border: 1px solid #c2c6bd;
+  border: 1px solid rgb(var(--eng-border-strong));
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-3);
   width: min(440px, 95vw);

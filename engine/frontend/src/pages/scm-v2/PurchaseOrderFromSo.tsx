@@ -518,7 +518,7 @@ Nothing was ticked.` });
       accessor: (r) =>
         r.mainSupplierCode
           ? <span>{r.mainSupplierCode}{r.mainSupplierName ? ` · ${r.mainSupplierName}` : ''}</span>
-          : <span className={styles.muted} style={{ color: 'var(--c-festive-b, #B8331F)' }}>— none —</span>,
+          : <span className={styles.muted} style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>— none —</span>,
       searchValue: (r) => `${r.mainSupplierCode ?? ''} ${r.mainSupplierName ?? ''}`.trim(),
       groupValue: (r) => r.mainSupplierName ?? r.mainSupplierCode ?? '(none)',
     },
@@ -860,7 +860,7 @@ Nothing was exported.`);
           </span>
         )}
         {itemsQ.isFetchNextPageError && (
-          <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next lines could not be loaded.</span>
+          <span style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>The next lines could not be loaded.</span>
         )}
         {hasNextPage && (
           <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage || loadingAll}>

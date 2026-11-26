@@ -73,7 +73,7 @@ export const ProductPriceTimeline = ({ row }: { row: MfgProductRow }) => {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
         <span style={{
           display: 'inline-flex', alignItems: 'baseline', gap: 6, padding: '3px 10px',
-          background: '#fff', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-pill)',
+          background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-pill)',
           fontSize: 'var(--fs-12)', color: '#3a3f36',
         }}>
           <span style={{ color: '#767b6e', textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 'var(--fs-11)', fontWeight: 700 }}>Now</span>

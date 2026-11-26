@@ -49,7 +49,7 @@ export const DeleteBindingButton = ({
   };
   const ghostBtn: React.CSSProperties = {
     fontSize: 'var(--fs-11)', fontWeight: 600, color: 'var(--c-burnt, #0c3f39)',
-    background: 'transparent', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-sm)',
+    background: 'transparent', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)',
     padding: '3px 8px', cursor: 'pointer',
   };
 

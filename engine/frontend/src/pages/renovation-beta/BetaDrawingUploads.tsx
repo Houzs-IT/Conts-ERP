@@ -382,7 +382,7 @@ function SheetsForm({ p, sheets, mode, forSheet, initial, onClose, onSaved }: Fo
                     border: owner ? `2px solid ${BETA.accent}` : `1px solid ${BETA.line}`, background: owner ? WS.tealSoft : BETA.surface, opacity: !owner && unmatched === 0 ? 0.55 : 1 }}>
                     <input type="checkbox" checked={owner != null} disabled={!owner && unmatched === 0} onChange={() => tick(s.name)}
                       style={{ position: "absolute", top: 8, left: 8, zIndex: 1, width: 20, height: 20, accentColor: BETA.accent }} />
-                    <div style={{ aspectRatio: "4 / 3", borderRadius: 6, overflow: "hidden", background: "#FFFFFF" }}><SheetThumb projectId={p.projectId} sheet={s} /></div>
+                    <div style={{ aspectRatio: "4 / 3", borderRadius: 6, overflow: "hidden", background: "rgb(var(--eng-surface))" }}><SheetThumb projectId={p.projectId} sheet={s} /></div>
                     <span style={{ fontWeight: 600, fontSize: 12, overflowWrap: "anywhere" }}>{s.name}</span>
                     <span style={{ fontSize: 11, color: owner ? BETA.accentInk : BETA.muted, overflowWrap: "anywhere" }}>{owner ? `New: ${owner.file.name}` : `V${s.version}`}</span>
                   </label>

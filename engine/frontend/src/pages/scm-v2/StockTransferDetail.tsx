@@ -172,7 +172,7 @@ function EditableTransferLineRow({
           style={{
             textAlign: 'right',
             fontFamily: 'var(--font-mono)',
-            color: isOverdrawn ? 'var(--c-festive-b, #B8331F)' : 'var(--c-ink)',
+            color: isOverdrawn ? 'var(--c-festive-b, var(--c-festive-b))' : 'var(--c-ink)',
           }}
         />
       </td>

@@ -50,7 +50,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #767b6e;
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
 }
 .table thead th.left { text-align: left; }
 .table thead th.center { text-align: center; }
@@ -59,7 +59,7 @@
   padding: 7px 10px;
   text-align: right;
   color: #11140f;
-  border-bottom: 1px solid #e3e6e0;
+  border-bottom: 1px solid rgb(var(--eng-border-subtle));
   font-variant-numeric: tabular-nums;
 }
 .table tbody td.left { text-align: left; }
@@ -92,7 +92,7 @@
   height: 26px;
   padding: 0 6px;
   text-align: right;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm, 6px);
   background: #f4f6f3;
   font-family: var(--font-mark);
@@ -102,7 +102,7 @@
 }
 .repairInput:focus {
   outline: none;
-  border-color: #16695f;
+  border-color: var(--c-orange);
   background: #ffffff;
 }
 
@@ -128,7 +128,7 @@
 .table tfoot td {
   padding: 8px 10px;
   text-align: right;
-  border-top: 2px solid #d6d9d2;
+  border-top: 2px solid rgb(var(--eng-border));
   font-family: var(--font-mark);
   font-weight: 700;
   color: #11140f;

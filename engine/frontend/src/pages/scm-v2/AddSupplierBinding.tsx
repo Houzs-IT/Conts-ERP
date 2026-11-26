@@ -55,11 +55,11 @@ export const AddSupplierBinding = ({ productCode, productName, hasBindings }: { 
 
   const cta: React.CSSProperties = {
     fontSize: 'var(--fs-12)', fontWeight: 600, color: 'var(--c-burnt, #0c3f39)',
-    background: 'transparent', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-sm)',
+    background: 'transparent', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)',
     padding: '5px 11px', cursor: 'pointer',
   };
   const inputBox: React.CSSProperties = {
-    background: '#fff', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-sm)',
+    background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)',
     padding: '4px 8px', fontSize: 'var(--fs-13)', outline: 'none',
   };
   const fieldLabel: React.CSSProperties = {
@@ -77,7 +77,7 @@ export const AddSupplierBinding = ({ productCode, productName, hasBindings }: { 
 
   const list = suppliers.data ?? [];
   return (
-    <div style={{ marginTop: 'var(--space-2)', padding: 'var(--space-3)', background: '#fff', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-sm)' }}>
+    <div style={{ marginTop: 'var(--space-2)', padding: 'var(--space-3)', background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)' }}>
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 200 }}>
           <label style={fieldLabel}>Supplier</label>

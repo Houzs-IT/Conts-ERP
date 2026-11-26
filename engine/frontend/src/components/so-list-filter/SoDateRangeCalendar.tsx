@@ -78,7 +78,7 @@ export function SoDateRangeCalendar({
                     aria-pressed={isEnd}
                     onClick={() => pick(day)}
                     style={{
-                      border: day === today ? "1px solid #16695f" : "1px solid transparent",
+                      border: day === today ? "1px solid var(--c-orange)" : "1px solid transparent",
                       borderRadius: 7,
                       padding: "5px 0",
                       fontSize: 12,

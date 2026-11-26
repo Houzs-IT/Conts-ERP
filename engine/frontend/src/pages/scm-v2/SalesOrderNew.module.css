@@ -26,7 +26,7 @@
 /* ── Section card — white, hairline border, soft stone shadow ───────── */
 .card {
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 1px 0 rgba(17, 24, 16, 0.04), 0 4px 18px -8px rgba(17, 24, 16, 0.12);
@@ -34,7 +34,7 @@
 
 .cardHeader {
   padding: 11px 20px;
-  border-bottom: 1px solid #e3e6e0;
+  border-bottom: 1px solid rgb(var(--eng-border-subtle));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -126,7 +126,7 @@
 .fieldSelect {
   width: 100%;
   height: 36px;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: 8px;
   background: #fff;
   padding: 0 11px;
@@ -140,7 +140,7 @@
 .fieldSelect::placeholder { color: #767b6e; }
 .fieldInput:focus,
 .fieldSelect:focus {
-  border-color: #16695f;
+  border-color: var(--c-orange);
   box-shadow: 0 0 0 3px rgba(22, 105, 95, 0.18);
 }
 .fieldInput:disabled,
@@ -164,7 +164,7 @@ textarea.fieldInput { height: auto; padding: 11px 12px; line-height: 1.5; resize
 }
 
 /* Field-level "edited" tint (scan blue-diff highlight). */
-.edited { border-color: #16695f; background: #e1efed; }
+.edited { border-color: var(--c-orange); background: #e1efed; }
 
 /* ── Customer name suggestion popover ──────────────────────────────── */
 .suggestList {
@@ -175,7 +175,7 @@ textarea.fieldInput { height: auto; padding: 11px 12px; line-height: 1.5; resize
   max-height: 260px;
   overflow-y: auto;
   background: #fff;
-  border: 1px solid #c2c6bd;
+  border: 1px solid rgb(var(--eng-border-strong));
   border-radius: 10px;
   box-shadow: 0 20px 40px -20px rgba(17, 24, 16, 0.24);
 }
@@ -187,7 +187,7 @@ textarea.fieldInput { height: auto; padding: 11px 12px; line-height: 1.5; resize
   font-family: var(--font-sans, system-ui);
   font-size: 13px;
   color: #11140f;
-  border-bottom: 1px solid #e3e6e0;
+  border-bottom: 1px solid rgb(var(--eng-border-subtle));
   cursor: pointer;
 }
 .suggestItem:last-child { border-bottom: none; }

@@ -45,7 +45,7 @@ function Viewer({ photos, at, onMove, onClose }: { photos: readonly PlainPhoto[]
   return (
     <div role="dialog" aria-modal="true" aria-label={ph.label} onClick={onClose}
       style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(10,20,18,0.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 16 }}>
-      <img src={ph.full} alt={ph.label} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "calc(100vh - 110px)", objectFit: "contain", borderRadius: 6, background: "#FFFFFF" }} />
+      <img src={ph.full} alt={ph.label} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "calc(100vh - 110px)", objectFit: "contain", borderRadius: 6, background: "rgb(var(--eng-surface))" }} />
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 10 }} onClick={(e) => e.stopPropagation()}>
         {n > 1 && <button type="button" style={nav} onClick={() => onMove((at - 1 + n) % n)}>Previous</button>}
         <span style={{ color: "#FFFFFF", fontSize: 14 }}>{ph.label}{n > 1 ? ` · ${at + 1} of ${n}` : ""}</span>

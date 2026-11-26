@@ -26,7 +26,7 @@ function tabButton(active: boolean): React.CSSProperties {
   return {
     fontSize: 'var(--fs-12)', fontWeight: 600, cursor: 'pointer',
     borderRadius: 'var(--radius-sm)', padding: '4px 10px',
-    border: `1px solid ${active ? '#16695f' : '#c2c6bd'}`,
+    border: `1px solid ${active ? 'var(--c-orange)' : 'rgb(var(--eng-border-strong))'}`,
     background: active ? '#16695f' : '#fff',
     color: active ? '#fff' : '#3a3f36',
   };
@@ -34,7 +34,7 @@ function tabButton(active: boolean): React.CSSProperties {
 
 function Row({ date, main, meta }: { date: string; main: ReactNode; meta?: ReactNode }) {
   return (
-    <div style={{ padding: '8px 0', borderBottom: '1px solid #e3e6e0' }}>
+    <div style={{ padding: '8px 0', borderBottom: '1px solid rgb(var(--eng-border-subtle))' }}>
       <div style={dateStyle}>{date}</div>
       <div style={{ fontSize: 'var(--fs-13)', color: '#2b2f28', marginTop: 1 }}>{main}</div>
       {meta != null && <div style={{ fontSize: 'var(--fs-12)', color: '#767b6e', marginTop: 1 }}>{meta}</div>}

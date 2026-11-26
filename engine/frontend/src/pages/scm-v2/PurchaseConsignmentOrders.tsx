@@ -76,7 +76,7 @@ const buildColumns = (): GridColumn<PoHeaderRow>[] => [
     // Backend (purchase-consignment-orders list) returns pc_number, not the
     // PO's po_number — the PoHeaderRow type is shared with real POs, so read
     // pc_number with a po_number fallback.
-    accessor: (po) => <span style={{ fontWeight: 700, color: '#16695f', fontVariantNumeric: 'tabular-nums' }} className={cancelledDocNoClass(po.status)}>{pcNo(po)}</span>,
+    accessor: (po) => <span style={{ fontWeight: 700, color: 'var(--c-orange)', fontVariantNumeric: 'tabular-nums' }} className={cancelledDocNoClass(po.status)}>{pcNo(po)}</span>,
     searchValue: (po) => pcNo(po),
     /* Accessor is JSX → export the raw doc-no string or the cell exports blank. */
     exportValue: (po) => pcNo(po),
@@ -149,7 +149,7 @@ const buildColumns = (): GridColumn<PoHeaderRow>[] => [
   {
     key: 'total_sen', label: 'Total', width: 130, sortable: true, align: 'right', groupable: false,
     accessor: (po) => (
-      <span style={{ fontFamily: 'var(--font-mark)', color: '#16695f', fontWeight: 800 }}>
+      <span style={{ fontFamily: 'var(--font-mark)', color: 'var(--c-orange)', fontWeight: 800 }}>
         {fmtMoney(po.total_sen, po.currency)}
       </span>
     ),
@@ -286,7 +286,7 @@ const buildDrilldownColumns = (
   },
   {
     key: 'item_code', label: 'Item Code', width: 130,
-    accessor: (it) => <span style={{ fontWeight: 700, color: '#16695f' }}>{it.item_code}</span>,
+    accessor: (it) => <span style={{ fontWeight: 700, color: 'var(--c-orange)' }}>{it.item_code}</span>,
     searchValue: (it) => it.item_code,
     sortFn: (a, b) => (a.item_code ?? '').localeCompare(b.item_code ?? ''),
   },
@@ -342,7 +342,7 @@ const buildDrilldownColumns = (
   },
   {
     key: 'line_total', label: 'Line Total', width: 110, align: 'right',
-    accessor: (it) => <span style={{ fontWeight: 700, color: '#16695f' }}>{fmtMoney(Number(it.line_total_sen ?? 0), currency)}</span>,
+    accessor: (it) => <span style={{ fontWeight: 700, color: 'var(--c-orange)' }}>{fmtMoney(Number(it.line_total_sen ?? 0), currency)}</span>,
     exportValue: (it) => it.line_total_sen / 100,
     exportFormat: 'money',
     searchValue: (it) => String(it.line_total_sen ?? 0),
@@ -363,7 +363,7 @@ const ExpandedLines = ({ po }: { po: PoHeaderRow }) => {
   if (detail.error) {
     return (
       <div style={{ padding: 'var(--space-2) var(--space-3) var(--space-3) 40px', background: 'var(--c-cream)' }}>
-        <p style={{ fontSize: 'var(--fs-11)', color: 'var(--c-festive-b, #B8331F)', margin: 0 }}>
+        <p style={{ fontSize: 'var(--fs-11)', color: 'var(--c-festive-b, var(--c-festive-b))', margin: 0 }}>
           Failed to load lines: {detail.error instanceof Error ? detail.error.message : String(detail.error)}
         </p>
       </div>
@@ -403,7 +403,7 @@ const ExpandedLines = ({ po }: { po: PoHeaderRow }) => {
           fontFamily: 'var(--font-button)', fontSize: 'var(--fs-10)',
           letterSpacing: '0.06em', textTransform: 'uppercase',
         }}>Subtotal</span>
-        <span>Total <strong style={{ color: '#16695f' }}>{fmtMoney(subtotal, po.currency)}</strong></span>
+        <span>Total <strong style={{ color: 'var(--c-orange)' }}>{fmtMoney(subtotal, po.currency)}</strong></span>
       </div>
     </div>
   );

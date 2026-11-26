@@ -503,7 +503,7 @@ export const PurchaseInvoiceFromGrn = () => {
           {!scoped && (hasNextPage || pagedQ.isFetchNextPageError) && (
             <div ref={loadMoreRef} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
               {pagedQ.isFetchNextPageError && (
-                <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next notes could not be loaded.</span>
+                <span style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>The next notes could not be loaded.</span>
               )}
               <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage}>
                 {isFetchingNextPage ? 'Loading…' : pagedQ.isFetchNextPageError ? 'Try again' : 'Load more notes'}

@@ -57,13 +57,13 @@
   font-family: var(--font-sans);
   font-size: var(--fs-14);
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-7);
   color: #11140f;
   outline: none;
 }
-.searchInput:focus { border-color: #c2c6bd; background: #f4f6f3; }
+.searchInput:focus { border-color: rgb(var(--eng-border-strong)); background: #f4f6f3; }
 
 /* ── Movements table filter (owner 2026-09-18) — a compact row above the
    Stock Card MOVEMENTS ledger. Type chips reuse .chip; the source-doc box
@@ -99,13 +99,13 @@
   font-family: var(--font-sans);
   font-size: var(--fs-13);
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: 0 var(--space-2);
   color: #11140f;
   outline: none;
 }
-.mvSelect:focus { border-color: #c2c6bd; background: #f4f6f3; }
+.mvSelect:focus { border-color: rgb(var(--eng-border-strong)); background: #f4f6f3; }
 .mvDateRange {
   display: flex;
   align-items: center;
@@ -180,7 +180,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   border-radius: 20px;
-  border: 1px solid var(--badge-pill-edge, #d6d9d2);
+  border: 1px solid var(--badge-pill-edge, rgb(var(--eng-border)));
   background: rgb(var(--eng-surface));
   color: var(--badge-pill-fg, #767b6e);
   cursor: pointer;
@@ -192,7 +192,7 @@
   border-color: var(--badge-pill-hover-edge, #bcdcd6);
 }
 .chip[data-active='true'] {
-  border-color: var(--badge-pill-chosen-line, #16695f);
+  border-color: var(--badge-pill-chosen-line, var(--c-orange));
   background: var(--badge-pill-chosen-bg, #16695f);
   color: var(--badge-pill-chosen-fg, #fff);
 }
@@ -208,7 +208,7 @@
   color: #0c3f39;
   margin: 0;
   padding-left: var(--space-2);
-  border-left: 3px solid #16695f;
+  border-left: 3px solid var(--c-orange);
   line-height: 1.25;
 }
 
@@ -228,13 +228,13 @@
   font-weight: 600;
   color: rgb(var(--eng-ink));
   background: rgb(var(--eng-surface));
-  border: 1px solid var(--badge-pill-edge, #d6d9d2);
+  border: 1px solid var(--badge-pill-edge, rgb(var(--eng-border)));
   border-radius: var(--radius-md);
   cursor: pointer;
   white-space: nowrap;
 }
 .whFilterButton:hover { border-color: rgb(var(--eng-border-strong)); background: rgb(var(--eng-surface-2)); }
-.whFilterButton[data-active='true'] { border-color: var(--badge-pill-chosen-line, #16695f); color: rgb(var(--eng-primary-ink)); }
+.whFilterButton[data-active='true'] { border-color: var(--badge-pill-chosen-line, var(--c-orange)); color: rgb(var(--eng-primary-ink)); }
 .whFilterLabel {
   max-width: 200px;
   overflow: hidden;
@@ -254,7 +254,7 @@
   width: 300px;
   max-width: 80vw;
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(17, 20, 15, 0.14);
   overflow: hidden;
@@ -264,7 +264,7 @@
   font-family: var(--font-sans);
   font-size: var(--fs-13);
   border: none;
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   padding: var(--space-2) var(--space-3);
   color: #11140f;
   outline: none;
@@ -307,7 +307,7 @@
 /* ── Tables ────────────────────────────────────────────────────────── */
 .tableCard {
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm, 6px);
   box-shadow: none;
   overflow: hidden;
@@ -332,12 +332,12 @@
   text-align: left;
   padding: var(--space-2) var(--space-3);
   background: #e3e6e0;
-  border-bottom: 2px solid #d6d9d2;
+  border-bottom: 2px solid rgb(var(--eng-border));
 }
 
 .table tbody td {
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   font-family: var(--font-sans);
   font-size: var(--fs-13);
   color: #11140f;
@@ -352,7 +352,7 @@
   font-size: var(--fs-12);
   background: rgb(var(--eng-surface-2));
   color: rgb(var(--eng-ink));
-  border: 1px solid var(--badge-pill-edge, #d6d9d2);
+  border: 1px solid var(--badge-pill-edge, rgb(var(--eng-border)));
   padding: 2px 8px;
   border-radius: var(--radius-pill);
 }

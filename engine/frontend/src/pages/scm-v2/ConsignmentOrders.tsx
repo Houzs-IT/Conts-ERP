@@ -934,7 +934,7 @@ export const ConsignmentOrders = () => {
           display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)',
           padding: 'var(--space-1) var(--space-3)',
           background: 'var(--badge-filter-outstanding-bg, rgba(22, 105, 95, 0.10))',
-          border: '1px solid var(--badge-filter-outstanding-line, #16695f)',
+          border: '1px solid var(--badge-filter-outstanding-line, var(--c-orange))',
           borderRadius: 'var(--radius-pill)',
           color: 'var(--badge-filter-outstanding-fg, #16695f)',
           fontFamily: 'var(--font-button)',
@@ -1010,7 +1010,7 @@ export const ConsignmentOrders = () => {
           placeholder="Search CO no / customer…"
           style={{
             height: 32, padding: '0 12px 0 30px', width: 288,
-            borderRadius: 6, border: '1px solid #d6d9d2',
+            borderRadius: 6, border: '1px solid rgb(var(--eng-border))',
             background: '#ffffff', color: 'var(--c-ink)', fontSize: 12,
           }}
         />

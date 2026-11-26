@@ -399,7 +399,7 @@ export const ConsignmentNoteDetail = () => {
             </Button>
           ) : !isEditing ? (
             <Button variant="ghost" size="md" onClick={handleCancel} disabled={updateStatus.isPending}
-              style={{ color: 'var(--c-festive-b, #B8331F)' }}>
+              style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>
               <Ban {...ICON} /><span>Cancel Note</span>
             </Button>
           ) : null}

@@ -278,7 +278,7 @@ function Toolbar({
               type="button"
               onClick={() => setFilter({ status: on ? '' : k })}
               className="flex items-center gap-[7px] rounded-full border py-1 pl-2 pr-2.5"
-              style={{ background: on ? p.badgeBg : 'transparent', borderColor: on ? p.swatchBd : '#e3e6e0', color: on ? p.badgeFg : '#414539' }}
+              style={{ background: on ? p.badgeBg : 'transparent', borderColor: on ? p.swatchBd : 'rgb(var(--eng-border-subtle))', color: on ? p.badgeFg : '#414539' }}
             >
               <span className="h-2.5 w-2.5 rounded-[3px] border" style={{ background: p.swatch, borderColor: p.swatchBd }} />
               <span className="text-[12px] font-semibold">{p.label}</span>
@@ -446,7 +446,7 @@ function SlotCell({
   const style: CSSProperties = {
     minHeight: wide ? 44 : 40,
     background: p.bg,
-    borderColor: picked ? '#0c3f39' : p.border,
+    borderColor: picked ? 'rgb(var(--eng-primary-ink))' : p.border,
     boxShadow: picked ? '0 0 0 2px #0c3f39' : filtering && hit ? '0 0 0 2px #16695f' : 'none',
     opacity: filtering && !hit ? 0.26 : 1,
     color: p.fg,
