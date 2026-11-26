@@ -13,6 +13,7 @@
 import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import { ACTIONS_SETTING_KEY, ACTION_TTL_MS, PENDING_SQL, type ActionKind } from './mcpActions';
+import { RATE_SQL } from './mcpMore';
 
 export const MCP_TOKEN_PREFIX = 'ctmcp_';
 export const MCP_REFRESH_PREFIX = 'ctmcpr_';
@@ -250,4 +251,14 @@ export async function finishPendingAction(env: Env, id: string, outcome: 'done' 
 export async function confirmedInLastDay(env: Env, userId: string): Promise<number> {
   const r = await one<{ n: number }>(env, PENDING_SQL.countDay, userId, new Date(Date.now() - 24 * 3600_000).toISOString());
   return Number(r?.n ?? 0);
+}
+
+/* ---------- rate limit (round 3; functions/_lib/mcpMore.ts limitVerdict) ---------- */
+
+/** One person's tool calls in the last minute and the last 24 hours (refused-for-limit rows not counted). One range
+ *  scan on the mcp_calls (user_id, created_at) index from migration 0378. */
+export async function recentCallCounts(env: Env, userId: string, now = Date.now()): Promise<{ minute: number; day: number }> {
+  const r = await one<{ minute: number; day: number }>(env, RATE_SQL,
+    new Date(now - 60_000).toISOString(), userId, new Date(now - 24 * 3600_000).toISOString());
+  return { minute: Number(r?.minute ?? 0), day: Number(r?.day ?? 0) };
 }
