@@ -9,6 +9,8 @@ on:
       - 'engine/backend/**'
       - 'engine/frontend/**'
       - 'engine/scripts/lint-ratchet.mjs'
+      - 'engine/scripts/check-import-cycles.mjs'
+      - 'engine/scripts/import-cycles-baseline.json'
       - '.github/workflows/engine-ci.yml'
 concurrency:
   group: engine-ci-${{ github.event.pull_request.number }}
