@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { requirePermission } from "../middleware/auth";
+import { parsePageNumber, parsePerPage } from "../lib/page-params";
 
 // Read-only view over the audit_events ledger (writes happen via
 // services/audit.ts at the mutation sites). Owner/admin only — the trail
@@ -21,8 +22,8 @@ app.get("/", requirePermission("settings.manage"), async (c) => {
   const entityType = c.req.query("entity_type");
   const entityId = c.req.query("entity_id");
   const actorId = c.req.query("actor_id");
-  const page = Math.max(parseInt(c.req.query("page") || "1", 10), 1);
-  const perPage = Math.min(parseInt(c.req.query("per_page") || "50", 10), 200);
+  const page = parsePageNumber(c.req.query("page"));
+  const perPage = parsePerPage(c.req.query("per_page"));
   const offset = (page - 1) * perPage;
 
   const where: string[] = [];

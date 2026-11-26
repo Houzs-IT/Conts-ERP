@@ -7,6 +7,7 @@ import { canonicalizeVenue } from "../scm/lib/canonical-venue";
 import { deriveProjectCode, deriveProjectName, syncedNameForOrganizerChange } from "./project-naming";
 import { checklistRowDone } from "./checklistProgress";
 import { brandVisibleCond, type BrandSide } from "./projectBrandScope";
+import { DEFAULT_PER_PAGE, MAX_PER_PAGE } from "../lib/page-params";
 
 /** LIKE patterns for a word typed as a name's initials: SCCC reads Setia City
  *  Convention Centre. Letters only, 3 to 6 of them. */
@@ -1878,7 +1879,7 @@ export async function listProjects(env: Env, f: ListProjectsFilters) {
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const page = f.page && f.page > 0 ? f.page : 1;
-  const perPage = Math.min(f.per_page ?? 50, 200);
+  const perPage = f.per_page && f.per_page > 0 ? Math.min(Math.floor(f.per_page), MAX_PER_PAGE) : DEFAULT_PER_PAGE;
   const offset = (page - 1) * perPage;
 
   const total = await env.DB.prepare(

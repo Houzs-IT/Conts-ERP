@@ -16,6 +16,7 @@ import { getActiveStaffToken } from "./caseTracking";
 import { getSupabaseService, isSupabaseConfigured } from "../db/supabase";
 import { assrVisibilityPredicateSql } from "./assrVisibility";
 import { attachOrderPurchaseOrders } from "./assrOrderPos";
+import { DEFAULT_PER_PAGE, MAX_PER_PAGE } from "../lib/page-params";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -1876,7 +1877,7 @@ export async function listAssrCases(env: Env, f: ListAssrFilters) {
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const page = f.page && f.page > 0 ? f.page : 1;
-  const perPage = Math.min(f.per_page ?? 50, 200);
+  const perPage = f.per_page && f.per_page > 0 ? Math.min(Math.floor(f.per_page), MAX_PER_PAGE) : DEFAULT_PER_PAGE;
   const offset = (page - 1) * perPage;
 
   // stage_since: when the case entered its current stage.

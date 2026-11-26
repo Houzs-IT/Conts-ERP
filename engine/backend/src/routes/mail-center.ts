@@ -882,7 +882,7 @@ app.get("/threads", async (c) => {
        ) AS has_outbound, ${MY_UNREAD_SQL} AS my_unread
        FROM email_threads t ${MY_READ_JOIN} ${whereSql}`;
   const selectBinds = [scope.userId ?? 0, ...binds];
-  const orderSql = " ORDER BY t.last_message_at DESC NULLS LAST";
+  const orderSql = " ORDER BY t.last_message_at DESC NULLS LAST, t.id DESC";
 
   if (paginated) {
     let pageSize = Number(pageSizeParam ?? 50);
@@ -1141,7 +1141,7 @@ app.get("/outbox", async (c) => {
 
     const res = await c.env.DB.prepare(
       `SELECT ${OUTBOX_COLS} FROM email_outbox ${whereSql}
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT ? OFFSET ?`,
     )
       .bind(...binds, limit, offset)

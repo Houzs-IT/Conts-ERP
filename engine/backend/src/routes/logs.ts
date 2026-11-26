@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { requirePermission } from "../middleware/auth";
+import { parsePageNumber, parsePerPage } from "../lib/page-params";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -19,8 +20,8 @@ const SORT_MAP: Record<string, string> = {
 app.get("/", requirePermission("logs.read"), async (c) => {
   const type = c.req.query("type");
   const status = c.req.query("status");
-  const page = parseInt(c.req.query("page") || "1", 10);
-  const perPage = Math.min(parseInt(c.req.query("per_page") || "50", 10), 200);
+  const page = parsePageNumber(c.req.query("page"));
+  const perPage = parsePerPage(c.req.query("per_page"));
   const offset = (page - 1) * perPage;
 
   const where: string[] = [];

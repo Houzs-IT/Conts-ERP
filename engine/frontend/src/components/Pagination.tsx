@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -23,6 +24,9 @@ export function Pagination({
   perPageOptions = DEFAULT_PER_PAGE_OPTIONS,
 }: Props) {
   const totalPages = Math.max(1, Math.ceil(total / perPage));
+  useEffect(() => {
+    if (total > 0 && page > totalPages) onPageChange(totalPages);
+  }, [total, page, totalPages, onPageChange]);
   const start = total === 0 ? 0 : (page - 1) * perPage + 1;
   const end = Math.min(page * perPage, total);
 

@@ -62,6 +62,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { normalizePhone } from "../scm/shared/phone";
 import { ASSR_SUB_STATUS_KEYS } from "../scm/shared/assr-sub-statuses";
 import { sendCompletionSurvey } from "../services/assrCompletionSurvey";
+import { parsePageNumber, parsePerPage } from "../lib/page-params";
 
 /* The context the extracted handlers below receive. They are exported so the
    route tests can drive them directly; the shape is exactly what app.get/post
@@ -880,8 +881,8 @@ app.get("/", requireServiceCaseAccess(), async (c) => {
     search: c.req.query("search"),
     assigned_to: assignedToParam ? parseInt(assignedToParam, 10) : undefined,
     creditor_code: c.req.query("creditor_code") || undefined,
-    page: parseInt(c.req.query("page") || "1", 10),
-    per_page: parseInt(c.req.query("per_page") || "50", 10),
+    page: parsePageNumber(c.req.query("page")),
+    per_page: parsePerPage(c.req.query("per_page")),
     include_archived: c.req.query("include_archived") === "1",
     archived_only: c.req.query("archived_only") === "1",
     exclude_stage: c.req.query("exclude_stage") || undefined,

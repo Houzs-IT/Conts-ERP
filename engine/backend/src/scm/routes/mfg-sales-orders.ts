@@ -1337,12 +1337,19 @@ mfgSalesOrders.get('/', async (c) => {
        satisfiable" instead of an empty 200, and this handler turned that into a
        500 — which the grid masked as "No sales orders yet" (the 2026-08-18
        incident: `?status=all` matched zero rows, so page 1 exceeded the count).
-       Empty status tab, no-match search, last page + 1 all land here; `res.count`
-       still carries the true total via PostgREST's `Content-Range` header. */
+       Empty status tab, no-match search, last page + 1 all land here.
+       postgrest-js parses `Content-Range` only on a 2xx, so `res.count` is null
+       on the 416 and the true total needs its own head-only count; without it
+       the pager reads "0 of 0" and cannot step back to the last real page. */
     if (error && isRangeNotSatisfiable(error)) {
       data = [];
-      total = res.count ?? 0;
       error = null;
+      if (res.count != null) total = res.count;
+      else {
+        const headCount = await read.header(fromSoList(sb, 'doc_no', { count: 'exact', head: true }));
+        error = headCount.error;
+        total = headCount.count ?? 0;
+      }
     }
     /* Every status in the vocabulary gets a bucket (lowercase keys, the wire
        shape the tabs read), plus `other` for anything OUTSIDE it (legacy
