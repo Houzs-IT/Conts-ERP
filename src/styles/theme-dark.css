@@ -195,3 +195,13 @@
 }
 :root[data-theme="theconts-dark"][data-side="dream-crafter"] .bg-black { background-color: #2A2F42; }
 :root[data-theme="theconts-dark"][data-side="dream-crafter"] :is(.bg-black[aria-pressed="true"], .bg-black[aria-selected="true"]) { background-color: #EEF1F8; color: #151823; }
+/* Fields sit a step below the card with a 3.6:1 edge, so they read as "type here"; read-only and disabled ones keep
+   the raised read-only fill, so the two never look alike. */
+:root[data-theme="theconts-dark"][data-side="dream-crafter"] :is(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color]), select, textarea) {
+  background-color: #151823;
+  border-color: #6576AC;
+}
+:root[data-theme="theconts-dark"][data-side="dream-crafter"] :is(input, select, textarea):is([readonly], :disabled) {
+  background-color: #232736;
+  border-color: #323A55;
+}
