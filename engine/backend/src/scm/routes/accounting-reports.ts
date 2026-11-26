@@ -64,7 +64,7 @@
 // ----------------------------------------------------------------------------
 
 import { isDepartmentDefault, loadSubDepartments } from '../../conts/sub-departments';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { paginateAll } from '../lib/paginate-all';
 import { ACCOUNT_SECTIONS, defaultSectionFor } from '../lib/account-sections';
@@ -76,7 +76,7 @@ import { stockValueByBucketAsOf } from '../../acc/stock-close';
 import { STOCK_BUCKETS, type StockBucket } from '../lib/stock-bucket';
 import { fiscalYearStart, loadLedgerSettings, type LedgerSettings } from '../../acc/ledger-settings';
 
-const requirePerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
+const requirePerm = (c: any): boolean => canReadBooks(c);
 const NO_PERM = { error: "You don't have permission to read the financial statements." };
 
 export type AccountRow = { account_code: string; account_name?: string | null; account_type: string; section: string | null };

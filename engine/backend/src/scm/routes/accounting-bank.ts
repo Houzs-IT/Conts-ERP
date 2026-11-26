@@ -19,7 +19,7 @@
 
 import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { parseBankStatement, movementFingerprint } from '../../acc/bank-parse';
 import { readPdfContent, pdfDigits, parsePdfStatement } from '../../acc/bank-parse-pdf';
@@ -52,6 +52,13 @@ export const bankGuard = (handler: (c: Ctx) => Promise<Response>) => async (c: C
 };
 
 const guard = bankGuard;
+
+const readGuard = (handler: (c: Ctx) => Promise<Response>) => async (c: Ctx): Promise<Response> => {
+  if (!canReadBooks(c)) {
+    return c.json({ error: "You don't have permission to reconcile bank statements." }, 403);
+  }
+  return handler(c);
+};
 
 /**
  * A CLOSED MONTH REFUSES EVERY WRITE THAT WOULD CHANGE WHAT IT SAYS.
@@ -122,7 +129,7 @@ const userName = (c: Ctx) => (c.get('houzsUser') as { name?: string } | undefine
 
 /* ── GET /bank/setup — which accounts can take a statement ────────────────── */
 
-export const bankSetup = guard(async (c) => {
+export const bankSetup = readGuard(async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -665,7 +672,7 @@ export const bankStatementPeriod = guard(async (c) => {
 
 /* ── GET /bank/statements — the list ──────────────────────────────────────── */
 
-export const bankStatements = guard(async (c) => {
+export const bankStatements = readGuard(async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -705,7 +712,7 @@ export const bankStatements = guard(async (c) => {
 
 /* ── GET /bank/statements/:id — one, with its reconciliation ──────────────── */
 
-export const bankStatementDetail = guard(async (c) => {
+export const bankStatementDetail = readGuard(async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const id = Number(c.req.param('id'));
@@ -1385,7 +1392,7 @@ const ruleValidationError = (body: Record<string, unknown>): string | null => {
   return null;
 };
 
-export const bankRulesList = guard(async (c) => {
+export const bankRulesList = readGuard(async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');

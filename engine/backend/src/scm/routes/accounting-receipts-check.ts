@@ -15,7 +15,7 @@
 // mirror row (lib/so-payment-row.ts) are left out, as are zero rows.
 // ----------------------------------------------------------------------------
 
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { paginateAll } from '../lib/paginate-all';
 
@@ -120,7 +120,7 @@ async function loadReceipts(sb: Db, companyId: number, r: { from: string; to: st
 }
 
 const requirePerm = (c: any): boolean =>
-  hasHouzsPerm(c, 'scm.payment_voucher.post') || hasHouzsPerm(c, 'scm.sales_order.write');
+  canReadBooks(c) || hasHouzsPerm(c, 'scm.sales_order.write');
 
 /* ── GET /accounting/receipts/check?month=YYYY-MM ────────────────────────── */
 export const receiptsCheck = async (c: any): Promise<Response> => {

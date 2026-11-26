@@ -33,7 +33,7 @@ import type { Context } from 'hono';
 import { ledgerSettingsOf, type LedgerSettings, type LedgerSettingsRow } from '../../acc/ledger-settings';
 import { performanceSettingsOf, type PerformanceSettingsRow } from '../../acc/performance-pnl';
 import type { Env, Variables } from '../env';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { todayMyt } from '../lib/my-time';
@@ -62,7 +62,7 @@ import {
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 /* The PostgREST client is untyped throughout the acc layer; borrow its type rather than write any. */
 type Sb = Parameters<typeof resolveRoles>[0];
-const requirePerm = (c: Ctx): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
+const requirePerm = (c: Ctx): boolean => canReadBooks(c);
 const NO_PERM = { error: "You don't have permission to read the financial statements." };
 type Fail = { ok: false; reason: string };
 const failed = (e: unknown): string => String((e as { message?: string }).message ?? e);

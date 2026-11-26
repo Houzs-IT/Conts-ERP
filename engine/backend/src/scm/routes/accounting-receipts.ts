@@ -9,7 +9,7 @@
 // invoice issues and the project limit counts it (acc/receipt-confirm.ts).
 // ----------------------------------------------------------------------------
 
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { confirmBankRefusal, confirmBanks, ensureReceiptForPayment, formaliseReceipt, loadReceiptParties, withReceiptParty } from '../../acc/receipts';
 import { bankChangeRefusal, nextInstalmentOffer, postConfirmedPayment, soOfPayment } from '../../acc/receipt-confirm';
@@ -33,7 +33,7 @@ const requireConfirmPerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_vou
    payment day falls in it, oldest first, so the month reads whole beside its
    check (accounting-receipts-check.ts). */
 export const receiptsList = async (c: any): Promise<Response> => {
-  if (!requirePerm(c)) return c.json({ error: "You don't have permission to see receipts." }, 403);
+  if (!(canReadBooks(c) || hasHouzsPerm(c, 'scm.sales_order.write'))) return c.json({ error: "You don't have permission to see receipts." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');

@@ -14,7 +14,7 @@
 // ----------------------------------------------------------------------------
 
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
-import { hasHouzsPerm } from '../scm/lib/houzs-perms';
+import { canReadBooks } from '../scm/lib/houzs-perms';
 import { paginateAll } from '../scm/lib/paginate-all';
 import { inChunks } from './reno-completion';
 import { countsInTheBooks } from './reversal-pairs';
@@ -133,7 +133,7 @@ const range = (c: Ctx): { from: string; to: string } | null => {
 
 export const subDepartmentSpendHandler = async (c: Ctx): Promise<Response> => {
   /* What each part of the business earned and spent is statement data: the statements' own key. */
-  if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json({ error: "You don't have permission to read the financial statements." }, 403);
+  if (!canReadBooks(c)) return c.json({ error: "You don't have permission to read the financial statements." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const r = range(c);

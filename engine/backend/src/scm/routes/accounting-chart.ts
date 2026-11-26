@@ -24,7 +24,7 @@
 // approval time.
 // ----------------------------------------------------------------------------
 
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { ACCOUNT_SECTIONS, defaultSectionFor, isAccountSection, sectionType } from '../lib/account-sections';
 import { importParties, suggestSupplierMatches, type ParsedParty, type PartyImportResult } from '../../conts/parties';
 
@@ -75,7 +75,7 @@ const allowedIds = (c: any): number[] => {
 
 /* ── GET /accounting/chart — the union, one row per code ─────────────────── */
 export const chartUnionHandler = async (c: any): Promise<Response> => {
-  if (!requireChartPerm(c)) {
+  if (!canReadBooks(c)) {
     return c.json({ error: "You don't have permission to manage the chart of accounts." }, 403);
   }
   const ids = allowedIds(c);

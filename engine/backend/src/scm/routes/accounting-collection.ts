@@ -10,14 +10,14 @@
 
 import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { paginateAll } from '../lib/paginate-all';
 import { absorbsOrderDeposit } from '../lib/si-order-deposit';
 import { SO_DELIVERED_OR_BEYOND, SO_NOT_AN_ORDER } from '../shared/so-deliverable-states';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
-const requirePerm = (c: Ctx): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
+const requirePerm = (c: Ctx): boolean => canReadBooks(c);
 const NO_PERM = { error: "You don't have permission to read the financial statements." };
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 

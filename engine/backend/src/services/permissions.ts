@@ -177,6 +177,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "scm.payment_voucher.check", resource: "Supply Chain", verb: "manage", label: "Check payment voucher", description: "The first of the two yeses (owner 2026-09-02): check a prepared Payment Voucher — checking locks it and reserves it against Daily Bank's available money; a checker may also reject back to draft" },
   // Conts (finance phase 1): the Ledger area. Every ledger route asks for it literally (conts/ledger-access.ts).
   { key: "scm.ledger.use", resource: "Supply Chain", verb: "manage", label: "Use the ledger", description: "Accounts, payment vouchers, receipts and bank reconciliation. Never implied by *." },
+  { key: "scm.ledger.reports", resource: "Supply Chain", verb: "read", label: "Read the books", description: "Read the financial statements, ledgers and reconciliations without posting or approving anything." },
   // Conts (finance phase 1.5; SOP 3.4): extra limit for a project, approved by someone other than who asked.
   { key: "scm.project_limit.approve", resource: "Supply Chain", verb: "manage", label: "Approve extra project limit", description: "Approve or reject a request for more limit (an amount, a higher percentage) or more budget on a project; never one's own request" },
   // Conts (SOP 4.2.1, chew 2 Nov 2026): finance, and HOD when given it, set a new expected total cost on a renovation contract.

@@ -25,7 +25,7 @@
 // the contrary sign, the way the statements do (docs/bugs/0910).
 // ----------------------------------------------------------------------------
 
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { paginateAll } from '../lib/paginate-all';
 import { BAD_DEPARTMENT, departmentQuery, resolveRoles } from '../../acc/rules';
@@ -33,7 +33,7 @@ import { classifyJournal, type JournalClass } from '../../acc/journal-class';
 import { resolveJournalRefs } from '../../acc/journal-refs';
 import { isReversalPair } from '../../acc/reversal-pairs';
 
-const requirePerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
+const requirePerm = (c: any): boolean => canReadBooks(c);
 const NO_PERM = { error: "You don't have permission to read the general ledger." };
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 

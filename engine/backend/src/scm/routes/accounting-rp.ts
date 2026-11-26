@@ -42,7 +42,7 @@
 // window — so a Cash Flow card is the report's own figure.
 // ----------------------------------------------------------------------------
 
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { resolveRoles, type RoleCodes } from '../../acc/rules';
@@ -50,7 +50,7 @@ import { countsInTheBooks } from '../../acc/reversal-pairs';
 import { layOutCashFlow, type LaidLine, type LaidNode } from '../../acc/report-layout';
 import { allowedIds, resolveLayout, type ResolvedLayout } from './accounting-report-layouts';
 
-const requirePerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
+const requirePerm = (c: any): boolean => canReadBooks(c);
 const NO_PERM = { error: "You don't have permission to read the financial statements." };
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 

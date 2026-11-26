@@ -25,7 +25,7 @@
 // answered 2026-09-05).
 // ----------------------------------------------------------------------------
 
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { categoryGroupOf } from '../shared/renovation-catalog';
 import { CONTROL_ROLES, resolveRoles } from '../../acc/rules';
 
@@ -132,7 +132,7 @@ type BindingRow = {
 
 /* ── GET /accounting/item-groups — every group × every granted company ────── */
 export const itemGroupsList = async (c: any): Promise<Response> => {
-  if (!requirePerm(c)) return c.json(NO_PERM, 403);
+  if (!canReadBooks(c)) return c.json(NO_PERM, 403);
   const ids = allowedIds(c);
   if (ids.length === 0) return c.json({ error: 'no_companies', message: 'No company grants resolve for this session.' }, 409);
   const sb = c.get('supabase');

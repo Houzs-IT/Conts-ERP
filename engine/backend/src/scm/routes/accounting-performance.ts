@@ -12,7 +12,7 @@
 
 import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { SO_NOT_AN_ORDER } from '../shared/so-deliverable-states';
@@ -142,7 +142,7 @@ export async function buildPerformance(companyId: number, from: string, to: stri
 
 /* ── GET /accounting/reports/performance?from=YYYY-MM-DD&to=YYYY-MM-DD ───── */
 export const performanceReport = async (c: Ctx): Promise<Response> => {
-  if (!requirePerm(c)) return c.json(NO_PERM, 403);
+  if (!canReadBooks(c)) return c.json(NO_PERM, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const from = String(c.req.query('from') ?? '').trim();
