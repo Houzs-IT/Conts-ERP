@@ -119,7 +119,11 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   /* Paid back by transfer: the person confirms or changes the account on the claim, as the phone's Direct Claim to Me
      does (chew, 23 Nov 2026); it starts from their saved details and a change stays on this claim. */
   const t = usePortalText();
-  const paidFromFloat = me.route === 'float';
+  /* Someone whose department keeps petty cash chooses, as on the phone, whether this claim is paid from it or by
+     finance's transfer (chew, 26 Nov 2026: Alex's own claims are not all petty cash). */
+  const floatOffered = me.route === 'float';
+  const [payBack, setPayBack] = useState<'float' | 'finance'>('float');
+  const paidFromFloat = floatOffered && payBack === 'float';
   const transfer = kind === 'claim' && !paidFromFloat;
   const [bank, setBank] = useSavedBank(transfer);
   const [wrongBank, setWrongBank] = useState<keyof ClaimBank | null>(null);
@@ -269,7 +273,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
         { label: claim ? 'Paid back by' : 'Paid by', value: claim ? (paidFromFloat ? 'Petty cash' : 'Finance, by transfer') : 'Finance, by transfer' },
       ]} />
       <p className="m-0 text-meta text-muted-ink">
-        {claim ? (paidFromFloat ? 'Your department keeps petty cash, so it pays back once the receipt is checked.' : 'Your department has no petty cash: finance pays back by bank transfer.')
+        {claim ? (paidFromFloat ? 'Your department keeps petty cash, so it pays back once the receipt is checked.' : floatOffered ? 'Finance pays this one back by bank transfer; your petty cash is not used.' : 'Your department has no petty cash: finance pays back by bank transfer.')
           : 'Finance pays the supplier after checking the bill and the payee. Finance chooses the account while checking.'}
       </p>
     </Card>
@@ -289,6 +293,13 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
           </ClaimSection>
         )}
         {claim ? (
+          <>
+          {floatOffered && (
+            <ClaimSection title="Paid back by" hint={paidFromFloat ? 'Paid back from your department\'s petty cash' : 'Finance transfers it to your bank account; petty cash is not used'}>
+              <ChoiceChips label="Paid back by" value={payBack} onChange={v => setPayBack(v as 'float' | 'finance')}
+                options={[{ value: 'float', label: 'Petty cash' }, { value: 'finance', label: 'Finance, by transfer' }]} />
+            </ClaimSection>
+          )}
           <ClaimSection title="Receipt">
             {papersRow('Add the receipt', 'Photos or a PDF. The amount is read from it; check it before you send.')}
             <GridRow>
@@ -297,6 +308,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
               <Field label="Shop (optional)" value={vendorName} onChange={e => setVendorName(e.target.value)} maxLength={200} />
             </GridRow>
           </ClaimSection>
+          </>
         ) : (
           <>
             <ClaimSection title="Who is paid">
