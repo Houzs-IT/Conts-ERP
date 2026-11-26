@@ -48,9 +48,9 @@ export function DepartmentSwatch({ dept, className }: { dept: RenoDepartment; cl
 }
 
 const STATUS_PILL: Readonly<Record<RenoItemStatus, string>> = {
-  done: "bg-white/70 text-[#1b5527] ring-1 ring-[#1b5527]/25",
-  overdue: "bg-white/80 text-[#9b1c1c] ring-1 ring-[#9b1c1c]/35",
-  open: "bg-white/60 text-current ring-1 ring-black/15",
+  done: "bg-surface/70 text-[var(--badge-reno-status-done-fg,#1b5527)] ring-1 ring-[#1b5527]/25",
+  overdue: "bg-surface/80 text-[var(--badge-reno-status-overdue-fg,#9b1c1c)] ring-1 ring-[#9b1c1c]/35",
+  open: "bg-surface/60 text-current ring-1 ring-black/15",
 };
 export function StatusPill({ status, className }: { status: RenoItemStatus; className?: string }) {
   return (

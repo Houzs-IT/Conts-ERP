@@ -72,8 +72,8 @@ export function PlanFileChips({
           key={a.id}
           style={{
             display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%",
-            border: "1px solid #e3e6e0", borderRadius: 7, padding: "2px 4px 2px 6px",
-            fontSize: 10, color: "#414539", background: "#fbfcfa",
+            border: "1px solid var(--badge-plan-file-line, #e3e6e0)", borderRadius: 7, padding: "2px 4px 2px 6px",
+            fontSize: 10, color: "var(--badge-plan-file-fg, #414539)", background: "var(--badge-plan-file-bg, #fbfcfa)",
           }}
         >
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 128 }}>
@@ -84,7 +84,7 @@ export function PlanFileChips({
             disabled={busy}
             aria-label={`Remove ${a.file_name || "file"}`}
             title="Remove file"
-            style={{ color: "#a13a34", padding: "1px 6px", fontWeight: 700 }}
+            style={{ color: "var(--badge-plan-file-remove-fg, #a13a34)", padding: "1px 6px", fontWeight: 700 }}
             onClick={(e) => { e.stopPropagation(); void removeFile(a.id, a.file_name); }}
           >
             ×

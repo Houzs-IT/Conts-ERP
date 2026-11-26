@@ -1,8 +1,8 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
-import Sidebar, { useDarkTheme } from './Sidebar';
-import TopBar from './TopBar';
+import Sidebar, { LOOKS, sidebarLookKey, useDarkTheme } from './Sidebar';
+import TopBar, { glassColourVars } from './TopBar';
 import PageTabs from './PageTabs';
 import { DemoBand } from './DemoMode';
 import { Logo } from './Logo';
@@ -67,24 +67,34 @@ export default function AppShell({
   useScrollMemory(mainRef, path);
   // A supply chain screen is Dream Crafter's side: the phone header shows its logo there, as the sidebar does.
   const dc = workspaceOf(path) === 'supply';
-  // The Beta screens paint the glass backdrop in their frame; painting the same one behind the top bar lets it float
+  // Dream Crafter's pages paint the glass backdrop in their frame; painting the same one behind the top bar lets it float
   // over the page as the designs draw it, with no seam where the frame starts.
   const dark = useDarkTheme();
-  const betaBackdrop = path.startsWith('/beta') && !isNarrow ? dcGlass[dark ? 'dark' : 'light'].page : undefined;
+  const dreamCrafterBackdrop = dc ? dcGlass[dark ? 'dark' : 'light'].page : undefined;
+  const glassLook = LOOKS[sidebarLookKey(true, dark)];
+  // On <html>, not on a wrapper, so dialogs and menus that portal to the body take the side's colours too.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (dc) root.dataset.side = 'dream-crafter';
+    else delete root.dataset.side;
+    return () => { delete root.dataset.side; };
+  }, [dc]);
 
   return (
     <div data-print-root data-device={device.cls} data-fold={device.fold} style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>
       {/* Phones navigate from the bottom tab bar and its menu sheet; there is no sidebar there. */}
       {!isNarrow && <Sidebar path={path} navigate={navigate} open={navOpen} onToggle={toggleNav} />}
 
-      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: betaBackdrop, backgroundAttachment: betaBackdrop ? 'fixed' : undefined }}>
+      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: dreamCrafterBackdrop, backgroundAttachment: dreamCrafterBackdrop ? 'fixed' : undefined }}>
         <RefreshLine />
         <DemoBand />
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
           // dropped here because each page's own title sits right below.
           // Installed on an iPhone the page draws under the clock and battery; the top padding clears them.
-          <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
+          <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px', ...(dc
+            ? { ...glassLook.card, borderRadius: 0, border: 'none', borderBottom: `1px solid ${glassLook.rule}`, ...glassColourVars(glassLook) }
+            : { background: color.card, borderBottom: `1px solid ${color.border}` }) }}>
             {/* Phones navigate from the bottom tab bar. */}
             <Logo variant="mark" size="sm" brand={dc ? 'dreamCrafter' : 'theConts'} />
             {/* The name shows whole or not at all (never "THE C…"): when it does not fit beside the controls it wraps,
@@ -95,9 +105,9 @@ export default function AppShell({
             <TopBar path={path} navigate={navigate} action={action} compact />
           </div>
         )}
-        {!isNarrow && <TopBar path={path} navigate={navigate} action={action} />}
+        {!isNarrow && <TopBar path={path} navigate={navigate} action={action} dreamCrafter={dc} />}
         {/* The pages open in this browser tab, one tab each (chew, 20 Nov 2026). */}
-        {!isNarrow && <PageTabs navigate={navigate} />}
+        {!isNarrow && <PageTabs navigate={navigate} dreamCrafter={dc} />}
         {/* Phones get the standard 16px side gutter; the desk keeps its wider one. */}
         {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
         <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{
@@ -110,7 +120,7 @@ export default function AppShell({
           {!flush && <SubNav path={path} navigate={navigate} phone={isNarrow} />}
           <PagePrimaryScope path={path}>{children}</PagePrimaryScope>
         </main>
-        {isNarrow && <MobileTabBar path={path} navigate={navigate} />}
+        {isNarrow && <MobileTabBar path={path} navigate={navigate} dreamCrafter={dc} />}
       </div>
     </div>
   );

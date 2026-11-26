@@ -7,7 +7,7 @@ import { KIND_LABEL, STATUS_LABEL, type PackageKind, type PackageStatus } from '
 const pill = 'inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold';
 
 export function KindPill({ kind, className }: { kind: PackageKind; className?: string }): ReactElement {
-  return <span className={cn(pill, kind === 'KIT' ? 'border-primary/20 bg-primary-soft text-primary-ink' : 'border-[#e7b7d3] bg-[#fbe7f2] text-[#9b2c6b]', className)}>{KIND_LABEL[kind]}</span>;
+  return <span className={cn(pill, kind === 'KIT' ? 'border-primary/20 bg-primary-soft text-primary-ink' : 'border-[var(--badge-package-kind-line,#e7b7d3)] bg-[var(--badge-package-kind-bg,#fbe7f2)] text-[var(--badge-package-kind-fg,#9b2c6b)]', className)}>{KIND_LABEL[kind]}</span>;
 }
 
 export function PackageStatusPill({ status, className }: { status: PackageStatus; className?: string }): ReactElement {
@@ -21,7 +21,7 @@ export function SlaPill({ set }: { set: boolean }): ReactElement {
 
 /** The small mark on a sales order / VO line that came from a package. Screen only. */
 export function PkgMark({ code }: { code: string | null }): ReactElement {
-  return <span title={code ? `Came from package ${code}` : 'Came from a package'} className={cn(pill, 'border-[#e7b7d3] bg-[#fbe7f2] px-1.5 py-0 text-[10px] text-[#9b2c6b]')}>PKG</span>;
+  return <span title={code ? `Came from package ${code}` : 'Came from a package'} className={cn(pill, 'border-[var(--badge-package-mark-line,#e7b7d3)] bg-[var(--badge-package-mark-bg,#fbe7f2)] px-1.5 py-0 text-[10px] text-[var(--badge-package-mark-fg,#9b2c6b)]')}>PKG</span>;
 }
 
 /** A whole-number day count typed in a cell: blank is none, else 0..3650. */

@@ -62,9 +62,9 @@ export function MobileAssrCategoryChips({
               fontFamily: "inherit",
               cursor: disabled ? "default" : "pointer",
               opacity: disabled ? 0.5 : 1,
-              border: `1px solid ${on ? "#16695f" : "#e3e6e0"}`,
-              background: on ? "rgba(22,105,95,0.10)" : "#fff",
-              color: on ? "#16695f" : "#767b6e",
+              border: `1px solid ${on ? "var(--badge-assr-on-line, #16695f)" : "var(--badge-assr-off-line, #e3e6e0)"}`,
+              background: on ? "var(--badge-assr-on-bg, rgba(22,105,95,0.10))" : "var(--badge-assr-off-bg, #fff)",
+              color: on ? "var(--badge-assr-on-fg, #16695f)" : "var(--badge-assr-off-fg, #767b6e)",
             }}
           >
             {name}
