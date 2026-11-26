@@ -11,6 +11,9 @@ on:
       - 'engine/scripts/lint-ratchet.mjs'
       - 'engine/scripts/check-import-cycles.mjs'
       - 'engine/scripts/import-cycles-baseline.json'
+      - 'engine/scripts/check-hex-colours.mjs'
+      - 'engine/scripts/hex-colours-baseline.json'
+      - 'engine/scripts/check-hex-colours.test.mjs'
       - '.github/workflows/engine-ci.yml'
 concurrency:
   group: engine-ci-${{ github.event.pull_request.number }}
@@ -52,5 +55,7 @@ jobs:
         run: npx tsc -b
       - name: Lint ratchet
         run: npm run lint
+      - name: Hex colour ratchet self-test
+        run: npm run test:hex-ratchet
       - name: Raw fetch inventory
         run: npm run check:raw-fetch
