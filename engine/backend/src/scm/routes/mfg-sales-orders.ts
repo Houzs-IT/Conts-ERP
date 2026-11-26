@@ -268,7 +268,7 @@ import {
   findFreeTextSoLines, freeTextSoLineResponse,
 } from '../lib/validate-item-codes';
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
-import { applyRenovationSoInfo, projectOrderTaken, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
+import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
 import type { Db as RenoInfoDb } from '../../services/renovation/load';
 import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc, fillSoLocationFromState } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
@@ -4870,9 +4870,7 @@ mfgSalesOrders.post('/', async (c) => {
     /* These refusals run before anything is written: release the idempotency claim so the corrected Save goes through. */
     const avail = await renovationSoAvailable(c.env.DB as unknown as RenoInfoDb);
     if (!avail.ok) { markIdempotencyNoWrite(c); return c.json(avail.body, avail.status); }
-    const taken = await projectOrderTaken(c.env.DB as unknown as RenoInfoDb, renoBlock.projectId);
-    if (taken) markIdempotencyNoWrite(c);
-    if (taken) return c.json({ error: 'project_taken', message: `This project already has sales order ${taken}.`, problems: [{ code: 'project_taken', message: `This project already has sales order ${taken}.`, field: 'Project' }] }, 409);
+    /* A project may hold more than one sales order (owner, 26 Nov 2026): picking one that already has an order is fine. */
     if (peek!.asDraft !== true) {
       const problems = renovationSoProblems(renoBlock, {
         customerName: String(peek!.debtorName ?? peek!.customerName ?? ''),

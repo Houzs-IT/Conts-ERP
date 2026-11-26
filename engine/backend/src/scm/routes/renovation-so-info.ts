@@ -302,8 +302,6 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
   const input = so.so_kind === 'STANDARD' ? read : { ...read, roomSections: null };
   const problems = renovationSoProblems(input, { customerName: so.debtor_name ?? '', phone: so.phone ?? '', address1: so.address1 ?? '' });
   if (problems.length) return c.json({ error: 'validation_failed', problems }, 422);
-  const taken = await projectOrderTaken(db, input.projectId, docNo);
-  if (taken) return c.json({ error: 'project_taken', message: `This project already has sales order ${taken}.` }, 409);
   const r = await applyRenovationSoInfo(db, docNo, input, {
     companyId: activeCompanyId(c) ?? so.company_id, companySql: activeCompanySql(c, 'p.company_id'),
     actorId: Number(c.get('houzsUser')?.id ?? 0),
