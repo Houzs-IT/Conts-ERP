@@ -914,7 +914,7 @@ app.get("/threads", async (c) => {
           WHERE m.thread_id = t.id AND m.direction = 'outbound'
        ) AS has_outbound
        FROM email_threads t ${whereSql}`;
-  const orderSql = " ORDER BY t.last_message_at DESC NULLS LAST";
+  const orderSql = " ORDER BY t.last_message_at DESC NULLS LAST, t.id DESC";
 
   if (paginated) {
     let pageSize = Number(pageSizeParam ?? 50);
@@ -1170,7 +1170,7 @@ app.get("/outbox", async (c) => {
 
     const res = await c.env.DB.prepare(
       `SELECT ${OUTBOX_COLS} FROM email_outbox ${whereSql}
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT ? OFFSET ?`,
     )
       .bind(...binds, limit, offset)

@@ -6,6 +6,7 @@ import { useToast } from "../hooks/useToast";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useDebouncedValue } from "../vendor/scm/lib/hooks";
 import { formatDate } from "../lib/utils";
+import { appendUniqueById } from "../lib/appendUniqueById";
 import { SearchScopeHint } from "../components/SearchScopeHint";
 import { useAuth } from "../auth/AuthContext";
 import { pickDefaultFromAddress } from "../pages/MailCenter/mail-from-default";
@@ -375,10 +376,9 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
         { signal: ctrl.signal },
       );
       if (ctrl.signal.aborted || generation !== listGenerationRef.current) return;
-      setThreads((previous) => [
-        ...previous,
-        ...(Array.isArray(data.threads) ? data.threads : []),
-      ]);
+      setThreads((previous) =>
+        appendUniqueById(previous, Array.isArray(data.threads) ? data.threads : []),
+      );
       setListTotal(Number(data.total ?? 0));
       setListPage(nextPage);
       setHasMore(!!data.hasMore);
@@ -1565,12 +1565,17 @@ function OutboxList({ q }: { q: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const outboxGenerationRef = useRef(0);
 
   useEffect(() => {
     let live = true;
+    outboxGenerationRef.current += 1;
     setLoading(true);
+    setLoadingMore(false);
     setError(null);
+    setLoadMoreError(null);
     void fetchOutbox({ q: q || undefined, limit: OUTBOX_PAGE, offset: 0 })
       .then((data) => {
         if (!live) return;
@@ -1598,15 +1603,19 @@ function OutboxList({ q }: { q: string }) {
 
   const loadMore = async () => {
     if (loadingMore || !hasMore) return;
+    const generation = outboxGenerationRef.current;
     setLoadingMore(true);
+    setLoadMoreError(null);
     try {
       const data = await fetchOutbox({ q: q || undefined, limit: OUTBOX_PAGE, offset: items.length });
-      setItems((previous) => [...previous, ...(Array.isArray(data.rows) ? data.rows : [])]);
+      if (generation !== outboxGenerationRef.current) return;
+      setItems((previous) => appendUniqueById(previous, Array.isArray(data.rows) ? data.rows : []));
       setHasMore(!!data.hasMore);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Couldn't load more.");
+      if (generation !== outboxGenerationRef.current) return;
+      setLoadMoreError(reason instanceof Error ? reason.message : "Couldn't load more.");
     } finally {
-      setLoadingMore(false);
+      if (generation === outboxGenerationRef.current) setLoadingMore(false);
     }
   };
 
@@ -1676,6 +1685,11 @@ function OutboxList({ q }: { q: string }) {
           <button type="button" className="tinybtn" onClick={loadMore} disabled={loadingMore} aria-label="Load more auto-sent emails">
             {loadingMore ? "Loading…" : "Load more"}
           </button>
+        </div>
+      )}
+      {loadMoreError && (
+        <div role="alert" style={{ padding: "10px 12px", textAlign: "center", fontSize: 11.5, color: "var(--red)" }}>
+          Couldn't load more auto-sent emails. Please try again.
         </div>
       )}
       {openId && <OutboxSheet id={openId} onClose={() => setOpenId(null)} />}

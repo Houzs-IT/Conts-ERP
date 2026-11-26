@@ -31,6 +31,7 @@ import {
   SO_PROCESSING_DATE_COLUMN,
   SO_PROCESSING_DATE_PAYLOAD_KEY,
 } from "../scm/shared/so-processing-date";
+import { parsePageNumber, parsePerPage } from "../lib/page-params";
 
 /* The context the extracted handlers below receive. They are exported so the
    route tests can drive them directly; the shape is exactly what app.get/post
@@ -244,8 +245,8 @@ app.get("/entries", requirePageAccessOrSalesView("sales"), async (c) => {
   // exclude them entirely (?quick_log=0) so the All view doesn't
   // double up against the dedicated tab.
   const quickLogParam = c.req.query("quick_log");
-  const page = parseInt(c.req.query("page") || "1", 10);
-  const perPage = Math.min(parseInt(c.req.query("per_page") || "50", 10), 200);
+  const page = parsePageNumber(c.req.query("page"));
+  const perPage = parsePerPage(c.req.query("per_page"));
   const offset = (page - 1) * perPage;
 
   const companyId = activeCompanyId(c);

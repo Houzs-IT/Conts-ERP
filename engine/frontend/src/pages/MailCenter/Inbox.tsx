@@ -129,6 +129,7 @@ import {
   Square,
 } from "lucide-react";
 import { fmtDate, fmtDateTime, fmtTime as fmtClock } from "../../vendor/shared/format";
+import { appendUniqueById } from "../../lib/appendUniqueById";
 
 type MailThreadRow = {
   id: string;
@@ -1109,10 +1110,9 @@ export function MailInbox() {
         { signal: ctrl.signal },
       );
       if (ctrl.signal.aborted || generation !== listGenerationRef.current) return;
-      setListRows((prev) => [
-        ...prev,
-        ...(Array.isArray(data.threads) ? data.threads : []),
-      ]);
+      setListRows((prev) =>
+        appendUniqueById(prev, Array.isArray(data.threads) ? data.threads : []),
+      );
       setListTotal(Number(data.total ?? 0));
       setListHasMore(!!data.hasMore);
       setListPage(nextPage);
@@ -1805,6 +1805,7 @@ function OutboxPanel({ q }: { q: string }) {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [reloadKey, setReloadKey] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
+  const outboxGenerationRef = useRef(0);
 
   const needle = q.trim();
 
@@ -1813,6 +1814,7 @@ function OutboxPanel({ q }: { q: string }) {
     // the first load; reloads flip it true in the trigger handlers (filter
     // chip / refresh button). Each filter/search/refresh resets to page 1.
     let alive = true;
+    outboxGenerationRef.current += 1;
     (async () => {
       try {
         const data = await fetchOutbox({
@@ -1837,11 +1839,13 @@ function OutboxPanel({ q }: { q: string }) {
     })();
     return () => {
       alive = false;
+      setLoadingMore(false);
     };
   }, [statusFilter, needle, reloadKey]);
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
+    const generation = outboxGenerationRef.current;
     setLoadingMore(true);
     try {
       const data = await fetchOutbox({
@@ -1850,17 +1854,16 @@ function OutboxPanel({ q }: { q: string }) {
         limit: OUTBOX_PAGE,
         offset: items.length,
       });
-      setItems((prev) => [
-        ...prev,
-        ...(Array.isArray(data.rows) ? data.rows : []),
-      ]);
+      if (generation !== outboxGenerationRef.current) return;
+      setItems((prev) => appendUniqueById(prev, Array.isArray(data.rows) ? data.rows : []));
       if (data.counts) setCounts(data.counts);
       setHasMore(!!data.hasMore);
       setErr(null);
     } catch {
+      if (generation !== outboxGenerationRef.current) return;
       setErr("Couldn't load more sent emails.");
     } finally {
-      setLoadingMore(false);
+      if (generation === outboxGenerationRef.current) setLoadingMore(false);
     }
   }
 

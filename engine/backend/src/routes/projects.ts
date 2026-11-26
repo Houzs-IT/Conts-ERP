@@ -77,6 +77,7 @@ import { calendarMePersonIds, renovationCalendarItems } from "../services/renova
 import type { Db as RenoDb } from "../services/renovation/load";
 import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 import { listScopeQuery, loadListScopeRows, renovationListScope } from "../services/renovation/listScope";
+import { parsePageNumber, parsePerPage } from "../lib/page-params";
 
 /* The context the extracted handlers below receive. They are exported so the
    route tests can drive them directly; the shape is exactly what app.get/post
@@ -1221,8 +1222,8 @@ app.get("/", requirePageAccess("projects.list"), async (c) => {
     month: monthParam || undefined,
     from: fromParam || undefined,
     to: toParam || undefined,
-    page: parseInt(c.req.query("page") || "1", 10),
-    per_page: parseInt(c.req.query("per_page") || "50", 10),
+    page: parsePageNumber(c.req.query("page")),
+    per_page: parsePerPage(c.req.query("per_page")),
     include_archived: c.req.query("include_archived") === "1",
     sort_by: c.req.query("sort_by") || undefined,
     sort_dir: (c.req.query("sort_dir") || "").toLowerCase() === "asc" ? "asc" : "desc",
@@ -2844,11 +2845,8 @@ app.get("/finance/by-project", requirePageAccess("projects.finances"), async (c)
   const stage = c.req.query("stage") || "";
   const search = c.req.query("search") || "";
   const includeArchived = c.req.query("include_archived") === "1";
-  const page = parseInt(c.req.query("page") || "1", 10);
-  const perPage = Math.min(
-    parseInt(c.req.query("per_page") || "50", 10),
-    200
-  );
+  const page = parsePageNumber(c.req.query("page"));
+  const perPage = parsePerPage(c.req.query("per_page"));
   const offset = (page - 1) * perPage;
 
   const db = getDb(c.env);
@@ -3055,11 +3053,8 @@ app.get("/finance/lines", requirePageAccess("projects.finances"), async (c) => {
   const category = c.req.query("category") || "";
   const projectId = parseInt(c.req.query("project_id") || "", 10);
   const search = c.req.query("search") || "";
-  const page = parseInt(c.req.query("page") || "1", 10);
-  const perPage = Math.min(
-    parseInt(c.req.query("per_page") || "50", 10),
-    200
-  );
+  const page = parsePageNumber(c.req.query("page"));
+  const perPage = parsePerPage(c.req.query("per_page"));
   const offset = (page - 1) * perPage;
 
   const db = getDb(c.env);
