@@ -7,6 +7,7 @@ import { cleanPrice } from '../../../_lib/cleaning';
 import { hasCleanPrices, cleanAmounts } from '../../../_lib/cleaningPrices';
 import { mayEditCredentials, usedBySql } from '../../../_lib/credentials';
 import { cleanStage } from '../../../_lib/media';
+import { reviseInvoice } from '../../../_lib/cleaningBilling';
 
 /** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the proof
  *  photos and videos, the unit's access (the code in the clear for the cleaner on the job; masked for the office, whose
@@ -87,6 +88,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     FROM tasks WHERE id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
 
+  let reprice: { invoiceId: string; sen: number } | null = null;
   // Collect the column changes so a reschedule and an edit can land in one write.
   const sets: string[] = [];
   const args: unknown[] = [];
@@ -149,16 +151,20 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b?.amount !== undefined) {
     if (!(await hasCleanPrices(env))) return fail('NOT_CONFIGURED', 'Cleaning amounts need a database update (migration 0126) that is not applied yet.', 501);
     if (b.amount !== null && (!Number.isInteger(b.amount) || b.amount < 0)) return fail('VALIDATION', 'Enter the amount, RM 0.00 or more.', 422, { amount: 'Enter the amount.' });
-    const cur = await one<{ amount: number | null; unit_id: string | null; cleaning_invoice_no: string | null }>(env, 'SELECT amount, unit_id, cleaning_invoice_no FROM tasks WHERE id = ?', id);
+    const cur = await one<{ amount: number | null; unit_id: string | null; cleaning_invoice_id: string | null }>(env, 'SELECT amount, unit_id, cleaning_invoice_id FROM tasks WHERE id = ?', id);
     if (b.amount === null && !cur?.unit_id) return fail('VALIDATION', 'An external job needs its amount.', 422, { amount: 'Enter the amount.' });
-    // Billed to the client (migration 0393): the invoice holds the amount, so it no longer changes here.
-    if (cur?.cleaning_invoice_no && b.amount !== cur.amount) return fail('CONFLICT', `This job is billed on ${cur.cleaning_invoice_no}: its amount cannot change. Ask finance.`, 409, { amount: `Billed on ${cur.cleaning_invoice_no}.` });
+    // Billed to the client (chew, 27 Nov 2026: 开了单能改金额): its invoice follows, just before the job is written.
+    if (cur?.cleaning_invoice_id && b.amount !== cur.amount) reprice = { invoiceId: cur.cleaning_invoice_id, sen: Number(b.amount) };
     if (await one(env, 'SELECT 1 AS x FROM expenses WHERE task_id = ?', id)) return fail('CONFLICT', 'This clean is already charged to the unit. Change the cost on the unit instead.', 409);
     sets.push('amount = ?'); args.push(b.amount);
     before.amount = cur?.amount ?? null; after.amount = b.amount;
   }
 
   if (!sets.length) return fail('VALIDATION', 'Nothing to change.', 422);
+  if (reprice) {
+    const refused = await reviseInvoice(env, session, reprice.invoiceId, { amount: { id, sen: reprice.sen } });
+    if (refused) return refused;
+  }
 
   await run(env, `UPDATE tasks SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, nowIso(), id);
   await audit(env, {

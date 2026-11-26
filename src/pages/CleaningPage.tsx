@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
-import { Switch } from '../components/Switch';
 import { DateField, MoneyInput, TimeField } from '../components/inputs';
 import Icon from '../components/Icon';
 import type { SelectOption } from '../components/Select';
@@ -1241,8 +1240,15 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   const [touchedPay, setTouchedPay] = useState(false);
   const [itemId, setItemId] = useState('');
   const [layout, setLayout] = useState('studio');
-  // An outside job may be billed to its client as it is added (chew, 26 Nov 2026); a month's jobs are billed together on Outside billing.
-  const [billNow, setBillNow] = useState(false);
+  // An outside job may be billed as it is added (chew, 26-27 Nov 2026): later on Outside billing, a new invoice, or added
+  // to an invoice already made this month (paid or not).
+  const [bill, setBill] = useState<'later' | 'new' | 'add'>('later');
+  const [addTo, setAddTo] = useState('');
+  const monthInvoices = useApi<{ invoices: { id: string; invoiceNo: string; customerName: string; totalSen: number; status: string; lump: boolean }[] }>(unitId === EXTERNAL ? `/housekeeping/cleaning-invoices?month=${day.slice(0, 7)}` : null);
+  const openInvoices = (monthInvoices.data?.invoices ?? []).filter(i => i.status !== 'CANCELLED');
+  const sameClient = (n: string) => n.trim().replace(/\s+/g, ' ').toLowerCase();
+  const pickedInvoice = openInvoices.find(i => i.id === addTo) ?? openInvoices.find(i => client.trim() && sameClient(i.customerName) === sameClient(client)) ?? openInvoices[0];
+  const billNew = bill === 'new' && !!amount;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ unit?: string; address?: string; amount?: string; client?: string; form?: string }>({});
   const external = unitId === EXTERNAL;
@@ -1263,8 +1269,8 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   useEffect(() => { if (!touchedAmount) setAmount(suggested); }, [unitId, kind, itemId, layout, suggested]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!touchedPay) setPay(suggestedPay); }, [unitId, kind, itemId, layout, suggestedPay]); // eslint-disable-line react-hooks/exhaustive-deps
   async function save() {
-    const bad = { unit: unitId ? undefined : 'Pick a unit, or External.', address: external && !address.trim() ? 'Enter the address.' : undefined, amount: external && amount == null ? 'Enter the amount.' : external && billNow && !amount ? 'Enter what the client is charged.' : undefined,
-      client: external && billNow && !client.trim() ? 'The invoice needs the client\'s name.' : undefined };
+    const bad = { unit: unitId ? undefined : 'Pick a unit, or External.', address: external && !address.trim() ? 'Enter the address.' : undefined, amount: external && amount == null ? 'Enter the amount.' : undefined,
+      client: external && billNew && !client.trim() ? 'The invoice needs the client\'s name.' : undefined };
     if (bad.unit || bad.address || bad.amount || bad.client) { setError(bad); return; }
     setBusy(true); setError({});
     try {
@@ -1276,10 +1282,12 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
         ...(amount != null && (external || touchedAmount || itemId === 'other') ? { amount } : {}),
         ...(pay != null && (touchedPay || itemId === 'other') ? { cleanerPay: pay } : {}),
       });
-      if (external && billNow) {
+      if (external && (billNew || (bill === 'add' && pickedInvoice))) {
         try {
-          const r = await api.post<{ invoice: { invoiceNo: string } }>('/housekeeping/cleaning-invoices', { taskIds: [made.id] });
-          onDone(`Cleaning job added and billed on ${r.invoice.invoiceNo}.`);
+          const no = billNew
+            ? (await api.post<{ invoices: { invoiceNo: string }[] }>('/housekeeping/cleaning-invoices', { mode: 'each', taskIds: [made.id] })).invoices[0]?.invoiceNo
+            : (await api.post<{ invoiceNo: string }>(`/housekeeping/cleaning-invoices/${pickedInvoice!.id}/jobs`, { taskId: made.id })).invoiceNo;
+          onDone(`Cleaning job added and billed on ${no}.`);
         } catch (e) {
           onDone('Cleaning job added, not billed yet.', `${errorMessage(e, 'The invoice was not made.')} Bill it from Outside billing.`, 'warning');
         }
@@ -1300,7 +1308,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
             <input className={INPUT} value={address} onChange={e => { setAddress(e.target.value); setError(x => ({ ...x, address: undefined })); }} maxLength={300} placeholder="e.g. 12 Jalan Ampang, Kuala Lumpur" />
           </FormRow>
           <div className="grid grid-cols-2 gap-3">
-            <FormRow label={billNow ? 'Client name' : 'Client name (optional)'} error={error.client}><input className={INPUT} value={client} onChange={e => { setClient(e.target.value); setError(x => ({ ...x, client: undefined })); }} maxLength={120} /></FormRow>
+            <FormRow label={billNew ? 'Client name' : 'Client name (optional)'} error={error.client}><input className={INPUT} value={client} onChange={e => { setClient(e.target.value); setError(x => ({ ...x, client: undefined })); }} maxLength={120} /></FormRow>
             <FormRow label="Client phone (optional)"><input className={INPUT} value={phone} onChange={e => setPhone(e.target.value)} maxLength={40} inputMode="tel" /></FormRow>
           </div>
         </>
@@ -1345,12 +1353,22 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
         </div>
       )}
       {external && (
-        <div className="flex items-start gap-3">
-          <Switch checked={billNow} onChange={setBillNow} label="Bill the client now" />
-          <div className="flex flex-col min-w-0">
-            <span className="text-copy font-medium">Bill the client now</span>
-            <span className="text-meta text-muted-ink">Issues the invoice for this job as it is added. Leave it off to bill the client's jobs together later, on Outside billing.</span>
-          </div>
+        <div className="flex flex-col gap-2">
+          <ChoiceChips<'later' | 'new' | 'add'> label="Bill the client" value={bill === 'new' && !amount ? 'later' : bill} onChange={setBill}
+            options={[{ value: 'later', label: 'Not yet' }, ...(amount ? [{ value: 'new' as const, label: 'New invoice' }] : []), ...(openInvoices.length ? [{ value: 'add' as const, label: "Add to this month's invoice" }] : [])]} />
+          {bill === 'later' && <span className="text-meta text-muted-ink">Bill it later on Outside billing, alone or together with other jobs.</span>}
+          {billNew && <span className="text-meta text-muted-ink">A new invoice for {rm(amount!)} is issued and booked as the job is saved.</span>}
+          {bill === 'add' && pickedInvoice && (
+            <>
+              <select className={INPUT} value={pickedInvoice.id} onChange={e => setAddTo(e.target.value)} aria-label="Invoice to add to">
+                {openInvoices.map(i => <option key={i.id} value={i.id}>{i.invoiceNo} · {i.customerName} · {rm(i.totalSen)}{i.lump ? ' (lump sum)' : ''}</option>)}
+              </select>
+              <span className="text-meta text-muted-ink">{pickedInvoice.lump
+                ? `Its day is added under the lump sum; ${pickedInvoice.invoiceNo} stays ${rm(pickedInvoice.totalSen)}.`
+                : amount ? `${pickedInvoice.invoiceNo} goes from ${rm(pickedInvoice.totalSen)} to ${rm(pickedInvoice.totalSen + amount)}, same number. Print it again for the client.`
+                : `${pickedInvoice.invoiceNo} lists each job at its amount: enter the charge first.`}</span>
+            </>
+          )}
         </div>
       )}
       <div className="flex flex-col gap-1.5 min-w-0">

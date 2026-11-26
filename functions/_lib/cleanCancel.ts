@@ -2,6 +2,8 @@ import { type Env, all, nowIso } from './db';
 import { MYT_DATE } from './ops';
 import { CLEAN_KINDS_SQL, CLEANING_CANCELLED } from './cleaning';
 import { hasJobInvoices } from './jobProfit';
+import { detachJobs } from './cleaningBilling';
+import type { Session } from './auth';
 
 export interface CleaningJobActor { userId: string; fullName: string }
 
@@ -13,8 +15,8 @@ interface CancelCandidate {
   id: string; state: string; kind: string; title: string; unit_id: string | null; reservation_id: string | null;
   started_at: string | null; day: string; unit_number: string | null;
   files: number; damage: number; money: number; cleaners: string | null;
-  /** The client's invoice this outside job is billed on (migration 0393). */
-  billed: string | null;
+  /** The client's invoice this outside job is billed on (migration 0393): it is taken off it first. */
+  billed: string | null; invoice_id: string | null;
 }
 
 interface AuditEntry { task: string; action: string; table: string; id: string; before: string | null; after: string }
@@ -25,7 +27,6 @@ function whyKept(job: CancelCandidate): string | null {
   if (Number(job.files) > 0) return 'it has photos or videos; mark it done instead';
   if (Number(job.damage) > 0) return 'damage was reported from it';
   if (Number(job.money) > 0) return 'money is already recorded on it';
-  if (job.billed) return `it is billed to the client on ${job.billed}`;
   return null;
 }
 
@@ -42,7 +43,7 @@ function auditEntriesFor(job: CancelCandidate, reason: string, isBulk: boolean):
 async function loadCandidates(env: Env, taskIds: string[], invoicedSql: string): Promise<Map<string, CancelCandidate>> {
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const candidates = await all<CancelCandidate>(env, `
-    SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.reservation_id, t.started_at, ${day} AS day, t.cleaning_invoice_no AS billed,
+    SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.reservation_id, t.started_at, ${day} AS day, t.cleaning_invoice_no AS billed, t.cleaning_invoice_id AS invoice_id,
            COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit_number,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id) AS files,
            (SELECT COUNT(*)::int FROM maintenance_issues m WHERE m.source_task_id = t.id) AS damage,
@@ -54,17 +55,25 @@ async function loadCandidates(env: Env, taskIds: string[], invoicedSql: string):
   return new Map(candidates.map(candidate => [candidate.id, candidate]));
 }
 
-export async function cancelCleaningJobs(env: Env, actor: CleaningJobActor, taskIds: string[], reason: string): Promise<CancelledCleaningJobs> {
+/** A billed outside job is taken off its invoice before it goes (chew, 27 Nov 2026: 开了单能删除); `session` speaks to the
+ *  engine for that. Without it, or when the invoice refuses (it would drop below what the client paid), the job stays. */
+export async function cancelCleaningJobs(env: Env, actor: CleaningJobActor, taskIds: string[], reason: string, session?: Session): Promise<CancelledCleaningJobs> {
   const invoicedSql = (await hasJobInvoices(env)) ? ' OR e.invoice_task_id = t.id' : '';
   const candidates = await loadCandidates(env, taskIds, invoicedSql);
   const skipped: CleaningJobSkip[] = [];
-  const eligible: CancelCandidate[] = [];
+  let eligible: CancelCandidate[] = [];
   for (const id of taskIds) {
     const job = candidates.get(id);
     if (!job) { skipped.push({ id, unitNumber: null, reason: 'not a cleaning job any more' }); continue; }
     const reasonKept = whyKept(job);
     if (reasonKept) skipped.push({ id, unitNumber: job.unit_number, reason: reasonKept });
     else eligible.push(job);
+  }
+  const billed = eligible.filter(job => job.invoice_id);
+  if (billed.length) {
+    const kept = session ? await detachJobs(env, session, billed.map(job => ({ id: job.id, invoiceId: job.invoice_id! }))) : new Map(billed.map(job => [job.id, `it is billed to the client on ${job.billed}`]));
+    for (const [id, why] of kept) skipped.push({ id, unitNumber: candidates.get(id)?.unit_number ?? null, reason: why });
+    eligible = eligible.filter(job => !kept.has(job.id));
   }
   if (!eligible.length) return { cancelled: 0, skipped };
 

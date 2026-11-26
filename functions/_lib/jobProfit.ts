@@ -81,7 +81,7 @@ export async function cleaningMoney(env: Env, ids: string[]): Promise<Map<string
   const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
   const json = JSON.stringify(ids);
   const [jobs, charged, invoices] = await Promise.all([
-    all<any>(env, `SELECT t.id, t.kind, t.unit_id, t.amount, t.cleaner_pay, u.bedrooms, ${layout} AS layout_type, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at
+    all<any>(env, `SELECT t.id, t.kind, t.unit_id, COALESCE(t.cleaning_billed_sen, t.amount) AS amount, t.cleaner_pay, u.bedrooms, ${layout} AS layout_type, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at
       FROM tasks t LEFT JOIN units u ON u.id = t.unit_id WHERE t.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, json),
     all<any>(env, `SELECT task_id, SUM(amount) AS amount FROM expenses WHERE task_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND charge_to = 'owner' GROUP BY task_id`, json),
     ready ? invoicesFor(env, 'invoice_task_id', ids) : Promise.resolve(new Map<string, Invoice[]>()),

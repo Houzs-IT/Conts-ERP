@@ -89,7 +89,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ ok: true, action, closed: closed.length, skipped, charged, chargedAmount, notCharged });
     }
 
-    const cancelled = await cancelCleaningJobs(env, session, eligible.map(t => t.id), reason);
+    const cancelled = await cancelCleaningJobs(env, session, eligible.map(t => t.id), reason, session);
     return json({ ok: true, action, closed: cancelled.cancelled, skipped: [...skipped, ...cancelled.skipped], charged: 0, chargedAmount: 0, notCharged });
   } catch (e) {
     await audit(env, { ...actor, action: 'task.bulk_close_failed', entityTable: 'tasks', entityId: eligible[0].id, after: { action, taskIds: eligible.map(t => t.id), error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
