@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { LOOKS, readWs, sidebarLookKey, useDarkTheme } from './Sidebar';
+import { LOOKS, readWs, sidebarLookKey, useDarkTheme, type SidebarLook } from './Sidebar';
 import { color, radius, text, shell, motion } from '../theme';
 import { findNav, workspaceOf } from '../lib/navigation';
 import { useNavCounts } from '../lib/navBadges';
@@ -25,11 +25,22 @@ const GlobalSearch = lazy(() => import('./GlobalSearch'));
  *    plus the live alerts from /api/nav/badges.
  * ------------------------------------------------------------------ */
 
+export function glassColourVars(look: SidebarLook): CSSProperties {
+  return {
+    '--color-card': look.wash, '--color-line': look.rule, '--color-ink': look.textOn,
+    '--color-muted-ink': look.muted, '--color-faint': look.faint, '--color-muted': look.wash,
+    // White on the bell's red count, in both themes (the dark theme's inverse text is near black).
+    '--color-text-inverse': look.avatarInk,
+  } as CSSProperties;
+}
+
 export default function TopBar({
-  path, navigate, action, compact = false,
+  path, navigate, action, compact = false, dreamCrafter = false,
 }: { path: string; navigate?: (p: string) => void; action?: { label: string; onClick: () => void };
   /** Phone: only the controls, as 40px squares, for the shell's mobile header row. */
-  compact?: boolean }) {
+  compact?: boolean;
+  /** Dream Crafter's desk: the bar floats as a glass pill. */
+  dreamCrafter?: boolean }) {
   const nav = findNav(path);
   // The browser tab names the page, so tabs, history and screen readers can tell pages apart.
   const pageName = nav ? (nav.page ?? nav.label) : path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : null;
@@ -90,19 +101,15 @@ export default function TopBar({
   }, [compact]);
   const searchSquare = compact || searchIcon;
 
-  /* The Beta screens wear the glass look of the Project Workspace designs (v10 light, v13 night): the bar floats as a
-     glass pill, as the designs draw their top bar. The colour tokens are re-set on the bar only, so the search box,
-     the theme switch and the bell follow it without changing anywhere else. The View as button keeps its amber: it
-     warns that the screen is being seen as someone else. */
-  const dc = !compact && path.startsWith('/beta');
+  /* On Dream Crafter's desk the bar floats as a glass pill, as the designs draw their top bar. The colour tokens are
+     re-set on the bar only, so the search box, the theme switch and the bell follow it without changing anywhere else.
+     The View as button keeps its amber: it warns that the screen is being seen as someone else. */
+  const dc = !compact && dreamCrafter;
   const look = LOOKS[sidebarLookKey(true, useDarkTheme())];
   const dcBar = {
     flex: 'none', margin: '16px 24px 4px', padding: '8px 12px 8px 22px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'nowrap',
     borderRadius: radius.pill, ...look.card, color: look.text,
-    '--color-card': look.wash, '--color-line': look.rule, '--color-ink': look.textOn,
-    '--color-muted-ink': look.muted, '--color-faint': look.faint, '--color-muted': look.wash,
-    // White on the bell's red count, in both themes (the dark theme's inverse text is near black).
-    '--color-text-inverse': look.avatarInk,
+    ...glassColourVars(look),
   } as CSSProperties;
   // The bell's panel: the same glass, with its rows left see-through and its text, lines and link in the glass colours.
   const glassPanel = {
