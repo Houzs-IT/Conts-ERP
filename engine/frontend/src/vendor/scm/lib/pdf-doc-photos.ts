@@ -20,13 +20,13 @@ export interface DocPdfPhotos {
   /** Groups for the photos on no line; they print after the item groups. */
   documentGroups: PhotoGroup[];
   /** The bytes of a key from lineKeys or documentGroups. */
-  fetch: (key: string) => Promise<Blob>;
+  readBlob: (key: string) => Promise<Blob>;
 }
 
 const NONE: DocPdfPhotos = {
   lineKeys: () => [],
   documentGroups: [],
-  fetch: () => Promise.reject(new Error('no_document')),
+  readBlob: () => Promise.reject(new Error('no_document')),
 };
 
 export async function loadDocPdfPhotos(type: DocType, id: string | null | undefined): Promise<DocPdfPhotos> {
@@ -48,7 +48,7 @@ export async function loadDocPdfPhotos(type: DocType, id: string | null | undefi
         ...group('Document', images.filter((f) => f.source !== 'pod')),
         ...group(type === 'goods_received' ? 'Proof of receipt' : 'Proof of delivery', images.filter((f) => f.source === 'pod')),
       ],
-      fetch: (key) => fetchDocFileBlob(type, id, key.slice(ATTACHMENT_KEY.length)),
+      readBlob: (key) => fetchDocFileBlob(type, id, key.slice(ATTACHMENT_KEY.length)),
     };
   } catch {
     return NONE;

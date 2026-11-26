@@ -52,3 +52,5 @@ jobs:
         run: npx tsc -b
       - name: Lint ratchet
         run: npm run lint
+      - name: Raw fetch inventory
+        run: npm run check:raw-fetch

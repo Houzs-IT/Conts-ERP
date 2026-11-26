@@ -169,7 +169,7 @@ export async function renderGrnInto(
     ...attached.documentGroups,
   ];
   const photoImages: Map<string, PdfPhotoImage> = photoGroups.length > 0
-    ? await collectPhotoImages(photoGroups, attached.fetch, blobToSquarePdfImage)
+    ? await collectPhotoImages(photoGroups, attached.readBlob, blobToSquarePdfImage)
     : new Map<string, PdfPhotoImage>();
 
   const rows = orderedItems.map((it, idx) => {

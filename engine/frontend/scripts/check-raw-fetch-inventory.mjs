@@ -70,6 +70,30 @@ export const EXPECTED_RAW_FETCH_CALLS = [
     argument: "url",
   },
   {
+    // Reads a blob: URL that api.fetchBlobUrl already downloaded with the session;
+    // no network request is made.
+    file: "pages/renovation-beta/BetaDrawingSheets.tsx",
+    functionName: "pdfThumb",
+    callee: "fetch",
+    argument: "url",
+  },
+  {
+    // Reads a blob: URL that api.fetchBlobUrl already downloaded with the session;
+    // no network request is made.
+    file: "pages/renovation-beta/renovationBetaPdf.ts",
+    functionName: "blobOf",
+    callee: "fetch",
+    argument: "url",
+  },
+  {
+    // Reads a blob: URL that api.fetchBlobUrl already downloaded with the session;
+    // no network request is made.
+    file: "pages/scm-v2/ApInvoices.tsx",
+    functionName: "readPapers",
+    callee: "fetch",
+    argument: "url",
+  },
+  {
     file: "vendor/scm/lib/pdf-common.ts",
     functionName: "fetchFaceBase64",
     callee: "fetch",
