@@ -95,7 +95,7 @@ describe("linking and unlinking a sales order", () => {
     expect(linkRefusal({ ...so, status: "CANCELLED" }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("so_cancelled");
     expect(linkRefusal({ ...so, project_id: 9 }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("so_has_other_project");
     expect(linkRefusal({ ...so, project_id: 5 }, { projectCompanyId: 1, projectProjectSo: "SO-1", projectId: 5 })).toBe("already_linked");
-    expect(linkRefusal(so, { projectCompanyId: 1, projectProjectSo: "SO-2", projectId: 5 })).toBe("project_has_so");
+    expect(linkRefusal(so, { projectCompanyId: 1, projectProjectSo: "SO-2", projectId: 5 })).toBeNull(); // a project may hold more than one sales order (owner, 26 Nov 2026)
   });
 
   test("unlink is refused while something downstream depends on the SO", () => {

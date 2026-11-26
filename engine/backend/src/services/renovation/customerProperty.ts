@@ -147,14 +147,13 @@ export async function writeProjectShared(db: Db, projectId: number, v: Partial<R
 }
 
 /** Project picker for the SO form: renovation projects of this company, newest first, with their shared fields. */
-/** One project takes one sales order (owner, 5 Nov 2026): a project with a live order is not offered. */
+/** A project may hold more than one sales order (owner, 26 Nov 2026): a project that already has one is offered too. */
 export async function searchProjects(db: Db, companySql: string, q: string): Promise<ProjectShared[]> {
   /* Each word on its own, in any field and any order: "kl48 lim" (Houzs port, owner 8 Nov 2026). */
   const words = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
   const res = await db.prepare(
     `SELECT p.id::int AS id FROM projects p
       WHERE p.project_kind = 'renovation' AND p.archived_at IS NULL${companySql}
-        AND NOT EXISTS (SELECT 1 FROM scm.mfg_sales_orders so WHERE so.project_id = p.id AND so.status::text <> 'CANCELLED')
 ${words.map(() => `
         AND (p.name ILIKE '%' || ? || '%' OR coalesce(p.code, '') ILIKE '%' || ? || '%'
              OR coalesce(p.building, '') ILIKE '%' || ? || '%' OR coalesce(p.customer_name, '') ILIKE '%' || ? || '%')`).join("")}

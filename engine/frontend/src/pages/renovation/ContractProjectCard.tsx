@@ -30,7 +30,7 @@ export function ContractProjectCard({ docNo, projectId, canWrite }: { docNo: str
   useEffect(() => {
     if (projectId != null || !canWrite) return;
     let live = true;
-    const t = setTimeout(() => { searchProjects(q).then((r) => { if (live) setFound(r.projects.filter((p) => !p.contractDocNo)); }).catch(() => { if (live) setFound([]); }); }, 200);
+    const t = setTimeout(() => { searchProjects(q).then((r) => { if (live) setFound(r.projects); }).catch(() => { if (live) setFound([]); }); }, 200);
     return () => { live = false; clearTimeout(t); };
   }, [q, projectId, canWrite]);
 
@@ -54,11 +54,11 @@ export function ContractProjectCard({ docNo, projectId, canWrite }: { docNo: str
           <div>
             <input className={inputCls} placeholder="Search projects without a contract" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search projects" />
             <div className="mt-1 max-h-44 space-y-1 overflow-auto">
-              {found.length === 0 && <div className="px-1 py-1 text-[12px] text-ink-muted">No project without a contract matches.</div>}
+              {found.length === 0 && <div className="px-1 py-1 text-[12px] text-ink-muted">No project matches.</div>}
               {found.map((p) => (
                 <button key={p.id} type="button" disabled={busy} className="w-full rounded-lg border border-border px-3 py-1.5 text-left text-[13px] hover:border-primary"
                   onClick={() => run(() => simpleApi.linkSo(p.id, docNo))}>
-                  <span className="font-semibold text-ink">{p.name}</span>{p.code ? <span className="ml-1 text-ink-muted">{p.code}</span> : null}
+                  <span className="font-semibold text-ink">{p.name}</span>{p.code ? <span className="ml-1 text-ink-muted">{p.code}</span> : null}{p.contractDocNo ? <span className="ml-1 text-ink-muted">· has {p.contractDocNo}</span> : null}
                 </button>
               ))}
             </div>

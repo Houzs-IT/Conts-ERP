@@ -49,7 +49,7 @@ export function linkRefusal(
   if (so.status === "CANCELLED") return "so_cancelled";
   if (so.project_id != null && Number(so.project_id) !== p.projectId) return "so_has_other_project";
   if (so.project_id != null && Number(so.project_id) === p.projectId) return "already_linked";
-  if (p.projectProjectSo && so.so_kind === "RENOVATION") return "project_has_so";
+  /* A project may hold more than one sales order (owner, 26 Nov 2026), so a project that already has one takes another. */
   return null;
 }
 

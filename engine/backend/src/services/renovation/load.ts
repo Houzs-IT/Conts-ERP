@@ -366,15 +366,22 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   }
   for (const t of tasks) t.assignees = assigneesByTask.get(Number(t.id)) ?? [];
 
-  /* One live renovation SO per project (phase 2's uq_mfg_so_reno_project). An SO
-     without so_kind = RENOVATION is a furniture order and never drives stages. */
-  const soByProject = new Map<number, SoRow>();
-  for (const so of sos) if (so.so_kind === "RENOVATION") soByProject.set(Number(so.project_id), so);
-  const docNos = [...soByProject.values()].map((s) => s.doc_no);
+  /* A project may hold more than one renovation SO (owner, 26 Nov 2026): the earliest is the main contract that
+     drives the instalment prompts, every one adds its lines and its money. An SO without so_kind = RENOVATION is a
+     furniture order and never drives stages. */
+  const sosByProject = new Map<number, SoRow[]>();
+  for (const so of sos) {
+    if (so.so_kind !== "RENOVATION") continue;
+    const list = sosByProject.get(Number(so.project_id)) ?? [];
+    list.push(so);
+    sosByProject.set(Number(so.project_id), list);
+  }
+  for (const list of sosByProject.values()) list.sort((a, b) => String(a.so_date ?? "9999").localeCompare(String(b.so_date ?? "9999")) || a.doc_no.localeCompare(b.doc_no));
+  const docNos = [...sosByProject.values()].flat().map((s) => s.doc_no);
 
   /* The renovation contracts' billing is read once and shared with the stage reads (stageLoad.ts reads the same
      contracts' payments), instead of once each. */
-  const renoSos = [...soByProject.values()];
+  const renoSos = [...sosByProject.values()].flat();
   const views: Promise<Map<string, BillingView> | null> = renoSos.length ? billingViewsOrMissing(db, renoSos.map((s) => s.doc_no)) : Promise.resolve(new Map());
   const [lineRes, poLines, doRows, siteRows, billingByDoc, voRows, stageBy] = await Promise.all([
     loadContractLines(db, docNos),
@@ -434,11 +441,13 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
 
   const typeById = new Map(types.map((t) => [Number(t.id), t]));
   for (const project of projects) {
-    const so = soByProject.get(project.id) ?? null;
+    const projectSos = sosByProject.get(project.id) ?? [];
+    const so: SoRow | null = projectSos.length > 0 ? projectSos[0] : null;
+    const projectDocs = new Set(projectSos.map((s) => s.doc_no));
     const signedSo = sos
       .filter((s) => Number(s.project_id) === project.id && String(s.status).toUpperCase() !== "DRAFT")
       .sort((a, b) => String(a.so_date ?? "9999").localeCompare(String(b.so_date ?? "9999")) || a.doc_no.localeCompare(b.doc_no))[0] ?? null;
-    const all = so && lineRes.lines ? lineRes.lines.filter((l) => l.soDocNo === so.doc_no) : null;
+    const all = so && lineRes.lines ? lineRes.lines.filter((l) => projectDocs.has(l.soDocNo)) : null;
     const soItemIds = new Set(all?.map((l) => l.soItemId) ?? []);
     out.set(project.id, {
       project,
@@ -453,7 +462,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
       poLines: poLines.filter((pl) => soItemIds.has(pl.so_item_id)),
       supply,
       pods,
-      billing: so ? (billingByDoc.get(so.doc_no) ?? { available: false, unavailableReason: "table_missing", contractSen: null, instalments: [] })
+      billing: so ? combinedBilling(projectSos.map((s) => billingByDoc.get(s.doc_no) ?? { available: false, unavailableReason: "table_missing", contractSen: null, instalments: [] }))
         : { available: false, unavailableReason: "no_so", contractSen: null, instalments: [] },
       tasks: tasks.filter((t) => Number(t.project_id) === project.id),
       taskLines: taskLines.filter((tl) => tasks.some((t) => Number(t.id) === Number(tl.task_id) && Number(t.project_id) === project.id)),
@@ -466,11 +475,20 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
         const k = keyHolders.find((r) => Number(r.project_id) === project.id);
         return k ? { personId: k.person_id == null ? null : Number(k.person_id), name: k.name, movedOn: k.moved_on } : null;
       })(),
-      vo: so && voRows ? (voRows.get(so.doc_no) ?? { count: 0, approved: 0 }) : null,
+      vo: so && voRows ? projectSos.reduce((t, s) => { const v = voRows.get(s.doc_no); return v ? { count: t.count + v.count, approved: t.approved + v.approved } : t; }, { count: 0, approved: 0 }) : null,
       stage: stageBy.get(project.id) ?? null,
     });
   }
   return out;
+}
+
+/** A project's billing over all its contracts: the main (first) contract's instalments, with the contract sum,
+    money received and VO total of every contract added up. */
+function combinedBilling(list: BillingFacts[]): BillingFacts {
+  const [main, ...rest] = list;
+  if (rest.length === 0 || !main.available) return main;
+  const add = (pick: (b: BillingFacts) => number | null | undefined) => list.reduce((t, b) => t + (b.available ? Number(pick(b) ?? 0) : 0), 0);
+  return { ...main, contractSen: add((b) => b.contractSen), receivedTotalSen: add((b) => b.receivedTotalSen), voTotalSen: add((b) => b.voTotalSen) };
 }
 
 /** Variation orders per contract (phase 2's scm.reno_variation_orders), not counting cancelled ones. Null when the table is missing. */
