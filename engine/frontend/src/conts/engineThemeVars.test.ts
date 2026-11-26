@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-// @ts-expect-error palette.mjs ships without type declarations
 import { recolourCssValue } from "../../conts/palette.mjs";
 
 const LIGHT_HEX_BY_VARIABLE: Record<string, string> = {
@@ -13,7 +12,7 @@ const LIGHT_HEX_BY_VARIABLE: Record<string, string> = {
   "expired-bg": "#f7e9e9", "expired-text": "#7a2222",
 };
 
-const recolour = recolourCssValue as (value: string) => string;
+const recolour = recolourCssValue;
 const toRgbFunction = (hex: string): string => {
   const channels = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16));
   return `rgb(${channels.join(" ")})`;

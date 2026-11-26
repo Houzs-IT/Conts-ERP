@@ -1,9 +1,10 @@
-import { contsPalettePostcss } from "./conts/palette.mjs";
+import { contsNightPostcss, contsPalettePostcss } from "./conts/palette.mjs";
 
 export default {
   plugins: [
     (await import("tailwindcss")).default(),
     (await import("autoprefixer")).default(),
+    contsNightPostcss(),
     contsPalettePostcss(),
   ],
 };

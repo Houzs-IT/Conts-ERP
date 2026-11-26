@@ -57,6 +57,7 @@ html.conts-embedded[data-beta-skin="night"] {
   --c-cream: #1C2030; --c-paper: #232736; --c-beige: #2A2F42; --bg-subtle: #232736;
   --c-ink: #EEF1F8; --c-ink-soft: #ADB4C5; --text-soft: #ADB4C5; --fg-muted: #ADB4C5; --fg-soft: #ADB4C5; --fg-strong: #B9C0D0;
   --c-burnt: #EEF1F8; --c-orange: #7FD6C8; --c-secondary-a: #7FD1A8; --c-festive-b: #FF9B90;
+  --conts-pick-fill: #EEF1F8; --conts-pick-ink: #151823;
   --c-error: #FF9B90; --c-error-bg: rgba(255,110,100,.16); --c-warn: #F7CD73; --c-warn-bg: rgba(245,190,80,.16);
   --c-success-bg: rgba(40,200,180,.16);
   --line: rgba(150,175,255,.18); --line-strong: rgba(150,175,255,.32); --border-weak: rgba(150,175,255,.11);
