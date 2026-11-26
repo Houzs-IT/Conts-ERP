@@ -242,9 +242,9 @@ function KeptFloat() {
           <span className="text-meta text-muted-ink">{tr.float(rm(f.floatSen))}</span>
           {(f.balanceSen < 0 || f.low) && <span className="text-meta text-danger">{f.balanceSen < 0 ? tr.belowZero : tr.low}</span>}
           <Button size="touch" variant="secondary" disabled={f.topUpRequested} onClick={async () => {
-            try { await api.post('/claims/float/top-up-request', {}); toast({ tone: 'success', title: tr.askedTopUp }); q.reload(); }
+            try { const r = await api.post<{ requestNo: string }>('/claims/float/top-up-request', {}); toast({ tone: 'success', title: tr.askedTopUp, body: r.requestNo }); q.reload(); }
             catch (e) { toast({ tone: 'critical', title: tr.notSent, body: errorMessage(e) }); }
-          }}>{f.topUpRequested ? tr.topUpAsked : tr.askTopUp}</Button>
+          }}>{f.topUpRequested ? `${tr.topUpAsked}${f.topUpRequestNo ? ` (${f.topUpRequestNo})` : ''}` : tr.askTopUp}</Button>
         </div>
       )}
       {q.data && q.data.receipts.length > 0 && <span className="text-meta text-muted-ink">{tr.onFloat}</span>}

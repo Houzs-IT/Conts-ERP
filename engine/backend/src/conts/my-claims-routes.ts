@@ -32,6 +32,7 @@ import { CLAIM_WAITING_STATUSES, stillWaiting } from './finance-waiting';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
+import { askTopUp, openTopUpRequests } from './petty-cash-topup';
 import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
 import { readRecoveries, recoveriesOf, saveRecoveries } from './owner-recovery';
 import { RENO_KIND_OF, loadSubDepartments, projectRenoKind, projectSide, subForStaffDepartment } from './sub-departments';
@@ -260,9 +261,9 @@ export const myFloatHandler = async (c: Ctx): Promise<Response> => {
   });
   const rows = all.sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
   const ids = rows.map(r => r.id);
-  const [bal, lines, files, names] = await Promise.all([floatBalances(sb, [f]), linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
+  const [bal, lines, files, names, asked] = await Promise.all([floatBalances(sb, [f]), linesOf(sb, ids), filesOf(sb, ids), staffNames(sb), openTopUpRequests(sb, co.companyId, [f.id])]);
   return c.json({
-    float: { id: f.id, floatSen: Number(f.float_sen), topUpRequested: f.topup_requested_at != null, ...bal.get(f.id) },
+    float: { id: f.id, floatSen: Number(f.float_sen), topUpRequested: asked.has(f.id), topUpRequestNo: asked.get(f.id)?.requestNo ?? null, ...bal.get(f.id) },
     receipts: rows.map(r => receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names)),
   });
 };
@@ -271,11 +272,13 @@ export const topUpRequestHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
-  const f = await keptFloat(sb, co.companyId, staffOf(c));
+  const staff = staffOf(c);
+  const f = await keptFloat(sb, co.companyId, staff);
   if (!f) return c.json({ error: 'not_found', message: 'You do not keep a petty cash float.' }, 404);
-  const { error } = await sb.from('petty_cash_floats').update({ topup_requested_at: new Date().toISOString() }).eq('id', f.id);
-  if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
-  return c.json({ ok: true });
+  /* A payment request to finance, made out to the keeper (petty-cash-topup.ts; chew, 26 Nov 2026). */
+  const r = await askTopUp(sb, co.companyId, staff.userId, f);
+  if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+  return c.json({ ok: true, requestId: r.id, requestNo: r.requestNo, amountSen: r.amountSen }, r.created ? 201 : 200);
 };
 
 export const myJobsHandler = async (c: Ctx): Promise<Response> => {
