@@ -13,6 +13,8 @@ interface CancelCandidate {
   id: string; state: string; kind: string; title: string; unit_id: string | null; reservation_id: string | null;
   started_at: string | null; day: string; unit_number: string | null;
   files: number; damage: number; money: number; cleaners: string | null;
+  /** The client's invoice this outside job is billed on (migration 0393). */
+  billed: string | null;
 }
 
 interface AuditEntry { task: string; action: string; table: string; id: string; before: string | null; after: string }
@@ -23,6 +25,7 @@ function whyKept(job: CancelCandidate): string | null {
   if (Number(job.files) > 0) return 'it has photos or videos; mark it done instead';
   if (Number(job.damage) > 0) return 'damage was reported from it';
   if (Number(job.money) > 0) return 'money is already recorded on it';
+  if (job.billed) return `it is billed to the client on ${job.billed}`;
   return null;
 }
 
@@ -39,7 +42,7 @@ function auditEntriesFor(job: CancelCandidate, reason: string, isBulk: boolean):
 async function loadCandidates(env: Env, taskIds: string[], invoicedSql: string): Promise<Map<string, CancelCandidate>> {
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const candidates = await all<CancelCandidate>(env, `
-    SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.reservation_id, t.started_at, ${day} AS day,
+    SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.reservation_id, t.started_at, ${day} AS day, t.cleaning_invoice_no AS billed,
            COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit_number,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id) AS files,
            (SELECT COUNT(*)::int FROM maintenance_issues m WHERE m.source_task_id = t.id) AS damage,
@@ -68,7 +71,7 @@ export async function cancelCleaningJobs(env: Env, actor: CleaningJobActor, task
   const isBulk = taskIds.length > 1;
   const auditRows = await all<{ action: string; entity_id: string }>(env, `
     WITH gone AS (
-      DELETE FROM tasks t WHERE t.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND t.state != 'resolved' AND t.started_at IS NULL
+      DELETE FROM tasks t WHERE t.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND t.state != 'resolved' AND t.started_at IS NULL AND t.cleaning_invoice_id IS NULL
         AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.task_id = t.id)
         AND NOT EXISTS (SELECT 1 FROM maintenance_issues m WHERE m.source_task_id = t.id)
         AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.task_id = t.id${invoicedSql})

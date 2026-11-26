@@ -89,216 +89,221 @@ import * as r84 from '../api/holidays/index';
 import * as r85 from '../api/housekeeping/board';
 import * as r86 from '../api/housekeeping/clean-prices';
 import * as r87 from '../api/housekeeping/cleaners';
-import * as r88 from '../api/housekeeping/crew';
-import * as r89 from '../api/housekeeping/pay';
-import * as r90 from '../api/housekeeping/prices';
-import * as r91 from '../api/housekeeping/rules';
-import * as r92 from '../api/housekeeping/tasks';
-import * as r93 from '../api/housekeeping/tasks/[id]';
-import * as r94 from '../api/housekeeping/tasks/[id]/checklist';
-import * as r95 from '../api/housekeeping/tasks/[id]/photos';
-import * as r96 from '../api/housekeeping/unit-prices';
-import * as r97 from '../api/import/hostplatform';
-import * as r98 from '../api/import/hostplatform-api';
-import * as r99 from '../api/integrations/channex-webhook-setup';
-import * as r100 from '../api/integrations/channex/status';
-import * as r101 from '../api/integrations/index';
-import * as r102 from '../api/inventory/index';
-import * as r103 from '../api/it-support/attachments/[id]';
-import * as r104 from '../api/it-support/tickets/[code]/index';
-import * as r105 from '../api/it-support/tickets/index';
-import * as r106 from '../api/it-support/unread-count';
-import * as r107 from '../api/labor-cost/index';
-import * as r108 from '../api/leaves/index';
-import * as r109 from '../api/lettings/index';
-import * as r110 from '../api/loading-list/index';
-import * as r111 from '../api/maintenance/approval-rules';
-import * as r112 from '../api/maintenance/issues';
-import * as r113 from '../api/maintenance/issues/[id]/documents';
-import * as r114 from '../api/maintenance/skus';
-import * as r115 from '../api/maintenance/technicians';
-import * as r116 from '../api/meetings/[[path]]';
-import * as r117 from '../api/messages/saved-replies/index';
-import * as r118 from '../api/messages/threads';
-import * as r119 from '../api/messages/threads/[id]';
-import * as r120 from '../api/mrp/index';
-import * as r121 from '../api/nav/badges';
-import * as r122 from '../api/notifications/count';
-import * as r123 from '../api/notifications/index';
-import * as r124 from '../api/operations/day';
-import * as r125 from '../api/operations/job-money';
-import * as r126 from '../api/operations/job-profit';
-import * as r127 from '../api/operations/service-prices/[id]';
-import * as r128 from '../api/operations/service-prices/export';
-import * as r129 from '../api/operations/service-prices/index';
-import * as r130 from '../api/operations/today';
-import * as r131 from '../api/owner-close/summary';
-import * as r132 from '../api/owner/documents';
-import * as r133 from '../api/owner/property-health';
-import * as r134 from '../api/owner/reviews';
-import * as r135 from '../api/owner/statements/[id]/index';
-import * as r136 from '../api/owner/statements/[id]/pdf';
-import * as r137 from '../api/owner/summary';
-import * as r138 from '../api/owner/trend';
-import * as r139 from '../api/owners/[id]/accounts/[accountId]/reveal';
-import * as r140 from '../api/owners/[id]/accounts/index';
-import * as r141 from '../api/owners/[id]/adjustments/index';
-import * as r142 from '../api/owners/[id]/pnl';
-import * as r143 from '../api/owners/[id]/reveal';
-import * as r144 from '../api/owners/[id]/statements';
-import * as r145 from '../api/owners/index';
-import * as r146 from '../api/payment-vouchers/[id]';
-import * as r147 from '../api/payment-vouchers/index';
-import * as r148 from '../api/payouts/export';
-import * as r149 from '../api/payouts/index';
-import * as r150 from '../api/payroll/index';
-import * as r151 from '../api/penalties/index';
-import * as r152 from '../api/penalties/jobs';
-import * as r153 from '../api/portfolio/owner-report';
-import * as r154 from '../api/portfolio/performance';
-import * as r155 from '../api/pricing/rules';
-import * as r156 from '../api/product-models/[id]';
-import * as r157 from '../api/product-models/index';
-import * as r158 from '../api/products/index';
-import * as r159 from '../api/properties/[id]/channels/index';
-import * as r160 from '../api/properties/index';
-import * as r161 from '../api/public/meetings/[[path]]';
-import * as r162 from '../api/punch-sites/index';
-import * as r163 from '../api/purchase-consignment/[id]';
-import * as r164 from '../api/purchase-consignment/index';
-import * as r165 from '../api/purchase-invoices/[id]';
-import * as r166 from '../api/purchase-invoices/index';
-import * as r167 from '../api/purchase-orders/[id]';
-import * as r168 from '../api/purchase-orders/index';
-import * as r169 from '../api/purchase-returns/[id]';
-import * as r170 from '../api/purchase-returns/index';
-import * as r171 from '../api/racks/index';
-import * as r172 from '../api/rate-cards/[id]';
-import * as r173 from '../api/rate-cards/index';
-import * as r174 from '../api/reservations/[id]';
-import * as r175 from '../api/reservations/[id]/late-checkout/index';
-import * as r176 from '../api/reservations/[id]/payments';
-import * as r177 from '../api/reservations/calendar';
-import * as r178 from '../api/reservations/export';
-import * as r179 from '../api/reservations/index';
-import * as r180 from '../api/residence-rules/[id]';
-import * as r181 from '../api/residence-rules/index';
-import * as r182 from '../api/reviews/cleaners';
-import * as r183 from '../api/reviews/guest-reviews/index';
-import * as r184 from '../api/reviews/guest-rules/index';
-import * as r185 from '../api/reviews/guest-templates/index';
-import * as r186 from '../api/reviews/health';
-import * as r187 from '../api/reviews/index';
-import * as r188 from '../api/reviews/settings';
-import * as r189 from '../api/reviews/units';
-import * as r190 from '../api/reviews/unreviewed';
-import * as r191 from '../api/sales-invoices/[id]';
-import * as r192 from '../api/sales-invoices/index';
-import * as r193 from '../api/sales-orders/[id]';
-import * as r194 from '../api/sales-orders/index';
-import * as r195 from '../api/sales-returns/[id]';
-import * as r196 from '../api/sales-returns/index';
-import * as r197 from '../api/search/index';
-import * as r198 from '../api/settings/agreement-template';
-import * as r199 from '../api/settings/index';
-import * as r200 from '../api/settings/public';
-import * as r201 from '../api/showcase/calendar';
-import * as r202 from '../api/showcase/index';
-import * as r203 from '../api/showcase/insights';
-import * as r204 from '../api/so-amendments/[id]';
-import * as r205 from '../api/so-amendments/index';
-import * as r206 from '../api/statements/[id]/index';
-import * as r207 from '../api/statements/[id]/pdf';
-import * as r208 from '../api/statements/[id]/report';
-import * as r209 from '../api/statements/index';
-import * as r210 from '../api/statements/pdf';
-import * as r211 from '../api/stock-takes/[id]';
-import * as r212 from '../api/stock-takes/index';
-import * as r213 from '../api/stock-transfers/[id]';
-import * as r214 from '../api/stock-transfers/index';
-import * as r215 from '../api/stock/index';
-import * as r216 from '../api/stock/movements';
-import * as r217 from '../api/suppliers/[id]';
-import * as r218 from '../api/suppliers/index';
-import * as r219 from '../api/supply-chain/engine';
-import * as r220 from '../api/system/health/audit-feed';
-import * as r221 from '../api/system/health/index';
-import * as r222 from '../api/table-layouts/index';
-import * as r223 from '../api/tasks/facets';
-import * as r224 from '../api/tasks/index';
-import * as r225 from '../api/threepl-companies/[id]';
-import * as r226 from '../api/threepl-companies/index';
-import * as r227 from '../api/unbilled-deliveries/index';
-import * as r228 from '../api/unit-bed-sizes/index';
-import * as r229 from '../api/unit-layout-types/index';
-import * as r230 from '../api/units/[id]/agreement';
-import * as r231 from '../api/units/[id]/channels/airbnb-listings';
-import * as r232 from '../api/units/[id]/channels/index';
-import * as r233 from '../api/units/[id]/contract';
-import * as r234 from '../api/units/detail';
-import * as r235 from '../api/units/export';
-import * as r236 from '../api/units/financials';
-import * as r237 from '../api/units/index';
-import * as r238 from '../api/units/jobs';
-import * as r239 from '../api/units/scheduled-changes';
-import * as r240 from '../api/units/stays';
-import * as r241 from '../api/users/[id]/access';
-import * as r242 from '../api/users/[id]/category-access';
-import * as r243 from '../api/users/access';
-import * as r244 from '../api/users/category-access';
-import * as r245 from '../api/users/index';
-import * as r246 from '../api/users/sign-ins';
-import * as r247 from '../api/vehicles/index';
-import * as r248 from '../api/warehouses/index';
-import * as r249 from '../api/working-hours/index';
+import * as r88 from '../api/housekeeping/cleaning-invoices/[id]/payments/[paymentId]/slip';
+import * as r89 from '../api/housekeeping/cleaning-invoices/[id]/print';
+import * as r90 from '../api/housekeeping/cleaning-invoices/index';
+import * as r91 from '../api/housekeeping/crew';
+import * as r92 from '../api/housekeeping/pay';
+import * as r93 from '../api/housekeeping/prices';
+import * as r94 from '../api/housekeeping/rules';
+import * as r95 from '../api/housekeeping/tasks';
+import * as r96 from '../api/housekeeping/tasks/[id]';
+import * as r97 from '../api/housekeeping/tasks/[id]/checklist';
+import * as r98 from '../api/housekeeping/tasks/[id]/photos';
+import * as r99 from '../api/housekeeping/unit-prices';
+import * as r100 from '../api/import/hostplatform';
+import * as r101 from '../api/import/hostplatform-api';
+import * as r102 from '../api/integrations/channex-webhook-setup';
+import * as r103 from '../api/integrations/channex/status';
+import * as r104 from '../api/integrations/index';
+import * as r105 from '../api/inventory/index';
+import * as r106 from '../api/it-support/attachments/[id]';
+import * as r107 from '../api/it-support/tickets/[code]/index';
+import * as r108 from '../api/it-support/tickets/index';
+import * as r109 from '../api/it-support/unread-count';
+import * as r110 from '../api/labor-cost/index';
+import * as r111 from '../api/leaves/index';
+import * as r112 from '../api/lettings/index';
+import * as r113 from '../api/loading-list/index';
+import * as r114 from '../api/maintenance/approval-rules';
+import * as r115 from '../api/maintenance/issues';
+import * as r116 from '../api/maintenance/issues/[id]/documents';
+import * as r117 from '../api/maintenance/skus';
+import * as r118 from '../api/maintenance/technicians';
+import * as r119 from '../api/meetings/[[path]]';
+import * as r120 from '../api/messages/saved-replies/index';
+import * as r121 from '../api/messages/threads';
+import * as r122 from '../api/messages/threads/[id]';
+import * as r123 from '../api/mrp/index';
+import * as r124 from '../api/nav/badges';
+import * as r125 from '../api/notifications/count';
+import * as r126 from '../api/notifications/index';
+import * as r127 from '../api/operations/day';
+import * as r128 from '../api/operations/job-money';
+import * as r129 from '../api/operations/job-profit';
+import * as r130 from '../api/operations/service-prices/[id]';
+import * as r131 from '../api/operations/service-prices/export';
+import * as r132 from '../api/operations/service-prices/index';
+import * as r133 from '../api/operations/today';
+import * as r134 from '../api/owner-close/summary';
+import * as r135 from '../api/owner/documents';
+import * as r136 from '../api/owner/property-health';
+import * as r137 from '../api/owner/reviews';
+import * as r138 from '../api/owner/statements/[id]/index';
+import * as r139 from '../api/owner/statements/[id]/pdf';
+import * as r140 from '../api/owner/summary';
+import * as r141 from '../api/owner/trend';
+import * as r142 from '../api/owners/[id]/accounts/[accountId]/reveal';
+import * as r143 from '../api/owners/[id]/accounts/index';
+import * as r144 from '../api/owners/[id]/adjustments/index';
+import * as r145 from '../api/owners/[id]/pnl';
+import * as r146 from '../api/owners/[id]/reveal';
+import * as r147 from '../api/owners/[id]/statements';
+import * as r148 from '../api/owners/index';
+import * as r149 from '../api/payment-vouchers/[id]';
+import * as r150 from '../api/payment-vouchers/index';
+import * as r151 from '../api/payouts/export';
+import * as r152 from '../api/payouts/index';
+import * as r153 from '../api/payroll/index';
+import * as r154 from '../api/penalties/index';
+import * as r155 from '../api/penalties/jobs';
+import * as r156 from '../api/portfolio/owner-report';
+import * as r157 from '../api/portfolio/performance';
+import * as r158 from '../api/pricing/rules';
+import * as r159 from '../api/product-models/[id]';
+import * as r160 from '../api/product-models/index';
+import * as r161 from '../api/products/index';
+import * as r162 from '../api/properties/[id]/channels/index';
+import * as r163 from '../api/properties/index';
+import * as r164 from '../api/public/meetings/[[path]]';
+import * as r165 from '../api/punch-sites/index';
+import * as r166 from '../api/purchase-consignment/[id]';
+import * as r167 from '../api/purchase-consignment/index';
+import * as r168 from '../api/purchase-invoices/[id]';
+import * as r169 from '../api/purchase-invoices/index';
+import * as r170 from '../api/purchase-orders/[id]';
+import * as r171 from '../api/purchase-orders/index';
+import * as r172 from '../api/purchase-returns/[id]';
+import * as r173 from '../api/purchase-returns/index';
+import * as r174 from '../api/racks/index';
+import * as r175 from '../api/rate-cards/[id]';
+import * as r176 from '../api/rate-cards/index';
+import * as r177 from '../api/reservations/[id]';
+import * as r178 from '../api/reservations/[id]/late-checkout/index';
+import * as r179 from '../api/reservations/[id]/payments';
+import * as r180 from '../api/reservations/calendar';
+import * as r181 from '../api/reservations/export';
+import * as r182 from '../api/reservations/index';
+import * as r183 from '../api/residence-rules/[id]';
+import * as r184 from '../api/residence-rules/index';
+import * as r185 from '../api/reviews/cleaners';
+import * as r186 from '../api/reviews/guest-reviews/index';
+import * as r187 from '../api/reviews/guest-rules/index';
+import * as r188 from '../api/reviews/guest-templates/index';
+import * as r189 from '../api/reviews/health';
+import * as r190 from '../api/reviews/index';
+import * as r191 from '../api/reviews/settings';
+import * as r192 from '../api/reviews/units';
+import * as r193 from '../api/reviews/unreviewed';
+import * as r194 from '../api/sales-invoices/[id]';
+import * as r195 from '../api/sales-invoices/index';
+import * as r196 from '../api/sales-orders/[id]';
+import * as r197 from '../api/sales-orders/index';
+import * as r198 from '../api/sales-returns/[id]';
+import * as r199 from '../api/sales-returns/index';
+import * as r200 from '../api/search/index';
+import * as r201 from '../api/settings/agreement-template';
+import * as r202 from '../api/settings/index';
+import * as r203 from '../api/settings/public';
+import * as r204 from '../api/showcase/calendar';
+import * as r205 from '../api/showcase/index';
+import * as r206 from '../api/showcase/insights';
+import * as r207 from '../api/so-amendments/[id]';
+import * as r208 from '../api/so-amendments/index';
+import * as r209 from '../api/statements/[id]/index';
+import * as r210 from '../api/statements/[id]/pdf';
+import * as r211 from '../api/statements/[id]/report';
+import * as r212 from '../api/statements/index';
+import * as r213 from '../api/statements/pdf';
+import * as r214 from '../api/stock-takes/[id]';
+import * as r215 from '../api/stock-takes/index';
+import * as r216 from '../api/stock-transfers/[id]';
+import * as r217 from '../api/stock-transfers/index';
+import * as r218 from '../api/stock/index';
+import * as r219 from '../api/stock/movements';
+import * as r220 from '../api/suppliers/[id]';
+import * as r221 from '../api/suppliers/index';
+import * as r222 from '../api/supply-chain/engine';
+import * as r223 from '../api/system/health/audit-feed';
+import * as r224 from '../api/system/health/index';
+import * as r225 from '../api/table-layouts/index';
+import * as r226 from '../api/tasks/facets';
+import * as r227 from '../api/tasks/index';
+import * as r228 from '../api/threepl-companies/[id]';
+import * as r229 from '../api/threepl-companies/index';
+import * as r230 from '../api/unbilled-deliveries/index';
+import * as r231 from '../api/unit-bed-sizes/index';
+import * as r232 from '../api/unit-layout-types/index';
+import * as r233 from '../api/units/[id]/agreement';
+import * as r234 from '../api/units/[id]/channels/airbnb-listings';
+import * as r235 from '../api/units/[id]/channels/index';
+import * as r236 from '../api/units/[id]/contract';
+import * as r237 from '../api/units/detail';
+import * as r238 from '../api/units/export';
+import * as r239 from '../api/units/financials';
+import * as r240 from '../api/units/index';
+import * as r241 from '../api/units/jobs';
+import * as r242 from '../api/units/scheduled-changes';
+import * as r243 from '../api/units/stays';
+import * as r244 from '../api/users/[id]/access';
+import * as r245 from '../api/users/[id]/category-access';
+import * as r246 from '../api/users/access';
+import * as r247 from '../api/users/category-access';
+import * as r248 from '../api/users/index';
+import * as r249 from '../api/users/sign-ins';
+import * as r250 from '../api/vehicles/index';
+import * as r251 from '../api/warehouses/index';
+import * as r252 from '../api/working-hours/index';
 
 // Built on first use, not at load: a handler module that is still loading is never read.
 let routes: ApiRoute[] | undefined;
 export function apiRoutes(): ApiRoute[] {
   return routes ??= [
+    { path: '/api/housekeeping/cleaning-invoices/:id/payments/:paymentId/slip', method: 'GET', handler: r88.onRequestGet },
     { path: '/api/demo/portal/statements/:id/pdf', method: 'GET', handler: r42.onRequestGet },
-    { path: '/api/owners/:id/accounts/:accountId/reveal', method: 'GET', handler: r139.onRequestGet },
+    { path: '/api/owners/:id/accounts/:accountId/reveal', method: 'GET', handler: r142.onRequestGet },
     { path: '/api/demo/portal/statements/:id', method: 'GET', handler: r41.onRequestGet },
-    { path: '/api/housekeeping/tasks/:id/checklist', method: 'GET', handler: r94.onRequestGet },
-    { path: '/api/housekeeping/tasks/:id/photos', method: 'GET', handler: r95.onRequestGet },
-    { path: '/api/maintenance/issues/:id/documents', method: 'GET', handler: r113.onRequestGet },
-    { path: '/api/owner/statements/:id/pdf', method: 'GET', handler: r136.onRequestGet },
-    { path: '/api/units/:id/channels/airbnb-listings', method: 'GET', handler: r231.onRequestGet },
+    { path: '/api/housekeeping/cleaning-invoices/:id/print', method: 'GET', handler: r89.onRequestGet },
+    { path: '/api/housekeeping/tasks/:id/checklist', method: 'GET', handler: r97.onRequestGet },
+    { path: '/api/housekeeping/tasks/:id/photos', method: 'GET', handler: r98.onRequestGet },
+    { path: '/api/maintenance/issues/:id/documents', method: 'GET', handler: r116.onRequestGet },
+    { path: '/api/owner/statements/:id/pdf', method: 'GET', handler: r139.onRequestGet },
+    { path: '/api/units/:id/channels/airbnb-listings', method: 'GET', handler: r234.onRequestGet },
     { path: '/api/attendance/:id/photo/:side', method: 'GET', handler: r10.onRequestGet },
     { path: '/api/demo/portal/documents', method: 'GET', handler: r39.onRequestGet },
     { path: '/api/demo/portal/property-health', method: 'GET', handler: r40.onRequestGet },
     { path: '/api/demo/portal/summary', method: 'GET', handler: r43.onRequestGet },
     { path: '/api/demo/portal/trend', method: 'GET', handler: r44.onRequestGet },
     { path: '/api/expenses/utilities/scan', method: 'GET', handler: r60.onRequestGet },
-    { path: '/api/integrations/channex/status', method: 'GET', handler: r100.onRequestGet },
-    { path: '/api/operations/service-prices/export', method: 'GET', handler: r128.onRequestGet },
-    { path: '/api/system/health/audit-feed', method: 'GET', handler: r220.onRequestGet },
+    { path: '/api/integrations/channex/status', method: 'GET', handler: r103.onRequestGet },
+    { path: '/api/operations/service-prices/export', method: 'GET', handler: r131.onRequestGet },
+    { path: '/api/system/health/audit-feed', method: 'GET', handler: r223.onRequestGet },
     { path: '/api/field/repairs/:id', method: 'GET', handler: r67.onRequestGet },
-    { path: '/api/housekeeping/tasks/:id', method: 'GET', handler: r93.onRequestGet },
-    { path: '/api/it-support/attachments/:id', method: 'GET', handler: r103.onRequestGet },
-    { path: '/api/it-support/tickets/:code', method: 'GET', handler: r104.onRequestGet },
-    { path: '/api/messages/threads/:id', method: 'GET', handler: r119.onRequestGet },
-    { path: '/api/operations/service-prices/:id', method: 'GET', handler: r127.onRequestGet },
-    { path: '/api/owner/statements/:id', method: 'GET', handler: r135.onRequestGet },
-    { path: '/api/public/meetings/:path*', method: '', handler: r161.onRequest },
+    { path: '/api/housekeeping/tasks/:id', method: 'GET', handler: r96.onRequestGet },
+    { path: '/api/it-support/attachments/:id', method: 'GET', handler: r106.onRequestGet },
+    { path: '/api/it-support/tickets/:code', method: 'GET', handler: r107.onRequestGet },
+    { path: '/api/messages/threads/:id', method: 'GET', handler: r122.onRequestGet },
+    { path: '/api/operations/service-prices/:id', method: 'GET', handler: r130.onRequestGet },
+    { path: '/api/owner/statements/:id', method: 'GET', handler: r138.onRequestGet },
+    { path: '/api/public/meetings/:path*', method: '', handler: r164.onRequest },
     { path: '/api/departments/:id/category-access', method: 'GET', handler: r45.onRequestGet },
     { path: '/api/documents/:id/download', method: 'GET', handler: r48.onRequestGet },
     { path: '/api/guest-documents/:id/pdf', method: 'GET', handler: r80.onRequestGet },
-    { path: '/api/owners/:id/accounts', method: 'GET', handler: r140.onRequestGet },
-    { path: '/api/owners/:id/adjustments', method: 'GET', handler: r141.onRequestGet },
-    { path: '/api/owners/:id/pnl', method: 'GET', handler: r142.onRequestGet },
-    { path: '/api/owners/:id/reveal', method: 'GET', handler: r143.onRequestGet },
-    { path: '/api/owners/:id/statements', method: 'GET', handler: r144.onRequestGet },
-    { path: '/api/properties/:id/channels', method: 'GET', handler: r159.onRequestGet },
-    { path: '/api/reservations/:id/late-checkout', method: 'GET', handler: r175.onRequestGet },
-    { path: '/api/reservations/:id/payments', method: 'GET', handler: r176.onRequestGet },
-    { path: '/api/statements/:id/pdf', method: 'GET', handler: r207.onRequestGet },
-    { path: '/api/statements/:id/report', method: 'GET', handler: r208.onRequestGet },
-    { path: '/api/units/:id/agreement', method: 'GET', handler: r230.onRequestGet },
-    { path: '/api/units/:id/channels', method: 'GET', handler: r232.onRequestGet },
-    { path: '/api/units/:id/contract', method: 'GET', handler: r233.onRequestGet },
-    { path: '/api/users/:id/access', method: 'GET', handler: r241.onRequestGet },
-    { path: '/api/users/:id/category-access', method: 'GET', handler: r242.onRequestGet },
+    { path: '/api/owners/:id/accounts', method: 'GET', handler: r143.onRequestGet },
+    { path: '/api/owners/:id/adjustments', method: 'GET', handler: r144.onRequestGet },
+    { path: '/api/owners/:id/pnl', method: 'GET', handler: r145.onRequestGet },
+    { path: '/api/owners/:id/reveal', method: 'GET', handler: r146.onRequestGet },
+    { path: '/api/owners/:id/statements', method: 'GET', handler: r147.onRequestGet },
+    { path: '/api/properties/:id/channels', method: 'GET', handler: r162.onRequestGet },
+    { path: '/api/reservations/:id/late-checkout', method: 'GET', handler: r178.onRequestGet },
+    { path: '/api/reservations/:id/payments', method: 'GET', handler: r179.onRequestGet },
+    { path: '/api/statements/:id/pdf', method: 'GET', handler: r210.onRequestGet },
+    { path: '/api/statements/:id/report', method: 'GET', handler: r211.onRequestGet },
+    { path: '/api/units/:id/agreement', method: 'GET', handler: r233.onRequestGet },
+    { path: '/api/units/:id/channels', method: 'GET', handler: r235.onRequestGet },
+    { path: '/api/units/:id/contract', method: 'GET', handler: r236.onRequestGet },
+    { path: '/api/users/:id/access', method: 'GET', handler: r244.onRequestGet },
+    { path: '/api/users/:id/category-access', method: 'GET', handler: r245.onRequestGet },
     { path: '/api/airbnb-recon/income-types', method: 'GET', handler: r5.onRequestGet },
     { path: '/api/auth/reset-password', method: 'GET', handler: r13.onRequestGet },
     { path: '/api/auth/session', method: 'GET', handler: r14.onRequestGet },
@@ -334,69 +339,70 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/housekeeping/board', method: 'GET', handler: r85.onRequestGet },
     { path: '/api/housekeeping/clean-prices', method: 'GET', handler: r86.onRequestGet },
     { path: '/api/housekeeping/cleaners', method: 'GET', handler: r87.onRequestGet },
-    { path: '/api/housekeeping/crew', method: 'GET', handler: r88.onRequestGet },
-    { path: '/api/housekeeping/pay', method: 'GET', handler: r89.onRequestGet },
-    { path: '/api/housekeeping/prices', method: 'GET', handler: r90.onRequestGet },
-    { path: '/api/housekeeping/rules', method: 'GET', handler: r91.onRequestGet },
-    { path: '/api/housekeeping/tasks', method: 'GET', handler: r92.onRequestGet },
-    { path: '/api/housekeeping/unit-prices', method: 'GET', handler: r96.onRequestGet },
-    { path: '/api/import/hostplatform', method: 'GET', handler: r97.onRequestGet },
-    { path: '/api/import/hostplatform-api', method: 'GET', handler: r98.onRequestGet },
-    { path: '/api/integrations/channex-webhook-setup', method: 'GET', handler: r99.onRequestGet },
-    { path: '/api/it-support/tickets', method: 'GET', handler: r105.onRequestGet },
-    { path: '/api/it-support/unread-count', method: 'GET', handler: r106.onRequestGet },
-    { path: '/api/maintenance/approval-rules', method: 'GET', handler: r111.onRequestGet },
-    { path: '/api/maintenance/issues', method: 'GET', handler: r112.onRequestGet },
-    { path: '/api/maintenance/skus', method: 'GET', handler: r114.onRequestGet },
-    { path: '/api/maintenance/technicians', method: 'GET', handler: r115.onRequestGet },
-    { path: '/api/messages/saved-replies', method: 'GET', handler: r117.onRequestGet },
-    { path: '/api/messages/threads', method: 'GET', handler: r118.onRequestGet },
-    { path: '/api/nav/badges', method: 'GET', handler: r121.onRequestGet },
-    { path: '/api/notifications/count', method: 'GET', handler: r122.onRequestGet },
-    { path: '/api/operations/day', method: 'GET', handler: r124.onRequestGet },
-    { path: '/api/operations/job-money', method: 'GET', handler: r125.onRequestGet },
-    { path: '/api/operations/job-profit', method: 'GET', handler: r126.onRequestGet },
-    { path: '/api/operations/service-prices', method: 'GET', handler: r129.onRequestGet },
-    { path: '/api/operations/today', method: 'GET', handler: r130.onRequestGet },
-    { path: '/api/owner-close/summary', method: 'GET', handler: r131.onRequestGet },
-    { path: '/api/owner/documents', method: 'GET', handler: r132.onRequestGet },
-    { path: '/api/owner/property-health', method: 'GET', handler: r133.onRequestGet },
-    { path: '/api/owner/reviews', method: 'GET', handler: r134.onRequestGet },
-    { path: '/api/owner/summary', method: 'GET', handler: r137.onRequestGet },
-    { path: '/api/owner/trend', method: 'GET', handler: r138.onRequestGet },
-    { path: '/api/payouts/export', method: 'GET', handler: r148.onRequestGet },
-    { path: '/api/penalties/jobs', method: 'GET', handler: r152.onRequestGet },
-    { path: '/api/portfolio/owner-report', method: 'GET', handler: r153.onRequestGet },
-    { path: '/api/portfolio/performance', method: 'GET', handler: r154.onRequestGet },
-    { path: '/api/pricing/rules', method: 'GET', handler: r155.onRequestGet },
-    { path: '/api/reservations/calendar', method: 'GET', handler: r177.onRequestGet },
-    { path: '/api/reservations/export', method: 'GET', handler: r178.onRequestGet },
-    { path: '/api/reviews/cleaners', method: 'GET', handler: r182.onRequestGet },
-    { path: '/api/reviews/guest-reviews', method: 'GET', handler: r183.onRequestGet },
-    { path: '/api/reviews/guest-rules', method: 'GET', handler: r184.onRequestGet },
-    { path: '/api/reviews/guest-templates', method: 'GET', handler: r185.onRequestGet },
-    { path: '/api/reviews/health', method: 'GET', handler: r186.onRequestGet },
-    { path: '/api/reviews/settings', method: 'GET', handler: r188.onRequestGet },
-    { path: '/api/reviews/units', method: 'GET', handler: r189.onRequestGet },
-    { path: '/api/reviews/unreviewed', method: 'GET', handler: r190.onRequestGet },
-    { path: '/api/settings/agreement-template', method: 'GET', handler: r198.onRequestGet },
-    { path: '/api/settings/public', method: 'GET', handler: r200.onRequestGet },
-    { path: '/api/showcase/calendar', method: 'GET', handler: r201.onRequestGet },
-    { path: '/api/showcase/insights', method: 'GET', handler: r203.onRequestGet },
-    { path: '/api/statements/pdf', method: 'GET', handler: r210.onRequestGet },
-    { path: '/api/stock/movements', method: 'GET', handler: r216.onRequestGet },
-    { path: '/api/supply-chain/engine', method: 'GET', handler: r219.onRequestGet },
-    { path: '/api/system/health', method: 'GET', handler: r221.onRequestGet },
-    { path: '/api/tasks/facets', method: 'GET', handler: r223.onRequestGet },
-    { path: '/api/units/detail', method: 'GET', handler: r234.onRequestGet },
-    { path: '/api/units/export', method: 'GET', handler: r235.onRequestGet },
-    { path: '/api/units/financials', method: 'GET', handler: r236.onRequestGet },
-    { path: '/api/units/jobs', method: 'GET', handler: r238.onRequestGet },
-    { path: '/api/units/scheduled-changes', method: 'GET', handler: r239.onRequestGet },
-    { path: '/api/units/stays', method: 'GET', handler: r240.onRequestGet },
-    { path: '/api/users/access', method: 'GET', handler: r243.onRequestGet },
-    { path: '/api/users/category-access', method: 'GET', handler: r244.onRequestGet },
-    { path: '/api/users/sign-ins', method: 'GET', handler: r246.onRequestGet },
+    { path: '/api/housekeeping/cleaning-invoices', method: 'GET', handler: r90.onRequestGet },
+    { path: '/api/housekeeping/crew', method: 'GET', handler: r91.onRequestGet },
+    { path: '/api/housekeeping/pay', method: 'GET', handler: r92.onRequestGet },
+    { path: '/api/housekeeping/prices', method: 'GET', handler: r93.onRequestGet },
+    { path: '/api/housekeeping/rules', method: 'GET', handler: r94.onRequestGet },
+    { path: '/api/housekeeping/tasks', method: 'GET', handler: r95.onRequestGet },
+    { path: '/api/housekeeping/unit-prices', method: 'GET', handler: r99.onRequestGet },
+    { path: '/api/import/hostplatform', method: 'GET', handler: r100.onRequestGet },
+    { path: '/api/import/hostplatform-api', method: 'GET', handler: r101.onRequestGet },
+    { path: '/api/integrations/channex-webhook-setup', method: 'GET', handler: r102.onRequestGet },
+    { path: '/api/it-support/tickets', method: 'GET', handler: r108.onRequestGet },
+    { path: '/api/it-support/unread-count', method: 'GET', handler: r109.onRequestGet },
+    { path: '/api/maintenance/approval-rules', method: 'GET', handler: r114.onRequestGet },
+    { path: '/api/maintenance/issues', method: 'GET', handler: r115.onRequestGet },
+    { path: '/api/maintenance/skus', method: 'GET', handler: r117.onRequestGet },
+    { path: '/api/maintenance/technicians', method: 'GET', handler: r118.onRequestGet },
+    { path: '/api/messages/saved-replies', method: 'GET', handler: r120.onRequestGet },
+    { path: '/api/messages/threads', method: 'GET', handler: r121.onRequestGet },
+    { path: '/api/nav/badges', method: 'GET', handler: r124.onRequestGet },
+    { path: '/api/notifications/count', method: 'GET', handler: r125.onRequestGet },
+    { path: '/api/operations/day', method: 'GET', handler: r127.onRequestGet },
+    { path: '/api/operations/job-money', method: 'GET', handler: r128.onRequestGet },
+    { path: '/api/operations/job-profit', method: 'GET', handler: r129.onRequestGet },
+    { path: '/api/operations/service-prices', method: 'GET', handler: r132.onRequestGet },
+    { path: '/api/operations/today', method: 'GET', handler: r133.onRequestGet },
+    { path: '/api/owner-close/summary', method: 'GET', handler: r134.onRequestGet },
+    { path: '/api/owner/documents', method: 'GET', handler: r135.onRequestGet },
+    { path: '/api/owner/property-health', method: 'GET', handler: r136.onRequestGet },
+    { path: '/api/owner/reviews', method: 'GET', handler: r137.onRequestGet },
+    { path: '/api/owner/summary', method: 'GET', handler: r140.onRequestGet },
+    { path: '/api/owner/trend', method: 'GET', handler: r141.onRequestGet },
+    { path: '/api/payouts/export', method: 'GET', handler: r151.onRequestGet },
+    { path: '/api/penalties/jobs', method: 'GET', handler: r155.onRequestGet },
+    { path: '/api/portfolio/owner-report', method: 'GET', handler: r156.onRequestGet },
+    { path: '/api/portfolio/performance', method: 'GET', handler: r157.onRequestGet },
+    { path: '/api/pricing/rules', method: 'GET', handler: r158.onRequestGet },
+    { path: '/api/reservations/calendar', method: 'GET', handler: r180.onRequestGet },
+    { path: '/api/reservations/export', method: 'GET', handler: r181.onRequestGet },
+    { path: '/api/reviews/cleaners', method: 'GET', handler: r185.onRequestGet },
+    { path: '/api/reviews/guest-reviews', method: 'GET', handler: r186.onRequestGet },
+    { path: '/api/reviews/guest-rules', method: 'GET', handler: r187.onRequestGet },
+    { path: '/api/reviews/guest-templates', method: 'GET', handler: r188.onRequestGet },
+    { path: '/api/reviews/health', method: 'GET', handler: r189.onRequestGet },
+    { path: '/api/reviews/settings', method: 'GET', handler: r191.onRequestGet },
+    { path: '/api/reviews/units', method: 'GET', handler: r192.onRequestGet },
+    { path: '/api/reviews/unreviewed', method: 'GET', handler: r193.onRequestGet },
+    { path: '/api/settings/agreement-template', method: 'GET', handler: r201.onRequestGet },
+    { path: '/api/settings/public', method: 'GET', handler: r203.onRequestGet },
+    { path: '/api/showcase/calendar', method: 'GET', handler: r204.onRequestGet },
+    { path: '/api/showcase/insights', method: 'GET', handler: r206.onRequestGet },
+    { path: '/api/statements/pdf', method: 'GET', handler: r213.onRequestGet },
+    { path: '/api/stock/movements', method: 'GET', handler: r219.onRequestGet },
+    { path: '/api/supply-chain/engine', method: 'GET', handler: r222.onRequestGet },
+    { path: '/api/system/health', method: 'GET', handler: r224.onRequestGet },
+    { path: '/api/tasks/facets', method: 'GET', handler: r226.onRequestGet },
+    { path: '/api/units/detail', method: 'GET', handler: r237.onRequestGet },
+    { path: '/api/units/export', method: 'GET', handler: r238.onRequestGet },
+    { path: '/api/units/financials', method: 'GET', handler: r239.onRequestGet },
+    { path: '/api/units/jobs', method: 'GET', handler: r241.onRequestGet },
+    { path: '/api/units/scheduled-changes', method: 'GET', handler: r242.onRequestGet },
+    { path: '/api/units/stays', method: 'GET', handler: r243.onRequestGet },
+    { path: '/api/users/access', method: 'GET', handler: r246.onRequestGet },
+    { path: '/api/users/category-access', method: 'GET', handler: r247.onRequestGet },
+    { path: '/api/users/sign-ins', method: 'GET', handler: r249.onRequestGet },
     { path: '/api/access-credentials/:id', method: 'GET', handler: r1.onRequestGet },
     { path: '/api/approvals/:id', method: 'GET', handler: r8.onRequestGet },
     { path: '/api/consignment-notes/:id', method: 'GET', handler: r19.onRequestGet },
@@ -406,27 +412,27 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/expenses/:id', method: 'GET', handler: r56.onRequestGet },
     { path: '/api/goods-receipts/:id', method: 'GET', handler: r78.onRequestGet },
     { path: '/api/guests/:id', method: 'GET', handler: r82.onRequestGet },
-    { path: '/api/payment-vouchers/:id', method: 'GET', handler: r146.onRequestGet },
-    { path: '/api/product-models/:id', method: 'GET', handler: r156.onRequestGet },
-    { path: '/api/purchase-consignment/:id', method: 'GET', handler: r163.onRequestGet },
-    { path: '/api/purchase-invoices/:id', method: 'GET', handler: r165.onRequestGet },
-    { path: '/api/purchase-orders/:id', method: 'GET', handler: r167.onRequestGet },
-    { path: '/api/purchase-returns/:id', method: 'GET', handler: r169.onRequestGet },
-    { path: '/api/rate-cards/:id', method: 'GET', handler: r172.onRequestGet },
-    { path: '/api/reservations/:id', method: 'GET', handler: r174.onRequestGet },
-    { path: '/api/residence-rules/:id', method: 'GET', handler: r180.onRequestGet },
-    { path: '/api/sales-invoices/:id', method: 'GET', handler: r191.onRequestGet },
-    { path: '/api/sales-orders/:id', method: 'GET', handler: r193.onRequestGet },
-    { path: '/api/sales-returns/:id', method: 'GET', handler: r195.onRequestGet },
-    { path: '/api/so-amendments/:id', method: 'GET', handler: r204.onRequestGet },
-    { path: '/api/statements/:id', method: 'GET', handler: r206.onRequestGet },
-    { path: '/api/stock-takes/:id', method: 'GET', handler: r211.onRequestGet },
-    { path: '/api/stock-transfers/:id', method: 'GET', handler: r213.onRequestGet },
-    { path: '/api/suppliers/:id', method: 'GET', handler: r217.onRequestGet },
-    { path: '/api/threepl-companies/:id', method: 'GET', handler: r225.onRequestGet },
+    { path: '/api/payment-vouchers/:id', method: 'GET', handler: r149.onRequestGet },
+    { path: '/api/product-models/:id', method: 'GET', handler: r159.onRequestGet },
+    { path: '/api/purchase-consignment/:id', method: 'GET', handler: r166.onRequestGet },
+    { path: '/api/purchase-invoices/:id', method: 'GET', handler: r168.onRequestGet },
+    { path: '/api/purchase-orders/:id', method: 'GET', handler: r170.onRequestGet },
+    { path: '/api/purchase-returns/:id', method: 'GET', handler: r172.onRequestGet },
+    { path: '/api/rate-cards/:id', method: 'GET', handler: r175.onRequestGet },
+    { path: '/api/reservations/:id', method: 'GET', handler: r177.onRequestGet },
+    { path: '/api/residence-rules/:id', method: 'GET', handler: r183.onRequestGet },
+    { path: '/api/sales-invoices/:id', method: 'GET', handler: r194.onRequestGet },
+    { path: '/api/sales-orders/:id', method: 'GET', handler: r196.onRequestGet },
+    { path: '/api/sales-returns/:id', method: 'GET', handler: r198.onRequestGet },
+    { path: '/api/so-amendments/:id', method: 'GET', handler: r207.onRequestGet },
+    { path: '/api/statements/:id', method: 'GET', handler: r209.onRequestGet },
+    { path: '/api/stock-takes/:id', method: 'GET', handler: r214.onRequestGet },
+    { path: '/api/stock-transfers/:id', method: 'GET', handler: r216.onRequestGet },
+    { path: '/api/suppliers/:id', method: 'GET', handler: r220.onRequestGet },
+    { path: '/api/threepl-companies/:id', method: 'GET', handler: r228.onRequestGet },
     { path: '/api/account/:path*', method: 'GET', handler: r3.onRequestGet },
     { path: '/api/claims/:path*', method: 'GET', handler: r18.onRequestGet },
-    { path: '/api/meetings/:path*', method: '', handler: r116.onRequest },
+    { path: '/api/meetings/:path*', method: '', handler: r119.onRequest },
     { path: '/api/access-credentials', method: 'GET', handler: r2.onRequestGet },
     { path: '/api/accounting', method: 'GET', handler: r4.onRequestGet },
     { path: '/api/airbnb-recon', method: 'GET', handler: r6.onRequestGet },
@@ -456,55 +462,55 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/guest-documents', method: 'GET', handler: r81.onRequestGet },
     { path: '/api/guests', method: 'GET', handler: r83.onRequestGet },
     { path: '/api/holidays', method: 'GET', handler: r84.onRequestGet },
-    { path: '/api/integrations', method: 'GET', handler: r101.onRequestGet },
-    { path: '/api/inventory', method: 'GET', handler: r102.onRequestGet },
-    { path: '/api/labor-cost', method: 'GET', handler: r107.onRequestGet },
-    { path: '/api/leaves', method: 'GET', handler: r108.onRequestGet },
-    { path: '/api/lettings', method: 'GET', handler: r109.onRequestGet },
-    { path: '/api/loading-list', method: 'GET', handler: r110.onRequestGet },
-    { path: '/api/mrp', method: 'GET', handler: r120.onRequestGet },
-    { path: '/api/notifications', method: 'GET', handler: r123.onRequestGet },
-    { path: '/api/owners', method: 'GET', handler: r145.onRequestGet },
-    { path: '/api/payment-vouchers', method: 'GET', handler: r147.onRequestGet },
-    { path: '/api/payouts', method: 'GET', handler: r149.onRequestGet },
-    { path: '/api/payroll', method: 'GET', handler: r150.onRequestGet },
-    { path: '/api/penalties', method: 'GET', handler: r151.onRequestGet },
-    { path: '/api/product-models', method: 'GET', handler: r157.onRequestGet },
-    { path: '/api/products', method: 'GET', handler: r158.onRequestGet },
-    { path: '/api/properties', method: 'GET', handler: r160.onRequestGet },
-    { path: '/api/punch-sites', method: 'GET', handler: r162.onRequestGet },
-    { path: '/api/purchase-consignment', method: 'GET', handler: r164.onRequestGet },
-    { path: '/api/purchase-invoices', method: 'GET', handler: r166.onRequestGet },
-    { path: '/api/purchase-orders', method: 'GET', handler: r168.onRequestGet },
-    { path: '/api/purchase-returns', method: 'GET', handler: r170.onRequestGet },
-    { path: '/api/racks', method: 'GET', handler: r171.onRequestGet },
-    { path: '/api/rate-cards', method: 'GET', handler: r173.onRequestGet },
-    { path: '/api/reservations', method: 'GET', handler: r179.onRequestGet },
-    { path: '/api/residence-rules', method: 'GET', handler: r181.onRequestGet },
-    { path: '/api/reviews', method: 'GET', handler: r187.onRequestGet },
-    { path: '/api/sales-invoices', method: 'GET', handler: r192.onRequestGet },
-    { path: '/api/sales-orders', method: 'GET', handler: r194.onRequestGet },
-    { path: '/api/sales-returns', method: 'GET', handler: r196.onRequestGet },
-    { path: '/api/search', method: 'GET', handler: r197.onRequestGet },
-    { path: '/api/settings', method: 'GET', handler: r199.onRequestGet },
-    { path: '/api/showcase', method: 'GET', handler: r202.onRequestGet },
-    { path: '/api/so-amendments', method: 'GET', handler: r205.onRequestGet },
-    { path: '/api/statements', method: 'GET', handler: r209.onRequestGet },
-    { path: '/api/stock', method: 'GET', handler: r215.onRequestGet },
-    { path: '/api/stock-takes', method: 'GET', handler: r212.onRequestGet },
-    { path: '/api/stock-transfers', method: 'GET', handler: r214.onRequestGet },
-    { path: '/api/suppliers', method: 'GET', handler: r218.onRequestGet },
-    { path: '/api/table-layouts', method: 'GET', handler: r222.onRequestGet },
-    { path: '/api/tasks', method: 'GET', handler: r224.onRequestGet },
-    { path: '/api/threepl-companies', method: 'GET', handler: r226.onRequestGet },
-    { path: '/api/unbilled-deliveries', method: 'GET', handler: r227.onRequestGet },
-    { path: '/api/unit-bed-sizes', method: 'GET', handler: r228.onRequestGet },
-    { path: '/api/unit-layout-types', method: 'GET', handler: r229.onRequestGet },
-    { path: '/api/units', method: 'GET', handler: r237.onRequestGet },
-    { path: '/api/users', method: 'GET', handler: r245.onRequestGet },
-    { path: '/api/vehicles', method: 'GET', handler: r247.onRequestGet },
-    { path: '/api/warehouses', method: 'GET', handler: r248.onRequestGet },
-    { path: '/api/working-hours', method: 'GET', handler: r249.onRequestGet },
+    { path: '/api/integrations', method: 'GET', handler: r104.onRequestGet },
+    { path: '/api/inventory', method: 'GET', handler: r105.onRequestGet },
+    { path: '/api/labor-cost', method: 'GET', handler: r110.onRequestGet },
+    { path: '/api/leaves', method: 'GET', handler: r111.onRequestGet },
+    { path: '/api/lettings', method: 'GET', handler: r112.onRequestGet },
+    { path: '/api/loading-list', method: 'GET', handler: r113.onRequestGet },
+    { path: '/api/mrp', method: 'GET', handler: r123.onRequestGet },
+    { path: '/api/notifications', method: 'GET', handler: r126.onRequestGet },
+    { path: '/api/owners', method: 'GET', handler: r148.onRequestGet },
+    { path: '/api/payment-vouchers', method: 'GET', handler: r150.onRequestGet },
+    { path: '/api/payouts', method: 'GET', handler: r152.onRequestGet },
+    { path: '/api/payroll', method: 'GET', handler: r153.onRequestGet },
+    { path: '/api/penalties', method: 'GET', handler: r154.onRequestGet },
+    { path: '/api/product-models', method: 'GET', handler: r160.onRequestGet },
+    { path: '/api/products', method: 'GET', handler: r161.onRequestGet },
+    { path: '/api/properties', method: 'GET', handler: r163.onRequestGet },
+    { path: '/api/punch-sites', method: 'GET', handler: r165.onRequestGet },
+    { path: '/api/purchase-consignment', method: 'GET', handler: r167.onRequestGet },
+    { path: '/api/purchase-invoices', method: 'GET', handler: r169.onRequestGet },
+    { path: '/api/purchase-orders', method: 'GET', handler: r171.onRequestGet },
+    { path: '/api/purchase-returns', method: 'GET', handler: r173.onRequestGet },
+    { path: '/api/racks', method: 'GET', handler: r174.onRequestGet },
+    { path: '/api/rate-cards', method: 'GET', handler: r176.onRequestGet },
+    { path: '/api/reservations', method: 'GET', handler: r182.onRequestGet },
+    { path: '/api/residence-rules', method: 'GET', handler: r184.onRequestGet },
+    { path: '/api/reviews', method: 'GET', handler: r190.onRequestGet },
+    { path: '/api/sales-invoices', method: 'GET', handler: r195.onRequestGet },
+    { path: '/api/sales-orders', method: 'GET', handler: r197.onRequestGet },
+    { path: '/api/sales-returns', method: 'GET', handler: r199.onRequestGet },
+    { path: '/api/search', method: 'GET', handler: r200.onRequestGet },
+    { path: '/api/settings', method: 'GET', handler: r202.onRequestGet },
+    { path: '/api/showcase', method: 'GET', handler: r205.onRequestGet },
+    { path: '/api/so-amendments', method: 'GET', handler: r208.onRequestGet },
+    { path: '/api/statements', method: 'GET', handler: r212.onRequestGet },
+    { path: '/api/stock', method: 'GET', handler: r218.onRequestGet },
+    { path: '/api/stock-takes', method: 'GET', handler: r215.onRequestGet },
+    { path: '/api/stock-transfers', method: 'GET', handler: r217.onRequestGet },
+    { path: '/api/suppliers', method: 'GET', handler: r221.onRequestGet },
+    { path: '/api/table-layouts', method: 'GET', handler: r225.onRequestGet },
+    { path: '/api/tasks', method: 'GET', handler: r227.onRequestGet },
+    { path: '/api/threepl-companies', method: 'GET', handler: r229.onRequestGet },
+    { path: '/api/unbilled-deliveries', method: 'GET', handler: r230.onRequestGet },
+    { path: '/api/unit-bed-sizes', method: 'GET', handler: r231.onRequestGet },
+    { path: '/api/unit-layout-types', method: 'GET', handler: r232.onRequestGet },
+    { path: '/api/units', method: 'GET', handler: r240.onRequestGet },
+    { path: '/api/users', method: 'GET', handler: r248.onRequestGet },
+    { path: '/api/vehicles', method: 'GET', handler: r250.onRequestGet },
+    { path: '/api/warehouses', method: 'GET', handler: r251.onRequestGet },
+    { path: '/api/working-hours', method: 'GET', handler: r252.onRequestGet },
     { path: '/api/:path*', method: '', handler: r0.onRequest },
   ];
 }
