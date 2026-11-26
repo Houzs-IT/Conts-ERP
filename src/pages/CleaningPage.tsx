@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { Switch } from '../components/Switch';
 import { DateField, MoneyInput, TimeField } from '../components/inputs';
 import Icon from '../components/Icon';
 import type { SelectOption } from '../components/Select';
@@ -33,6 +34,7 @@ import { rm, plural, count, buildingName } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { PhoneHistory, RecordHistory } from '../components/RecordHistory';
 import { PricesView, PayView } from './CleaningSetup';
+import { OutsideBillingView } from './cleaning/OutsideBilling';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import {
   KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type MediaItem,
@@ -94,7 +96,7 @@ interface Detail {
   cleaners?: TaskCleaner[]; unit?: UnitSize;
 }
 
-type Tab = 'board' | 'history' | 'prices' | 'pay' | 'profit';
+type Tab = 'board' | 'history' | 'prices' | 'pay' | 'profit' | 'billing';
 type DayPick = 'today' | 'tomorrow' | 'pick';
 
 const KIND_NAME: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
@@ -107,7 +109,7 @@ const COST_SOURCE: Record<string, string> = { unit: "the unit's own price", hist
 export default function CleaningPage() {
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab: Tab = asked === 'history' || asked === 'prices' || asked === 'pay' || asked === 'profit' ? asked : 'board';
+  const tab: Tab = asked === 'history' || asked === 'prices' || asked === 'pay' || asked === 'profit' || asked === 'billing' ? asked : 'board';
   const setTab = (t: Tab) => setParams(p => {
     const n = new URLSearchParams(p);
     if (t !== 'board') n.set('tab', t); else n.delete('tab');
@@ -117,6 +119,7 @@ export default function CleaningPage() {
 
   if (tab === 'prices') return <PricesView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
   if (tab === 'pay') return <PayView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
+  if (tab === 'billing') return <OutsideBillingView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
   if (tab === 'profit') return (
     <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
       <PageHeader title="Cleaning" sub="Profit by job: what each clean billed against what it cost" actions={<TabSwitch tab={tab} onTab={setTab} />} />
@@ -130,6 +133,7 @@ function TabSwitch({ tab, onTab, className }: { tab: Tab; onTab: (t: Tab) => voi
   const { user } = useSession();
   const profit = maySee(user, 'finance');
   return <Segmented label="View" value={tab} onChange={onTab} className={className} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' },
+    { value: 'billing' as const, label: 'Outside billing' },
     ...(profit ? [{ value: 'profit' as const, label: 'Profit' }] : [])]} />;
 }
 
@@ -404,7 +408,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         <DeleteCleansModal jobs={pickedRows} onClose={() => setBulk(null)}
           onDone={(title, body) => { setBulk(null); setPicks(new Set()); toast({ tone: body ? 'warning' : 'success', title, body }); reload(); }} />
       )}
-      {creating && <NewCleanModal date={date} onClose={() => setCreating(false)} onDone={() => { setCreating(false); reload(); }} />}
+      {creating && <NewCleanModal date={date} onClose={() => setCreating(false)} onDone={(title, body, tone) => { setCreating(false); if (title) toast({ tone: tone ?? 'success', title, body }); reload(); }} />}
       {assignJobs && <BulkAssignCleaner taskIds={assignJobs.ids} onClose={() => setAssignJobs(null)}
         onDone={() => { assignJobs.clear?.(); setAssignJobs(null); reload(); }} />}
       {assignFor && (
@@ -1217,7 +1221,7 @@ function CleanAmount({ taskId, cost, external, done, kindName, onSaved }: {
 
 /* ---------- dialogs ---------- */
 
-function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () => void; onDone: () => void }) {
+function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () => void; onDone: (title?: string, body?: string, tone?: 'success' | 'warning') => void }) {
   const units = useUnitRoster();
   const { user } = useSession();
   // CS (operations staff) asks for the clean; Basic or Deep is the cleaning team's call (26 Oct 2026).
@@ -1237,8 +1241,10 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   const [touchedPay, setTouchedPay] = useState(false);
   const [itemId, setItemId] = useState('');
   const [layout, setLayout] = useState('studio');
+  // An outside job may be billed to its client as it is added (chew, 26 Nov 2026); a month's jobs are billed together on Outside billing.
+  const [billNow, setBillNow] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ unit?: string; address?: string; amount?: string; form?: string }>({});
+  const [error, setError] = useState<{ unit?: string; address?: string; amount?: string; client?: string; form?: string }>({});
   const external = unitId === EXTERNAL;
   // The job is priced from Service prices: the item for the clean type (or another one picked, or Other with typed
   // amounts), at the unit's layout, its own figures first. Both amounts can be typed over.
@@ -1257,18 +1263,28 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   useEffect(() => { if (!touchedAmount) setAmount(suggested); }, [unitId, kind, itemId, layout, suggested]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!touchedPay) setPay(suggestedPay); }, [unitId, kind, itemId, layout, suggestedPay]); // eslint-disable-line react-hooks/exhaustive-deps
   async function save() {
-    const bad = { unit: unitId ? undefined : 'Pick a unit, or External.', address: external && !address.trim() ? 'Enter the address.' : undefined, amount: external && amount == null ? 'Enter the amount.' : undefined };
-    if (bad.unit || bad.address || bad.amount) { setError(bad); return; }
+    const bad = { unit: unitId ? undefined : 'Pick a unit, or External.', address: external && !address.trim() ? 'Enter the address.' : undefined, amount: external && amount == null ? 'Enter the amount.' : external && billNow && !amount ? 'Enter what the client is charged.' : undefined,
+      client: external && billNow && !client.trim() ? 'The invoice needs the client\'s name.' : undefined };
+    if (bad.unit || bad.address || bad.amount || bad.client) { setError(bad); return; }
     setBusy(true); setError({});
     try {
       const title = item && itemId ? item.name : KIND_NAME[kind] ?? 'Basic clean';
-      await api.post('/housekeeping/tasks', {
+      const made = await api.post<{ id: string }>('/housekeeping/tasks', {
         ...(external ? { external: { address: address.trim(), clientName: client.trim() || undefined, clientPhone: phone.trim() || undefined }, layout } : { unitId }),
         date: day, kind, cleanerIds, instructions: notes.trim() || undefined, title,
         ...(ready && itemId ? { serviceItemId: itemId } : {}),
         ...(amount != null && (external || touchedAmount || itemId === 'other') ? { amount } : {}),
         ...(pay != null && (touchedPay || itemId === 'other') ? { cleanerPay: pay } : {}),
       });
+      if (external && billNow) {
+        try {
+          const r = await api.post<{ invoice: { invoiceNo: string } }>('/housekeeping/cleaning-invoices', { taskIds: [made.id] });
+          onDone(`Cleaning job added and billed on ${r.invoice.invoiceNo}.`);
+        } catch (e) {
+          onDone('Cleaning job added, not billed yet.', `${errorMessage(e, 'The invoice was not made.')} Bill it from Outside billing.`, 'warning');
+        }
+        return;
+      }
       onDone();
     } catch (e) { setError({ form: errorMessage(e, 'Not saved. Try again.') }); setBusy(false); }
   }
@@ -1284,7 +1300,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
             <input className={INPUT} value={address} onChange={e => { setAddress(e.target.value); setError(x => ({ ...x, address: undefined })); }} maxLength={300} placeholder="e.g. 12 Jalan Ampang, Kuala Lumpur" />
           </FormRow>
           <div className="grid grid-cols-2 gap-3">
-            <FormRow label="Client name (optional)"><input className={INPUT} value={client} onChange={e => setClient(e.target.value)} maxLength={120} /></FormRow>
+            <FormRow label={billNow ? 'Client name' : 'Client name (optional)'} error={error.client}><input className={INPUT} value={client} onChange={e => { setClient(e.target.value); setError(x => ({ ...x, client: undefined })); }} maxLength={120} /></FormRow>
             <FormRow label="Client phone (optional)"><input className={INPUT} value={phone} onChange={e => setPhone(e.target.value)} maxLength={40} inputMode="tel" /></FormRow>
           </div>
         </>
@@ -1326,6 +1342,15 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
           <FormRow label="Internal cost, RM" hint="What the cleaner is paid for this job.">
             <MoneyInput className={INPUT} valueSen={pay} onChangeSen={v => { setPay(v); setTouchedPay(true); }} aria-label="Internal cost in RM" placeholder="Not set" />
           </FormRow>
+        </div>
+      )}
+      {external && (
+        <div className="flex items-start gap-3">
+          <Switch checked={billNow} onChange={setBillNow} label="Bill the client now" />
+          <div className="flex flex-col min-w-0">
+            <span className="text-copy font-medium">Bill the client now</span>
+            <span className="text-meta text-muted-ink">Issues the invoice for this job as it is added. Leave it off to bill the client's jobs together later, on Outside billing.</span>
+          </div>
         </div>
       )}
       <div className="flex flex-col gap-1.5 min-w-0">

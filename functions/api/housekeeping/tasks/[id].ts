@@ -149,8 +149,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b?.amount !== undefined) {
     if (!(await hasCleanPrices(env))) return fail('NOT_CONFIGURED', 'Cleaning amounts need a database update (migration 0126) that is not applied yet.', 501);
     if (b.amount !== null && (!Number.isInteger(b.amount) || b.amount < 0)) return fail('VALIDATION', 'Enter the amount, RM 0.00 or more.', 422, { amount: 'Enter the amount.' });
-    const cur = await one<{ amount: number | null; unit_id: string | null }>(env, 'SELECT amount, unit_id FROM tasks WHERE id = ?', id);
+    const cur = await one<{ amount: number | null; unit_id: string | null; cleaning_invoice_no: string | null }>(env, 'SELECT amount, unit_id, cleaning_invoice_no FROM tasks WHERE id = ?', id);
     if (b.amount === null && !cur?.unit_id) return fail('VALIDATION', 'An external job needs its amount.', 422, { amount: 'Enter the amount.' });
+    // Billed to the client (migration 0393): the invoice holds the amount, so it no longer changes here.
+    if (cur?.cleaning_invoice_no && b.amount !== cur.amount) return fail('CONFLICT', `This job is billed on ${cur.cleaning_invoice_no}: its amount cannot change. Ask finance.`, 409, { amount: `Billed on ${cur.cleaning_invoice_no}.` });
     if (await one(env, 'SELECT 1 AS x FROM expenses WHERE task_id = ?', id)) return fail('CONFLICT', 'This clean is already charged to the unit. Change the cost on the unit instead.', 409);
     sets.push('amount = ?'); args.push(b.amount);
     before.amount = cur?.amount ?? null; after.amount = b.amount;

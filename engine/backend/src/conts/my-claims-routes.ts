@@ -16,8 +16,10 @@
 //   GET  /accounts, /projects       what a cost is, and the project it is on
 //   GET  /suppliers?q=, /purchase-orders?q=&supplierId=   who finance pays (office staff)
 //   POST /utility-bills/*          scanned utility bills from Property OS (utility-bill-routes.ts; office staff)
+//   /cleaning-invoices/*           outside cleaning jobs billed and paid, from Property OS (cleaning-billing.ts; office staff)
 //   GET  /finance-waiting          how many payment requests and claims wait for finance to pay (office staff; Property
 //                                  OS shows it on the Payment requests menu entry only to those who open the Ledger)
+import { cleaningBillingRoutes } from './cleaning-billing';
 import { paginateAll } from '../scm/lib/paginate-all';
 import { Hono } from 'hono';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
@@ -426,5 +428,6 @@ export function myClaimsRouter(source: 'session' | 'forward') {
   myRequestRoutes(r);
   utilityBillRoutes(r);
   if (source === 'forward') renoReviewRoutes(r);
+  if (source === 'forward') cleaningBillingRoutes(r);
   return r;
 }
