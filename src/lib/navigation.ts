@@ -134,7 +134,9 @@ const SYSTEM_ADMIN_ITEMS: NavItem[] = [
 ];
 const DREAM_CRAFTER_SYSTEM_ITEMS = SYSTEM_ADMIN_ITEMS
   .filter(item => item.key !== 'integrations')
-  .map(item => (item.key === 'settings' ? { ...item, children: item.children?.filter(tab => tab.key === 'myAccount') } : item));
+  .map(item => (item.key === 'settings'
+    ? { ...item, label: 'My account', icon: 'user-round', children: item.children?.filter(tab => tab.key === 'myAccount') }
+    : item));
 
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
