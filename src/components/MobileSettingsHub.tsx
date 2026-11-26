@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { DARK_MODE_READY } from '../lib/theme';
 import { color, radius } from '../theme';
-import { SETTINGS_SECTIONS, screenClosed } from '../lib/navigation';
+import { SETTINGS_SECTIONS, screenClosed, workspaceOf } from '../lib/navigation';
+import { readWs } from './Sidebar';
 import { useSession } from '../lib/session';
 import { jobTitle } from '../lib/vocabulary';
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme';
@@ -38,8 +39,10 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
   const [confirm, setConfirm] = useState(false);
   if (!user) return null;
   const initials = user.fullName.split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase();
+  // On Dream Crafter, rows that only The Conts' menu holds (Notifications, the business settings) are left out.
+  const onDreamCrafter = readWs() === 'supply';
   const groups = GROUPS
-    .map(g => ({ ...g, items: g.items.filter(it => !screenClosed(it.path, user.access)) }))
+    .map(g => ({ ...g, items: g.items.filter(it => !screenClosed(it.path, user.access) && !(onDreamCrafter && workspaceOf(it.path) === 'rental')) }))
     .filter(g => g.items.length);
 
   const row = { display: 'flex', alignItems: 'center', gap: 13, minHeight: 56, padding: '8px 16px', borderBottom: `1px solid ${color.borderMuted}`, background: 'transparent', border: 'none', width: '100%', textAlign: 'left' as const, cursor: 'pointer', color: color.ink };
