@@ -59,3 +59,16 @@ Cloudflare dashboard → theconts.com → Email → Email Routing:
 
 In Property OS, open Mail → Mailboxes (Full on Mail Center), add the same address and give people access to it.
 Send a test email to it from outside, then reply from Mail Center.
+
+## Another domain (for example Dream Crafter's, CONTS-0081)
+
+The same worker and engine serve a second domain. Mail for it is filed under The Conts company, like theconts.com.
+
+1. Cloudflare: add the domain as a zone in the Conts ERP account, then repeat step 4 on it (Email Routing on, one
+   custom address per mailbox, **Send to a Worker → conts-mail-inbound**).
+2. Resend: add the domain and set the DNS records it lists (SPF, DKIM), so Mail Center can send from it.
+3. Engine: add `MAIL_EXTRA_DOMAINS = "<the domain>"` (comma-separated for more than one) under `[vars]` in
+   `engine/backend/wrangler.production.toml`, and deploy. Not in the dashboard: the next deploy replaces dashboard
+   variables with the file's `[vars]`.
+4. ERP: Mail → Mailboxes now accepts addresses on that domain. Add them, give people access, send a test email in
+   and reply from Mail Center.
