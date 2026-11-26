@@ -7,9 +7,10 @@ html.conts-embedded .sticky.lg\:top-\[52px\] {
   top: 0;
 }
 
-/* Every screen here sits on the Dream Crafter page that /projects/list (the Beta screens) and the ERP sidebar draw,
-   light or night as Property OS's theme says (data-beta-skin, embed.ts). Tables keep their own look in light;
-   on night they turn dark (rules at the end). The two gradients are PAGE_VISION and PAGE_NIGHT in
+/* Inside Property OS every screen sits on the Dream Crafter page that /projects/list and the ERP sidebar draw, light or
+   night as Property OS's theme says (data-beta-skin, embed.ts). The engine's neutral Tailwind colours are CSS variables
+   (--eng-*, src/index.css, light values); night re-points them in one block below, so cards, tables, text and borders
+   turn dark without a rule per component. The two page gradients are PAGE_VISION and PAGE_NIGHT in
    pages/renovation-beta/renovationBetaTheme.ts, copied so the main bundle does not load that module;
    embedTheme.test.ts keeps them equal. The pinned page header takes the same fixed backdrop, so it hides what
    scrolls under it without a seam. */
@@ -27,8 +28,7 @@ html.conts-embedded .page-head {
 
 /* The controls above the table (stat cards, filter strips, the table's search and buttons, header buttons) take the
    look of /projects/list's search bar and tab strip: Beta glass on a solid base, so a menu that opens from one stays
-   readable. The table itself and anything inside a white card keep their look (dreamcrafters feedback, 11 Nov 2026); Chart of accounts' cards are the exception on night (rules at the end).
-   Values: glass, glassSolid, glassEdge, btnGlassShadow and the inks in renovationBetaTheme.ts. */
+   readable. Values: glass, glassSolid, glassEdge, btnGlassShadow and the inks in renovationBetaTheme.ts. */
 html.conts-embedded {
   --conts-glass: linear-gradient(180deg,rgba(255,255,255,.86),rgba(244,246,251,.62)), #F7F8FC;
   --conts-edge: rgba(255,255,255,.8);
@@ -45,53 +45,36 @@ html.conts-embedded :is(.page-head .bg-surface, .dt-bar:not(.bg-surface .dt-bar)
   box-shadow: var(--conts-glow);
 }
 
-/* Night: text on the page or on that glass takes the Beta night inks. */
-html.conts-embedded[data-beta-skin="night"] .page-head { border-color: rgba(150,175,255,.18); }
-html.conts-embedded[data-beta-skin="night"] :is(.page-head *, .dt-bar:not(.bg-surface .dt-bar) *, .dc-glass:not(.bg-surface .dc-glass), .dc-glass:not(.bg-surface .dc-glass) *).text-ink { color: #EEF1F8; }
-html.conts-embedded[data-beta-skin="night"] :is(.page-head *, .dt-bar:not(.bg-surface .dt-bar) *, .dc-glass:not(.bg-surface .dc-glass), .dc-glass:not(.bg-surface .dc-glass) *).text-ink-secondary { color: #B9C0D0; }
-html.conts-embedded[data-beta-skin="night"] :is(.page-head *, .dt-bar:not(.bg-surface .dt-bar) *, .dc-glass:not(.bg-surface .dc-glass), .dc-glass:not(.bg-surface .dc-glass) *).text-ink-muted { color: #ADB4C5; }
-html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dt-bar:not(.bg-surface .dt-bar), .dc-glass:not(.bg-surface .dc-glass)) ::placeholder { color: #ADB4C5; }
-html.conts-embedded[data-beta-skin="night"] .dc-glass:not(.bg-surface .dc-glass) :is(.text-err) { color: #FF9B90; }
-html.conts-embedded[data-beta-skin="night"] .dc-glass:not(.bg-surface .dc-glass) :is(.text-synced) { color: #7BE8D8; }
-html.conts-embedded[data-beta-skin="night"] .dc-glass:not(.bg-surface .dc-glass) :is(.text-warning-text) { color: #F7CD73; }
-/* Chips and hover tints inside the glass were pale page colours; on night they become a faint white wash. */
-html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dt-bar:not(.bg-surface .dt-bar), .dc-glass:not(.bg-surface .dc-glass)) :is(.bg-bg, .hover\:bg-primary-soft:hover) { background: rgba(255,255,255,.08); }
-/* Blue-black links and chevrons (text-primary) would vanish on night. */
-html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dt-bar:not(.bg-surface .dt-bar), .dc-glass:not(.bg-surface .dc-glass)) .text-primary { color: #EEF1F8; }
-/* A chosen pill and the black main action: flat light ink, as /projects/list marks a chosen tab, so they keep their shape. */
-html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
-html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary :is(.text-white, [class*="text-white/"]) { color: #151823; }
-html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary .bg-white\/20 { background: rgba(21,24,35,.12); }
-
-/* Night: the shared table (DataTable's .dt-table box) was left white, so the Beta screens' light night ink (the
-   /projects/list Project link) was near-invisible on it (YH, 11 Nov 2026). Its head, rows, stripes, lines and inks
-   take the Beta night colours (surface, ink, text2, muted, line, lineSoft in renovationBetaTheme.ts). Solid, not
-   glass: the sticky head and frozen cells must hide what scrolls under them; --dt-row(-alt) also feed those cells.
-   A table inside a white card keeps its look, as the rules above leave that card. */
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) {
-  --dt-row: #1C2030;
-  --dt-row-alt: #232736;
-  background: var(--dt-row);
-  border-color: rgba(150,175,255,.24);
+/* Night: the neutral colours, the design-system tokens the screens read and the shared table rows. */
+html.conts-embedded[data-beta-skin="night"] {
+  --eng-bg: 21 24 35; --eng-surface: 28 32 48; --eng-surface-2: 35 39 54; --eng-surface-dim: 42 47 66;
+  --eng-border: 57 66 98; --eng-border-subtle: 50 58 85; --eng-border-strong: 101 118 172;
+  --eng-ink: 238 241 248; --eng-ink-secondary: 185 192 208; --eng-ink-muted: 173 180 197;
+  --eng-primary-soft: 51 54 69; --eng-primary-ink: 238 241 248; --eng-accent-soft: 63 57 53; --eng-accent-ink: 247 205 115;
+  --eng-synced-bg: 30 59 69; --eng-err-bg: 64 44 56; --eng-warning-bg: 63 57 53; --eng-warning-text: 247 205 115;
+  --eng-expired-bg: 64 44 56; --eng-expired-text: 255 155 144;
+  --dt-row: #1C2030; --dt-row-alt: #232736;
+  --c-cream: #1C2030; --c-paper: #232736; --c-beige: #2A2F42; --bg-subtle: #232736;
+  --c-ink: #EEF1F8; --c-ink-soft: #ADB4C5; --text-soft: #ADB4C5; --fg-muted: #ADB4C5; --fg-soft: #ADB4C5; --fg-strong: #B9C0D0;
+  --c-burnt: #EEF1F8; --c-orange: #7FD6C8; --c-secondary-a: #7FD1A8; --c-festive-b: #FF9B90;
+  --c-error: #FF9B90; --c-error-bg: rgba(255,110,100,.16); --c-warn: #F7CD73; --c-warn-bg: rgba(245,190,80,.16);
+  --c-success-bg: rgba(40,200,180,.16);
+  --line: rgba(150,175,255,.18); --line-strong: rgba(150,175,255,.32); --border-weak: rgba(150,175,255,.11);
+  --lane-proceed-fg: #A9C4FF; --lane-logistics-fg: #D2B8FF; --lane-ready-fg: #F7CD73; --lane-dispatched-fg: #7BE8D8;
   color-scheme: dark;
-  /* Cells with no colour class inherited the page's #151515 (voucher numbers 1.13:1 on prod, 13 Nov 2026). */
-  color: #EEF1F8;
-  /* Text-only tokens (tokens.css); the colour tokens below are also fills, so their inks are matched per use instead. */
-  --c-ink-soft: #B9C0D0;
-  --text-soft: #B9C0D0;
 }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface { background: var(--dt-row); }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface-dim\/35 { background: var(--dt-row-alt); }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.bg-surface-dim, .bg-surface-dim\/70, .hover\:bg-surface-dim:hover) { background: #2A2F42; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .bg-surface-dim\/20 { background: rgba(255,255,255,.03); }
-/* White panels and buttons inside a cell (a row's expanded lines, a cell button) take the faint night wash, as their text turns light. */
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) td :is(.bg-surface, .bg-surface-2, [class*="bg-surface-2/"]) { background: rgba(255,255,255,.04); }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .border-border { border-color: rgba(150,175,255,.18); }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .border-border-subtle { border-color: rgba(150,175,255,.11); }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink { color: #EEF1F8; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-secondary { color: #B9C0D0; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-muted { color: #ADB4C5; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-primary { color: #9FC0FF; }
+html.conts-embedded[data-beta-skin="night"] .page-head { border-color: rgba(150,175,255,.18); }
+/* Inks written as fixed colours (not --eng-*) that would vanish on night, with their slash-opacity variants. */
+html.conts-embedded[data-beta-skin="night"] :is(.text-err, [class*="text-err/"]) { color: #FF9B90; }
+html.conts-embedded[data-beta-skin="night"] :is(.text-synced, [class*="text-synced/"]) { color: #7BE8D8; }
+html.conts-embedded[data-beta-skin="night"] :is(.text-accent, [class*="text-accent/"]) { color: #C8A46A; }
+html.conts-embedded[data-beta-skin="night"] :is(.text-learning, [class*="text-learning/"]) { color: #A9C4FF; }
+html.conts-embedded[data-beta-skin="night"] .text-primary { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .border-primary { border-color: #EEF1F8; }
+/* A chosen pill and the black main action: flat light ink, as /projects/list marks a chosen tab, so they keep their shape. */
+html.conts-embedded[data-beta-skin="night"] .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .bg-primary :is(.text-white, [class*="text-white/"]) { color: #151823; }
+html.conts-embedded[data-beta-skin="night"] .bg-primary .bg-white\/20 { background: rgba(21,24,35,.12); }
 
 /* Night: the Mail Center (pages/MailCenter, root class .mail-center) draws its panels, fields and buttons straight on
    the page, outside any table or glass, so they stayed white and its dark inks (the title, folder and department names)
@@ -129,44 +112,28 @@ html.conts-embedded[data-beta-skin="night"] .mail-center .border-primary { borde
 /* Night: engine cells set their colours inline (docs, money, muted meta), which the class rules above cannot reach:
    black, teal and red at 1.1-2.9:1 on the night rows (prod, 13 Nov 2026). The common ones map to the night inks
    (5.2-14:1 on #1C2030/#2A2F42). React writes inline colours as rgb(), so that is what these match. */
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(21, 21, 21)"], [style*="color: rgb(17, 20, 15)"], [style*="color: rgb(58, 63, 54)"], [style*="color: rgb(30, 30, 30)"], [style*="color: rgb(43, 43, 43)"]) { color: #EEF1F8 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(118, 123, 110)"], [style*="color: rgb(154, 160, 147)"], [style*="color: rgb(119, 115, 107)"], [style*="color: rgb(107, 113, 102)"], [style*="color: rgb(112, 109, 103)"], [style*="color: rgb(74, 72, 68)"]) { color: #B9C0D0 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(22, 105, 95)"], [style*="color: rgb(12, 63, 57)"]) { color: #7FD6C8 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(17, 105, 74)"], [style*="color: rgb(47, 93, 79)"], [style*="color: rgb(44, 122, 63)"]) { color: #7FD1A8 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(179, 38, 30)"], [style*="color: rgb(184, 51, 31)"], [style*="color: rgb(178, 58, 58)"], [style*="color: rgb(168, 53, 47)"], [style*="color: rgb(180, 35, 24)"]) { color: #FF9B90 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(161, 106, 46)"], [style*="color: rgb(138, 90, 0)"], [style*="color: rgb(138, 106, 47)"], [style*="color: rgb(183, 121, 31)"], [style*="color: rgb(138, 90, 18)"], [style*="color: rgb(117, 88, 31)"]) { color: #F7CD73 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: rgb(166, 71, 30)"] { color: #F2A27A !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: rgb(21, 21, 21)"], [style*="color: rgb(17, 20, 15)"], [style*="color: rgb(58, 63, 54)"], [style*="color: rgb(30, 30, 30)"], [style*="color: rgb(43, 43, 43)"]) { color: #EEF1F8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: rgb(118, 123, 110)"], [style*="color: rgb(154, 160, 147)"], [style*="color: rgb(119, 115, 107)"], [style*="color: rgb(107, 113, 102)"], [style*="color: rgb(112, 109, 103)"], [style*="color: rgb(74, 72, 68)"]) { color: #B9C0D0 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: rgb(22, 105, 95)"], [style*="color: rgb(12, 63, 57)"]) { color: #7FD6C8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: rgb(17, 105, 74)"], [style*="color: rgb(47, 93, 79)"], [style*="color: rgb(44, 122, 63)"]) { color: #7FD1A8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: rgb(179, 38, 30)"], [style*="color: rgb(184, 51, 31)"], [style*="color: rgb(178, 58, 58)"], [style*="color: rgb(168, 53, 47)"], [style*="color: rgb(180, 35, 24)"]) { color: #FF9B90 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: rgb(161, 106, 46)"], [style*="color: rgb(138, 90, 0)"], [style*="color: rgb(138, 106, 47)"], [style*="color: rgb(183, 121, 31)"], [style*="color: rgb(138, 90, 18)"], [style*="color: rgb(117, 88, 31)"]) { color: #F7CD73 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table [style*="color: rgb(166, 71, 30)"] { color: #F2A27A !important; }
 /* Inline inks written as a colour token (status pills, voucher checks): the token stays, only the text colour changes. */
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: var(--c-orange"], [style*="color: var(--c-burnt"]) { color: #7FD6C8 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: var(--c-green"], [style*="color: var(--c-secondary-a"]) { color: #7FD1A8 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--c-festive-b"] { color: #FF9B90 !important; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--fg-muted"] { color: #ADB4C5 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: var(--c-orange"], [style*="color: var(--c-burnt"]) { color: #7FD6C8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table :is([style*="color: var(--c-green"], [style*="color: var(--c-secondary-a"]) { color: #7FD1A8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table [style*="color: var(--c-festive-b"] { color: #FF9B90 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table [style*="color: var(--fg-muted"] { color: #ADB4C5 !important; }
 html.conts-embedded[data-beta-skin="night"] .page-head [style*="color: var(--c-orange"] { color: #7FD6C8 !important; }
 html.conts-embedded[data-beta-skin="night"] .page-head [style*="color: var(--c-festive-b"] { color: #FF9B90 !important; }
 html.conts-embedded[data-beta-skin="night"] .page-head [style*="color: var(--fg-muted"] { color: #ADB4C5 !important; }
 /* Class inks in the night table that kept their light values: synced green (Team "Active", 2.4:1), accent gold initials (3.2:1). Pills with a solid light fill keep their dark ink. */
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-synced { color: #7BE8D8; }
-html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.text-accent, .text-accent-ink) { color: #F7CD73; }
 
-/* Night: the cancel-request banner and the SO's Order / Revisions tabs sit on the night page, not in a white card, and
-   their inline inks are light-page tokens (Order tab #2b2b2b 1.3:1, banner text #151515 1.4:1). Re-pointing the
-   tokens inside them only leaves the white cards around them as they are. */
-html.conts-embedded[data-beta-skin="night"] [data-testid="cancel-request-panel"] {
-  --c-ink: #EEF1F8; --fg-muted: #ADB4C5; --c-festive-b: #FF9B90;
-  --c-paper: #1C2030; --line-strong: rgba(150,175,255,.24);
-}
-/* The pending heading's tone ink is inline, hence !important (the approved red follows --c-festive-b). */
-html.conts-embedded[data-beta-skin="night"] [data-testid="cancel-request-panel"] .cancel-request-pending-title { color: #F7CD73 !important; }
-html.conts-embedded[data-beta-skin="night"] .so-tab-strip { --c-burnt: #EEF1F8; --fg-muted: #ADB4C5; --line: rgba(150,175,255,.18); }
+html.conts-embedded[data-beta-skin="night"] .cancel-request-pending-title { color: #F7CD73 !important; }
 
-/* Night: Chart of accounts' cards (.coa-card, ChartOfAccounts.tsx) turn dark at YH's request (23 Nov 2026), the one
-   exception to "white cards stay light" above. The page reads its inks as tokens, so they are re-pointed here; the
-   type colours are the --coa-* vars of TYPE_TONE. Inputs and selects take the dark scheme so they stay readable. */
+/* Chart of accounts' cards (.coa-card) paint a fixed white, so they take the night surface here; the type colours are the --coa-* vars of TYPE_TONE. */
 html.conts-embedded[data-beta-skin="night"] .coa-card {
-  background: #1C2030; border-color: rgba(150,175,255,.24); color: #EEF1F8; color-scheme: dark;
-  --c-paper: #1C2030; --c-cream: #232736; --border-weak: rgba(150,175,255,.11);
-  --fg-muted: #ADB4C5; --fg-strong: #B9C0D0; --c-secondary-a: #7FD1A8; --c-festive-b: #FF9B90; --c-orange: #7FD6C8;
+  background: #1C2030; border-color: rgba(150,175,255,.24); color: #EEF1F8;
   --coa-asset: #7FD1A8; --coa-liability: #F7CD73; --coa-equity: #B3B8FF; --coa-income: #7FD6C8; --coa-expense: #FF9B90;
 }
 html.conts-embedded[data-beta-skin="night"] .coa-card > div:first-child { background: #232736; border-color: rgba(150,175,255,.24); }
-html.conts-embedded[data-beta-skin="night"] .coa-card h2 { color: #EEF1F8; }

@@ -18,38 +18,38 @@ const config = {
         // (logo, eyebrows, doc numbers, soft backgrounds).
 
         // ── Canvas ─────────────────────────────────────────
-        bg: "#eef0ec",
-        surface: "#ffffff",
-        "surface-2": "#f4f6f3", // table headers, nested/inset surfaces, search fields
-        "surface-dim": "#e3e6e0",
+        bg: "rgb(var(--eng-bg) / <alpha-value>)",
+        surface: "rgb(var(--eng-surface) / <alpha-value>)",
+        "surface-2": "rgb(var(--eng-surface-2) / <alpha-value>)", // table headers, nested/inset surfaces, search fields
+        "surface-dim": "rgb(var(--eng-surface-dim) / <alpha-value>)",
 
         border: {
-          DEFAULT: "#d6d9d2",
-          subtle: "#e3e6e0",
-          strong: "#c2c6bd",
+          DEFAULT: "rgb(var(--eng-border) / <alpha-value>)",
+          subtle: "rgb(var(--eng-border-subtle) / <alpha-value>)",
+          strong: "rgb(var(--eng-border-strong) / <alpha-value>)",
         },
 
         // ── Ink ────────────────────────────────────────────
         ink: {
-          DEFAULT: "#11140f",
-          secondary: "#414539",
-          muted: "#767b6e",
+          DEFAULT: "rgb(var(--eng-ink) / <alpha-value>)",
+          secondary: "rgb(var(--eng-ink-secondary) / <alpha-value>)",
+          muted: "rgb(var(--eng-ink-muted) / <alpha-value>)",
         },
 
         // ── Primary (petrol/teal) — NEW functional accent ──
         primary: {
           DEFAULT: "#16695f",
-          soft: "#e1efed", // selected-row bg, soft chips, month-P&L card
-          ink: "#0c3f39", // text on primary-soft
+          soft: "rgb(var(--eng-primary-soft) / <alpha-value>)", // selected-row bg, soft chips, month-P&L card
+          ink: "rgb(var(--eng-primary-ink) / <alpha-value>)", // text on primary-soft
         },
 
         // ── Brass accent (brand only — not primary CTAs) ───
         accent: {
           DEFAULT: "#a16a2e",
-          soft: "#f3ece0",
+          soft: "rgb(var(--eng-accent-soft) / <alpha-value>)",
           bright: "#d8a85a", // gold for text on dark sidebar/headers
           hover: "#8a5a26",
-          ink: "#5a3a14",
+          ink: "rgb(var(--eng-accent-ink) / <alpha-value>)",
         },
 
         // ── Sidebar palette (dark ink-green slab) ──────────
@@ -64,14 +64,14 @@ const config = {
         },
 
         // ── Semantic ───────────────────────────────────────
-        synced: { DEFAULT: "#2f8a5b", bg: "#e2f0e9" },
-        err: { DEFAULT: "#b23a3a", bg: "#f8eaea" },
+        synced: { DEFAULT: "#2f8a5b", bg: "rgb(var(--eng-synced-bg) / <alpha-value>)" },
+        err: { DEFAULT: "#b23a3a", bg: "rgb(var(--eng-err-bg) / <alpha-value>)" },
         // LEARNING announcements — trend blue, mirrors --c-secondary-b in
         // vendor tokens.css. Hex literal (not var()) so /40-style opacity
         // modifiers compose like the other semantic colors here.
         learning: "#1f3a8a",
-        expired: { bg: "#f7e9e9", text: "#7a2222" },
-        warning: { bg: "#f6efd9", text: "#6e4d12" },
+        expired: { bg: "rgb(var(--eng-expired-bg) / <alpha-value>)", text: "rgb(var(--eng-expired-text) / <alpha-value>)" },
+        warning: { bg: "rgb(var(--eng-warning-bg) / <alpha-value>)", text: "rgb(var(--eng-warning-text) / <alpha-value>)" },
       },
       fontFamily: {
         // Theme C type spec (Nick 2026-07-03, "IBM PLEX + 思源黑/宋"):

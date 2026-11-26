@@ -17,6 +17,26 @@
 @tailwind utilities;
 
 :root {
+  --eng-bg: 238 240 236;
+  --eng-surface: 255 255 255;
+  --eng-surface-2: 244 246 243;
+  --eng-surface-dim: 227 230 224;
+  --eng-border: 214 217 210;
+  --eng-border-subtle: 227 230 224;
+  --eng-border-strong: 194 198 189;
+  --eng-ink: 17 20 15;
+  --eng-ink-secondary: 65 69 57;
+  --eng-ink-muted: 118 123 110;
+  --eng-primary-soft: 225 239 237;
+  --eng-primary-ink: 12 63 57;
+  --eng-accent-soft: 243 236 224;
+  --eng-accent-ink: 90 58 20;
+  --eng-synced-bg: 226 240 233;
+  --eng-err-bg: 248 234 234;
+  --eng-warning-bg: 246 239 217;
+  --eng-warning-text: 110 77 18;
+  --eng-expired-bg: 247 233 233;
+  --eng-expired-text: 122 34 34;
   /* Resolves to IBM Plex Sans / Noto Sans SC via vendor tokens.css (--font-system) — see that file. */
   font-family: var(--font-system, system-ui), sans-serif;
   -webkit-font-smoothing: antialiased;
