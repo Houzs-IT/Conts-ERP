@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
 import Sidebar, { LOOKS, sidebarLookKey, useDarkTheme } from './Sidebar';
@@ -72,6 +72,13 @@ export default function AppShell({
   const dark = useDarkTheme();
   const dreamCrafterBackdrop = dc ? dcGlass[dark ? 'dark' : 'light'].page : undefined;
   const glassLook = LOOKS[sidebarLookKey(true, dark)];
+  // On <html>, not on a wrapper, so dialogs and menus that portal to the body take the side's colours too.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (dc) root.dataset.side = 'dream-crafter';
+    else delete root.dataset.side;
+    return () => { delete root.dataset.side; };
+  }, [dc]);
 
   return (
     <div data-print-root data-device={device.cls} data-fold={device.fold} style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>

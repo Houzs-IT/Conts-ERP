@@ -153,3 +153,44 @@
 :root[data-theme="theconts-dark"] .bg-neutral-bg { background-color: var(--color-neutral-bg); }
 :root[data-theme="theconts-dark"] .bg-neutral-line { background-color: var(--color-neutral-line); }
 :root[data-theme="theconts-dark"] .border-neutral-line { border-color: var(--color-neutral-line); }
+
+/* Dream Crafter's side (AppShell sets data-side): the neutrals take the Beta night palette the glass sidebar and the
+   supply chain screens use, so a main-app page there sits on navy cards, not The Conts' warm near-black. Gold and the
+   status tones stay The Conts' own. */
+:root[data-theme="theconts-dark"][data-side="dream-crafter"] {
+  --color-page: #151823;
+  --color-card: #1C2030;
+  --color-muted: #232736;
+  --color-sunken: #2A2F42;
+  --color-ink: #EEF1F8;
+  --color-ink-2: #B9C0D0;
+  --color-muted-ink: #ADB4C5;
+  --color-faint: #ADB4C5;
+  --color-line: #323A55;
+  --color-line-soft: #2A2F42;
+  --color-line-strong: #4A5578;
+  --color-line-input: #6576AC;
+  --color-neutral: #2A2F42;  --color-neutral-bg: #2A2F42;  --color-neutral-fg: #B9C0D0;  --color-neutral-line: #4A5578;
+
+  --color-surface-page: #151823;
+  --color-surface-card: #1C2030;
+  --color-surface-elevated: #232736;
+  --color-surface-muted: #232736;
+  --color-surface-sunken: #2A2F42;
+  --color-surface-hover: #232736;
+  --color-surface-press: #2A2F42;
+  --color-surface-skeleton: #2A2F42;
+  --color-text-primary: #EEF1F8;
+  --color-text-secondary: #B9C0D0;
+  --color-text-muted: #ADB4C5;
+  --color-text-faint: #ADB4C5;
+  --color-text-link: #EEF1F8;
+  --color-border-default: #323A55;
+  --color-border-strong: #4A5578;
+  --color-border-muted: #2A2F42;
+  --color-border-hairline: #2A2F42;
+  --color-fill-strong: #2A2F42;
+  --color-on-fill-strong: #EEF1F8;
+  --color-fill-ring: #6576AC;
+}
+:root[data-theme="theconts-dark"][data-side="dream-crafter"] .bg-black { background-color: #2A2F42; }
