@@ -74,7 +74,7 @@ function Grid({ parts, units, months, toDate, showGroups, codeOf }: { parts: Par
             return (
               <Fragment key={p.group}>
                 {showGroups && (
-                  <tr><td colSpan={months.length + 2} className="sticky left-0 px-3 pt-2.5 pb-1.5 bg-sunken text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">
+                  <tr><td colSpan={months.length + 2} className="sticky left-0 px-3 pt-2.5 pb-1.5 bg-sunken text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink [border-bottom:1px_solid_var(--color-line)]">
                     {GROUP_NAME[p.group]} <span className="ml-1 normal-case tracking-normal font-normal">{plural(us.length, 'unit')}</span>
                   </td></tr>
                 )}
