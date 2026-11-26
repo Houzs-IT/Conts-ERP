@@ -1,6 +1,5 @@
 import { mayRun } from '../../lib/areaAccess';
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { color } from '../../theme';
 import { Card } from '../../components/Card';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -16,7 +15,7 @@ import { useSession } from '../../lib/session';
 import { date, todayMyt } from '../../lib/format';
 import { CentreModal, Labeled, Select } from './shared';
 
-interface Credential {
+export interface Credential {
   id: string; kind: string; label: string;
   unitId?: string; unitNumber?: string; propertyName?: string;
   /** Masked by the list endpoint, e.g. "••••17#". Empty = no code (or a field role). */
@@ -76,15 +75,11 @@ function IconAction({ name, label, onClick }: { name: string; label: string; onC
   );
 }
 
-const UNIT_ACCESS_TAB = 'access';
-const unitNameOf = (c: Credential) => `${c.propertyName ?? ''} ${c.unitNumber ?? ''}`.trim();
-
-export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessCard }: { unitId?: string; unitLabel?: string; parking?: string; fullAccessCard?: boolean }) {
-  const isAllUnits = unitId === undefined;
-  const { data, loading, error, reload } = useApi<Payload>(isAllUnits ? '/access-credentials' : `/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
+export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard, bare = false, onChanged }: { unitId: string; unitLabel: string; parking?: string; fullAccessCard?: boolean; bare?: boolean; onChanged?: () => void }) {
+  const { data, loading, error, reload } = useApi<Payload>(`/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
   const { user } = useSession();
   const toast = useToast();
-  const canEdit = !isAllUnits && mayRun(user, 'properties');
+  const canEdit = mayRun(user, 'properties');
   const canReveal = mayRun(user, 'properties') || mayRun(user, 'passKeys');
 
   const [revealed, setRevealed] = useState<Record<string, string>>({});
@@ -126,11 +121,12 @@ export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessC
   async function save(body: Record<string, unknown>, existing: Credential | null) {
     try {
       if (existing) await api.patch(`/access-credentials/${existing.id}`, body);
-      else if (unitId) await api.post('/access-credentials', { ...body, unitId });
+      else await api.post('/access-credentials', { ...body, unitId });
       if (existing) remask(existing);
       setEditing(null);
       toast({ tone: 'success', title: existing ? 'Access updated.' : 'Access added.', body: `${String(body.label ?? existing?.label ?? '')} on ${unitLabel}. The change is in History; the code is not.` });
       reload();
+      onChanged?.();
     } catch (e) { notifyFailure(e); }
   }
   function askDelete(c: Credential) {
@@ -144,7 +140,7 @@ export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessC
         try {
           await api.del(`/access-credentials/${c.id}`);
           toast({ tone: 'success', title: 'Access removed.', body: `${c.label} on ${unitLabel}.` });
-          setConfirm(null); remask(c); reload();
+          setConfirm(null); remask(c); reload(); onChanged?.();
         } catch (e) { notifyFailure(e); }
         finally { setBusy(false); }
       },
@@ -185,9 +181,6 @@ export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessC
     <span className="flex flex-col gap-2 min-w-0">
       <span className="flex items-start gap-2">
         <span className="flex flex-col gap-[2px] flex-1 min-w-0">
-          {isAllUnits && (r.unitId
-            ? <Link to={`/properties/units/${encodeURIComponent(r.unitId)}?tab=${UNIT_ACCESS_TAB}`} className="inline-flex items-center min-h-11 text-copy font-semibold text-ink no-underline [overflow-wrap:anywhere]">{unitNameOf(r)}</Link>
-            : <span className="text-copy font-semibold">{unitNameOf(r)}</span>)}
           <span className="text-copy font-semibold">{KIND_LABEL[r.kind] ?? r.kind}</span>
           <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.label}</span>
         </span>
@@ -206,10 +199,6 @@ export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessC
   );
   // The code itself is never exported: only its type, name, instruction and history.
   const columns: Column<Credential>[] = [
-    ...(isAllUnits ? [{ key: 'unit', label: 'Unit', value: unitNameOf, hideable: false, width: 170,
-      render: r => (r.unitId
-        ? <Link to={`/properties/units/${encodeURIComponent(r.unitId)}?tab=${UNIT_ACCESS_TAB}`} className="font-medium text-ink no-underline min-w-0 [overflow-wrap:anywhere]">{unitNameOf(r)}</Link>
-        : <span className="font-medium">{unitNameOf(r)}</span>) }] as Column<Credential>[] : []),
     { key: 'kind', label: 'Type', value: r => KIND_LABEL[r.kind] ?? r.kind, hideable: false, width: 170,
       render: r => (
         <span className="flex flex-col gap-[3px] min-w-0">
@@ -236,10 +225,18 @@ export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessC
       ) }] as Column<Credential>[] : []),
   ];
 
+  const table = (
+    <DataTable<Credential> id="unit.access" urlPrefix="acc." bare noViews pageSize={0} maxHeight="none"
+      columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
+      noun={['access item', 'access items']} exportName="unit-access" renderCard={phoneCard}
+      empty={{ title: 'No access recorded for this unit yet.', icon: 'KeyRound',
+        body: canEdit ? 'Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : undefined }} />
+  );
+
   return (
     <>
-      <Card>
-        {!isAllUnits && (
+      {bare ? table : (
+        <Card>
           <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
             <div className="flex flex-col gap-1 min-w-0">
               <span className="text-[15px] font-semibold tracking-[-0.01em]">Access and keys</span>
@@ -249,14 +246,9 @@ export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessC
             </div>
             {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
           </div>
-        )}
-
-        <DataTable<Credential> id={isAllUnits ? 'units.passKeys' : 'unit.access'} urlPrefix="acc." bare noViews {...(isAllUnits ? {} : { pageSize: 0, maxHeight: 'none' })}
-          columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
-          noun={['access item', 'access items']} exportName={isAllUnits ? 'pass-keys' : 'unit-access'} renderCard={phoneCard}
-          empty={{ title: isAllUnits ? 'No access codes recorded on any unit yet.' : 'No access recorded for this unit yet.', icon: 'KeyRound',
-            body: canEdit ? 'Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : undefined }} />
-      </Card>
+          {table}
+        </Card>
+      )}
 
       {editing && <CredentialModal initial={editing === 'new' ? null : editing} unitLabel={unitLabel} onClose={() => setEditing(null)} onSubmit={save} />}
       <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
