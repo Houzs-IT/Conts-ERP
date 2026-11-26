@@ -226,7 +226,7 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard, 
   ];
 
   const table = (
-    <DataTable<Credential> id="unit.access" urlPrefix="acc." bare noViews pageSize={0} maxHeight="none"
+    <DataTable<Credential> id="unit.access" urlPrefix="acc." bare noViews noToolbar={bare} pageSize={0} maxHeight="none"
       columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
       noun={['access item', 'access items']} exportName="unit-access" renderCard={phoneCard}
       empty={{ title: 'No access recorded for this unit yet.', icon: 'KeyRound',
