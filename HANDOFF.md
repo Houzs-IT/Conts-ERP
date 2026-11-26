@@ -293,6 +293,23 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests
   `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`.
 
+## Mail Center re-synced with Houzs, 26 Nov 2026
+
+The engine's Mail Center (Property OS > Mail) now matches Houzs ERP's (owner, 26 Nov 2026): per-person read state and
+"read by", acknowledgements with a 48 h chase, failed replies queued instead of 502, personal mailboxes with
+first.last@theconts.com given at the first sign-on with Mail access, claims an admin approves, recipient picker and
+address suggestions, "What may I see", department-grouped sidebar, Delivered / Bounced, reply guard and auto-assign,
+access levels L1/L2/L3 with an access change log, department mailboxes linked by id, file chips, the Inbound mail page
+and the phone screens. Full write-up, adaptations and known gaps: `docs/MAIL-CENTER.md`.
+
+- **State:** code on branch `feat/mail-center-resync`. It reads eleven new migrations, **0381 to 0391**, which must be
+  applied (Actions > Apply migrations to production, dry run first) **before** the engine deploy that carries it.
+- **New admin step:** every new personal address appears on Team, Mailboxes as "Waiting to be added in Cloudflare
+  Email Routing"; it receives mail only after that custom address is added in Cloudflare (Send to a Worker:
+  conts-mail-inbound) and marked added (or its first email arrives).
+- **Scheduled work** rides the existing 5-minute call from the cron worker (`engineMailOutbox` ->
+  `engine/backend/src/conts/mail-cron.ts`); nothing new to deploy on the cron side.
+
 ## Blocked on the client
 
 1. **The vector logo.** Every logo position renders a marked placeholder.

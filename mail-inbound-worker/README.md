@@ -59,3 +59,12 @@ Cloudflare dashboard → theconts.com → Email → Email Routing:
 
 In Property OS, open Mail → Mailboxes (Full on Mail Center), add the same address and give people access to it.
 Send a test email to it from outside, then reply from Mail Center.
+
+## 6. Personal addresses
+
+Every person with Mail access gets their own address (first.last@theconts.com) at their first sign-on, and a person
+without one can ask for one in Mail Center, which a Mail Center admin approves. Each new address is listed on Team,
+Mailboxes under "Waiting to be added in Cloudflare Email Routing": add it under Routing rules exactly as in step 4,
+then press "Mark added" there (or leave it: the first email to it marks it). An address turned off in the ERP is
+listed under "Turned off here, still in Email Routing" until its rule is deleted and marked removed. More in
+`docs/MAIL-CENTER.md`.
