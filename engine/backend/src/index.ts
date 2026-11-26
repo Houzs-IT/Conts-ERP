@@ -29,6 +29,7 @@ import udf from "./routes/udf";
 import authRoutes from "./routes/auth";
 import contsSso from "./conts/sso";
 import renovationGlobalSearch from "./routes/renovationGlobalSearch";
+import contsMailWaiting from "./conts/mail-waiting-route";
 import contsMailCron from "./conts/mail-cron";
 import { myClaimsRouter } from "./conts/my-claims-routes";
 import { claimsClient, staffFromAssertion, staffFromSession } from "./conts/staff-identity";
@@ -431,6 +432,9 @@ app.route("/api/claims-forward", myClaimsRouter("forward"));
 // Conts: the supply chain half of Property OS's top-bar search, server to server with a signed statement of who is asking
 // and what their role may open (routes/renovationGlobalSearch.ts). No engine session is made.
 app.route("/api/conts-search", renovationGlobalSearch);
+// Conts only: Mail Center's waiting count for Property OS's AI Connector daily brief. Read-only: never makes an
+// engine account, session or mailbox (conts/mail-waiting-route.ts).
+app.route("/api/conts-mail-waiting", contsMailWaiting);
 
 app.use("/api/*", auth);
 

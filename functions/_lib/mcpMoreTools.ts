@@ -18,6 +18,7 @@ import {
   summariseArrears, summariseAttendance, summariseOccupancy, summarisePayables, summariseStatements,
 } from './mcpMore';
 import { buildXlsx, XLSX_TYPE } from './mcpXlsx';
+import { summariseOwnerPayouts } from './mcpConts4';
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
@@ -68,12 +69,22 @@ async function arrearsTool(c: ToolCtx): Promise<Outcome> {
 
 async function statementsTool(c: ToolCtx, args: Record<string, unknown>): Promise<Outcome> {
   const m = String(args.month ?? '').trim();
+  const owner = String(args.owner ?? '').trim().slice(0, 80);
   const q: Record<string, unknown> = { pageSize: 200 };
   if (/^\d{4}-(0[1-9]|1[0-2])$/.test(m)) q.period = m;
-  const target = `statements:${q.period ?? 'latest'}`;
-  const r = await c.read('/api/statements', q);
+  const target = `statements:${q.period ?? 'latest'}${owner ? `:${owner}` : ''}`;
+  // One owner (round 4, C10): that owner's statements over the months and their payouts, beside the month's summary.
+  const [r, os, op] = await Promise.all([
+    c.read('/api/statements', q),
+    owner ? c.read('/api/statements', { period: 'all', q: owner, pageSize: 24 }) : Promise.resolve(null),
+    owner ? c.read('/api/payouts', { q: owner, pageSize: 24 }) : Promise.resolve(null),
+  ]);
   if (!r.ok) return refuse(why('owner statements', r), r.status, target, r.note);
-  return done(summariseStatements(c.origin, r.value), target);
+  if (!os || !op) return done(summariseStatements(c.origin, r.value), target);
+  const out: Record<string, unknown> = { ...summariseStatements(c.origin, r.value), owner: summariseOwnerPayouts(c.origin, owner, os.ok ? os.value : null, op.ok ? op.value : null) };
+  const missing = [{ what: "that owner's statements", r: os }, { what: 'Owner payouts', r: op }].filter(x => !x.r.ok).map(x => why(x.what, x.r));
+  if (missing.length) out.notIncluded = missing;
+  return done(out, target, missing.length ? 'partial' : '');
 }
 
 async function payablesTool(c: ToolCtx): Promise<Outcome> {
@@ -104,13 +115,16 @@ async function briefTool(c: ToolCtx): Promise<Outcome> {
     purchaseOrders: c.read('/api/purchase-orders'),
     // The Maintenance screen's first view: open jobs only, its cheaper path.
     maintenance: c.read('/api/maintenance/issues', { view: 'open', limit: 200 }),
+    // Mail Center's waiting-for-my-reply count, read server to server from the engine (round 4, C1).
+    mail: c.read('/api/supply-chain/mail-waiting'),
   };
   const keys = Object.keys(reads) as (keyof typeof reads)[];
   const got = await Promise.all(keys.map(k => reads[k]));
   const v = Object.fromEntries(keys.map((k, i) => [k, got[i].ok ? (got[i] as Extract<ReadValue, { ok: true }>).value : null])) as Record<keyof typeof reads, unknown>;
-  const NAMES: Record<string, string> = { badges: 'the menu counts', tasks: 'Tasks', approvals: 'Approvals', salesOrders: 'Sales orders', purchaseOrders: 'Purchase orders', maintenance: 'Maintenance' };
+  const NAMES: Record<string, string> = { badges: 'the menu counts', tasks: 'Tasks', approvals: 'Approvals', salesOrders: 'Sales orders', purchaseOrders: 'Purchase orders', maintenance: 'Maintenance', mail: 'Mail Center' };
   const noAccess = keys.filter((_k, i) => refused(got[i])).map(k => NAMES[k]);
-  const failed = keys.filter((_k, i) => !got[i].ok && !refused(got[i])).map(k => NAMES[k]);
+  // Mail Center not set up on this system (501) is not a failure: the brief says it is not included.
+  const failed = keys.filter((k, i) => !got[i].ok && !refused(got[i]) && !(k === 'mail' && got[i].status === 501)).map(k => NAMES[k]);
   const brief = buildBrief({ today, origin: c.origin, name: c.id.user.fullName, ...v, noAccess });
   return done(failed.length ? { ...brief, couldNotRead: failed } : brief, 'brief', failed.length ? `unread: ${failed.join(', ')}` : '');
 }
@@ -197,7 +211,7 @@ const MONTH_ARG = { type: 'object', properties: { month: { type: 'string', descr
 export const MORE_TOOLS = [
   {
     name: 'daily_brief', title: 'Daily brief (what needs me today)',
-    description: 'What the signed-in person needs to look at today, in ONE call: their jobs overdue or due in 3 days, approvals waiting for them, sales orders to deliver and purchase orders expected (overdue or in 3 days), maintenance jobs due, and the ERP bell\'s other waiting items. Each with a count, the first 5 and links. Only what their account can open.',
+    description: 'What the signed-in person needs to look at today, in ONE call: their jobs overdue or due in 3 days, approvals waiting for them, sales orders to deliver and purchase orders expected (overdue or in 3 days), maintenance jobs due, Mail Center emails waiting for their reply, and the ERP bell\'s other waiting items. Each with a count, the first 5 and links. Only what their account can open.',
     inputSchema: NO_ARGS, annotations: RO,
   },
   {
@@ -212,8 +226,8 @@ export const MORE_TOOLS = [
   },
   {
     name: 'owner_statement_summary', title: 'Owner statements (quick answer)',
-    description: "One month's owner statements in ONE call: how many are Draft, Final, Sent and Paid, which are waiting to be sent, still draft or sent, totals (guest total, operator share, expenses, net payout to owner in RM), the biggest, owners in the negative, and the last 6 months. Default: the latest month that has statements.",
-    inputSchema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM. Default: the latest month with statements.' } }, additionalProperties: false },
+    description: "One month's owner statements in ONE call: how many are Draft, Final, Sent and Paid, which are waiting to be sent, still draft or sent, totals (guest total, operator share, expenses, net payout to owner in RM), the biggest, owners in the negative, and the last 6 months. Default: the latest month that has statements. With owner: also that owner's statements month by month and their payouts (paid, pending, failed, still to pay). Finance access only (the ERP decides).",
+    inputSchema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM. Default: the latest month with statements.' }, owner: { type: 'string', description: "An owner's name (or part of it): adds that owner's statements and payouts." } }, additionalProperties: false },
     annotations: RO,
   },
   {

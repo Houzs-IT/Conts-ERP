@@ -305,8 +305,7 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   - `daily_brief` (+ prompt `daily-brief`): 6 parallel reads: `/api/nav/badges` (the bell, already per role),
     `/api/tasks?assignee=u:<me>&to=today+3`, `/api/approvals?view=pending` (those `can.approve`), `/api/sales-orders`
     (target date), `/api/purchase-orders` (expected date), `/api/maintenance/issues?view=open` (due date). Each section:
-    count, first 5, links. **Mail Center is not covered**: it lives on the supply chain engine and its sign-on is a POST
-    (`engine-session`), which the read-only connector cannot make; the brief says so.
+    count, first 5, links. Mail Center: see round 4 (C1) below; it is now covered.
   - `export_excel {list, filters, search, from, to, fields}`: allowlist `EXPORT_LISTS` in `mcpMore.ts` (reservations,
     guests, units, tasks, maintenance, statements, expenses, guest_documents, sales_orders, sales_invoices,
     purchase_orders, purchase_invoices, suppliers, customers). Pages as the person up to 5,000 rows (first page gives the
@@ -328,6 +327,49 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
     run-to-run noise is +-100 ms: the numbers show every tool answers in well under 300 ms locally, not a reliable
     before/after. Production timings are in `mcp_calls.ms` once people use it (not yet measured).
   - Not done: rent arrears (tenant rent on Agent-to-let records has no paid / unpaid record; the answer says so).
+- **Round 4 (owner, 26 Nov 2026): "complete each system", read-only.** Code: `functions/_lib/mcpConts4Tools.ts` (tools,
+  imports only pure modules so the tools themselves are unit-tested), `mcpConts4.ts` (pure shaping + the `period`
+  convention). Tests `src/lib/mcpConts4.test.mjs`: every tool against a stand-in ERP as management, as staff without
+  finance (money keys the real handlers drop stay dropped; statements / payouts / analytics / invoices 403) and as an
+  account with no access (every tool answers "no access", no record leaks); each tool may read only the endpoints listed
+  in `CONTS4_READS`. No migration.
+  - **C1 daily_brief + Mail Center.** Why it could not read it: Mail Center lives on the engine; opening it needs the
+    POST sign-on (`/api/supply-chain/engine-session`), and the connector only makes GETs (the write fence allows that
+    POST only inside `confirm_action`). Fix: new read endpoint `GET /api/supply-chain/mail-waiting` (same gate as the
+    Mail menu: no field / owner accounts, area `mail` not closed) sends the engine a one-minute signed statement
+    (`aud: 'mail-waiting'`, `scmEngine.ts mailWaitingAssertion`) to the new engine route `POST /api/conts-mail-waiting`
+    (`engine/backend/src/conts/mail-waiting-route.ts`), which checks Mail again and counts with the same query as
+    `GET /api/mail-center/waiting-count`. **Read-only (main session, 27 Nov 2026): it never signs anyone on and never
+    makes an engine account, session or mailbox.** No engine account, or no mailbox of their own yet -> `count: null`,
+    "Mail Center not opened yet", and the brief says so. Not set up (501) = the brief says Mail Center is not included.
+    **Needs the engine deployed** (Actions > the engine production deploy); until then the endpoint answers 502
+    "the engine needs its update" and the brief lists Mail Center under couldNotRead.
+  - `period` (every period tool): today | week (Mon-Sun) | month | last_month | quarter | year | custom (from + to), or
+    `month` / `quarter` (YYYY-qN) / `year`; each compares with the period before (`resolvePeriod`).
+  - Tools and reads: `unit_overview {unit|unitId}` = `/api/search?kind=unit` then `/api/units/detail` +
+    `/api/lettings?unitId` + `/api/reservations?todo=unpaid`; `leases_expiring {days}` = `/api/contracts` + `/api/lettings`;
+    `revenue_summary {period}` (month / quarter) = `/api/portfolio/performance` x2 + `/api/dashboard/kpis`;
+    `housekeeping_today` = `/api/tasks?kind=cleaning` (today, overdue) + `/api/maintenance/issues?view=open` +
+    `/api/dashboard/today`; `booking_pace` = `/api/reservations?view=all&st=live&export=1` for the next 90 days now, a
+    month ago and a year ago (<=2 pages each); `channel_mix {period}` = `/api/reservations?ch=` x4 + period before +
+    `/api/dashboard/channels`; `cancellations_summary {period}` = `/api/reservations` view=all / cancelled / period
+    before / cancelledFrom-To; `reviews_summary {period}` = `/api/reviews` x3; `vacancy_summary {days}` =
+    `/api/reservations/calendar` + `/api/units`; `owner_statement_summary {month, owner}` adds `/api/statements?period=all&q=`
+    + `/api/payouts?q=`; `company_report {period, company}` = month: kpis x2, channels, performance, statements,
+    reservations; quarter: performance x2, statements (all months), reservations x2; year (this year to date only):
+    `/api/analytics?range=ytd`, statements, reservations x2; Dream Crafter: `/api/sales-invoices` + `/api/purchase-invoices`;
+    `data_gaps` = `/api/units` (units under "Owner to be confirmed") + `/api/owners` (no bank details / no contract) +
+    `/api/reviews?matched=no` + `/api/tasks?assignee=none` (next 3 days) + `/api/lettings` (rented, no end date).
+  - Observed locally (PGlite demo data + `wrangler pages dev`, 26 Nov 2026), each tool over POST /api/mcp as a new
+    Operations / Operations Staff account, compared with the same endpoints read directly with that account's cookie:
+    the ERP refused contracts, portfolio, dashboard, statements, payouts, analytics, invoices and owners, and the
+    connector named exactly those as "no access" (revenue_summary, Dream Crafter report and owner statements refused
+    outright); money appeared only from what the ERP gave that account (reservation guest totals, the unit page's
+    ADR / RevPAR). Management and Finance Admin got the full answers. Mail Center's waiting count answered 501 there
+    (no engine locally): the live engine path is UNTESTED until it runs on production.
+  - Skipped: none of C1-C11 / D4. Limits said in the answers: pace "booked by then" uses the reservation's created date
+    (imported ones carry their import date) and cannot see later cancellations; company_report year is this year to
+    date only (Performance's own range); revenue_summary takes a month or quarter (Portfolio's own periods).
 - **FAQ (owner, 26 Nov 2026): each answered in ONE tool call.**
 
   | # | Question | Tool | Reads |
@@ -339,9 +381,24 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   | P3 | How much do we owe suppliers? | `payables_summary` | supplier invoices per supplier, aged, due this week; contractor claims (finance only) |
   | E1 | What do I need to look at today? | `daily_brief` | see above |
   | E2 | Export X to Excel | `export_excel` | see above |
+  | E1b | Any emails waiting for my reply? | `daily_brief` | Mail Center waiting-for-my-reply count (round 4) |
+  | C5 | Who is in unit X now, who is next, does anyone owe, who owns it? | `unit_overview` | guest now / next, tenant, arrears, owner, month figures |
+  | C6 | Which contracts / tenancies end soon? | `leases_expiring` | owner agreements + Agent-to-let tenancies, next N days |
+  | C7 | Earnings, average nightly price, earnings per available night by building? | `revenue_summary` | month or quarter vs the one before (money: finance) |
+  | C8 | What cleaning / repairs are on today, what is overdue? | `housekeeping_today` | cleaning today + overdue, repairs due |
+  | C9 | How is our pace for the next 30 / 60 / 90 days vs last month / year? | `booking_pace` | on the books now vs then |
+  | C10 | Airbnb vs Booking.com vs direct? | `channel_mix` | reservations, share, nights, guest total, avg nightly price, length of stay |
+  | C11 | How many cancellations / no-shows? | `cancellations_summary` | rates vs the period before, lost guest total |
+  | C12 | How are our reviews? | `reviews_summary` | average, by channel, bad reviews, not replied |
+  | C13 | Which units are empty tonight? | `vacancy_summary` | empty tonight + empty nights ahead |
+  | C14 | What did owner X get paid? | `owner_statement_summary {owner}` | their statements by month + payouts (finance) |
+  | R1 | Monthly / quarterly / yearly management report | `company_report` | The Conts or Dream Crafter, vs the period before |
+  | D4 | What data is missing? | `data_gaps` | units without owner, owners without bank / contract, ... |
 - Files: `functions/_lib/mcp*.ts`, `functions/_lib/aiConnector.ts`, `functions/api/mcp/`, `functions/api/ai-connector/`,
   `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests
-  `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`, `src/lib/mcpMore.test.mjs`.
+  `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`, `src/lib/mcpMore.test.mjs`,
+  `src/lib/mcpConts4.test.mjs`; round 4: `functions/_lib/mcpConts4.ts`, `mcpConts4Tools.ts`,
+  `functions/api/supply-chain/mail-waiting.ts`.
 
 ## Mail Center re-synced with Houzs, 26 Nov 2026
 

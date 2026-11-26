@@ -22,6 +22,10 @@
  *
  * Round 3 (owner, 26 Nov 2026; mcpMoreTools.ts): occupancy_summary, arrears_summary, owner_statement_summary,
  * attendance_today, daily_brief (+ the daily-brief prompt) and export_excel (.xlsx through the get_pdf signed link).
+ * Round 4 (owner, 26 Nov 2026; mcpConts4Tools.ts, pure shaping in mcpConts4.ts): unit_overview, leases_expiring,
+ * revenue_summary, housekeeping_today, booking_pace, channel_mix, cancellations_summary, reviews_summary,
+ * vacancy_summary, company_report, data_gaps; owner_statement_summary takes `owner`; daily_brief reads the Mail Center
+ * waiting count (GET /api/supply-chain/mail-waiting). Period tools share one `period` convention (resolvePeriod).
  * Rate limit per person on tools/call only: 30 a minute, 600 a day, counted from mcp_calls (limitVerdict); over it the
  * AI app gets a normal tool result with isError, never a 500. The admin leak check reads through readEndpoint, never
  * callTool, so it is not counted or limited.
@@ -36,6 +40,7 @@ import { originOf } from './mcpDiscovery';
 import { ACTION_TOOLS, runActionTool } from './mcpActionTools';
 import { actionsEnabled, mcpActionsReady, recentCallCounts } from './mcpStore';
 import { MORE_TOOLS, runMoreTool } from './mcpMoreTools';
+import { CONTS4_TOOLS, runConts4Tool } from './mcpConts4Tools';
 import { RATE_LIMITED_STATUS, limitVerdict, todayStays } from './mcpMore';
 import {
   FETCH_SPECS, PROMPTS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
@@ -47,7 +52,7 @@ export { originOf };
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 /** erp_get's cap. Was 60k; quick answers and `fields` make most replies far smaller. */
 export const MAX_RESULT_CHARS = 30_000;
-const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.3.0' };
+const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.4.0' };
 
 /** The GET routes as list_modules and list_endpoints show them. */
 export const mcpRouteInfo = (): RouteInfo[] => apiRoutes().map(r => ({ method: r.method, path: r.path }));
@@ -66,6 +71,8 @@ ANSWER FAST: use a quick answer first. It is one call and already summarised:
 - A reservation by reference, or a guest, unit, building, owner, job or bill by name or phone: search {query}, then fetch {id} for the full record.
 - "What do I need to look at today?": daily_brief.
 - Occupancy by building and unit: occupancy_summary {month}. Money owed to us (guests, customers): arrears_summary. Owner statements for a month: owner_statement_summary {month}. What we owe suppliers and contractors: payables_summary. Who is on leave or not in today (HR only): attendance_today.
+- One unit (guest now, next reservation, tenant, arrears, owner): unit_overview {unit}. Contracts and tenancies ending: leases_expiring {days}. Earnings, average nightly price and earnings per available night by building: revenue_summary {period}. Cleaning and repairs today: housekeeping_today. Reservation pace (on the books for the next 30 / 60 / 90 days against last month / year): booking_pace. Channel mix: channel_mix {period}. Cancellations and no-shows: cancellations_summary {period}. Guest reviews and ratings: reviews_summary {period}. Units empty tonight, vacancy: vacancy_summary {days}. One owner's statements and payouts: owner_statement_summary {owner}. The management report for a company: company_report {period, company}. What data is missing: data_gaps.
+- period (every period tool): today | week | month | last_month | quarter | year | custom (with from, to); or month "YYYY-MM" / quarter "YYYY-qN" / year "YYYY". Each compares with the period before.
 - A list as an Excel file: export_excel {list, filters, from, to, fields}; give the person the link it returns.
 Only when no quick answer fits: list_modules, then list_endpoints for a module, then erp_get. With erp_get pass "fields" (only the keys you need) and query parameters (from / to dates, page / pageSize, q or search, status) to keep replies small.
 Quick answers give money in RM. In erp_get replies money is in sen (RM x 100) where a field ends in Sen or is an amount. Dates are YYYY-MM-DD, Malaysia time.
@@ -119,6 +126,7 @@ const TOOLS = [
     annotations: RO,
   },
   ...MORE_TOOLS,
+  ...CONTS4_TOOLS,
   ...ACTION_TOOLS,
   {
     name: 'search', title: 'Search the ERP',
@@ -213,7 +221,7 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
     const base = id.recent ?? await recentCallCounts(env, id.user.id).catch(() => ({ minute: 0, day: 0 }));
     const over = limitVerdict({ minute: base.minute + (calledInRequest.get(id) ?? 0), day: base.day + (calledInRequest.get(id) ?? 0) });
     calledInRequest.set(id, (calledInRequest.get(id) ?? 0) + 1);
-    const acted = over ? null : (await runMoreTool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
+    const acted = over ? null : (await runMoreTool(name, args, ctx)) ?? (await runConts4Tool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
     if (over) {
       result = text(over, true);
       status = RATE_LIMITED_STATUS;
@@ -224,7 +232,7 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
       const actions = (await mcpActionsReady(env)) && (await actionsEnabled(env));
       result = text(JSON.stringify({ name: id.user.fullName, email: id.user.email, readOnly: !actions, actions: actions ? 'meetings and email, each confirmed by you first' : 'off' }));
     } else if (name === 'list_modules') {
-      result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Try a quick answer first (business_summary, reservations_summary, today_summary, occupancy_summary, arrears_summary, owner_statement_summary, attendance_today, payables_summary, daily_brief, search). Else call list_endpoints with a prefix, then erp_get with "fields". A module your account cannot open answers "not available to your role".' }));
+      result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Try a quick answer first (business_summary, reservations_summary, today_summary, occupancy_summary, arrears_summary, owner_statement_summary, attendance_today, payables_summary, daily_brief, unit_overview, leases_expiring, revenue_summary, housekeeping_today, booking_pace, channel_mix, cancellations_summary, reviews_summary, vacancy_summary, company_report, data_gaps, search). Else call list_endpoints with a prefix, then erp_get with "fields". A module your account cannot open answers "not available to your role".' }));
     } else if (name === 'list_endpoints') {
       const prefix = String(args.prefix ?? '');
       target = prefix.slice(0, 300);
