@@ -8,7 +8,7 @@
    `var(--beta-...)` strings, so a screen repaints when the skin changes and nothing re-renders. The values live in
    BETA_SKIN_CSS (rendered by BetaSkin): light on :root, so a page that never hears about a skin (the engine opened on
    its own, the public client link) is light, and dark under html[data-beta-skin="night"], which conts/embed.ts sets
-   when Property OS is in its dark theme. Anything that cannot read a CSS variable (a PDF, a canvas) takes BETA_HEX. */
+   when Property OS is in its dark theme. Anything that cannot read a CSS variable (a PDF, a canvas) takes BETA_LIGHT_HEX. */
 
 import type { CSSProperties } from "react";
 
@@ -36,7 +36,7 @@ const PAGE_NIGHT = PAGE_GRID + "," + WASH_NIGHT + ",radial-gradient(45% 40% at 1
   + "radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),"
   + "linear-gradient(160deg,#151823 0%,#0D0F16 100%)";
 
-const BASE_TOKENS = {
+const BETA_COLOR_PAIRS = {
   /* Page, text and lines. */
   bg: ["#ECEEF3", "#151823"],
   page: [PAGE_VISION, PAGE_NIGHT],
@@ -126,16 +126,16 @@ const TONE_TOKENS = {
   blue: { ink: ["#303030", "#DDE2EE"], soft: ["#E6EDFF", "rgba(80,130,255,.18)"], strong: ["#D3E0FF", "rgba(80,130,255,.28)"], dot: ["#111216", "#EEF1F8"], line: ["#B9CCFF", "rgba(80,130,255,.4)"] },
 } as const satisfies Record<string, Record<string, Pair>>;
 
-type BetaToken = keyof typeof BASE_TOKENS;
+type BetaToken = keyof typeof BETA_COLOR_PAIRS;
 type ToneFamily = keyof typeof TONE_TOKENS;
 type ToneKey = keyof (typeof TONE_TOKENS)["accent"];
 
 const cssVar = (name: string): string => `var(--beta-${name})`;
 
-/** Every colour as `var(--beta-name)`: what a style prop takes. */
+/** BETA.x = "var(--beta-x)": a CSS variable NAME, not a colour. The values are in BETA_COLOR_PAIRS. */
 export const BETA: { readonly [K in BetaToken]: string } = (() => {
   const out: Record<string, string> = {};
-  for (const name of Object.keys(BASE_TOKENS)) out[name] = cssVar(name);
+  for (const name of Object.keys(BETA_COLOR_PAIRS)) out[name] = cssVar(name);
   // Object.keys loses the key names; the table above is the only source of them.
   return out as { readonly [K in BetaToken]: string };
 })();
@@ -157,9 +157,9 @@ export const BANDS: ReadonlyArray<readonly [string, string, string]> = BAND_BARS
 
 /** The light values as written, for what cannot read a CSS variable (a PDF, a canvas). Take the plain colours from it;
     the gradients and shadows are only for CSS. */
-export const BETA_HEX: { readonly [K in BetaToken]: string } = (() => {
+export const BETA_LIGHT_HEX: { readonly [K in BetaToken]: string } = (() => {
   const out: Record<string, string> = {};
-  for (const [name, [vision]] of Object.entries(BASE_TOKENS)) out[name] = vision;
+  for (const [name, [vision]] of Object.entries(BETA_COLOR_PAIRS)) out[name] = vision;
   return out as { readonly [K in BetaToken]: string };
 })();
 
@@ -168,7 +168,7 @@ export const BETA_HEX: { readonly [K in BetaToken]: string } = (() => {
     backdrop apply only while a Beta screen is open: the attribute stays on <html> for the engine's other screens too. */
 export const BETA_SKIN_CSS: string = (() => {
   const rows = (i: 0 | 1): string => [
-    ...Object.entries(BASE_TOKENS).map(([name, pair]) => `--beta-${name}:${pair[i]}`),
+    ...Object.entries(BETA_COLOR_PAIRS).map(([name, pair]) => `--beta-${name}:${pair[i]}`),
     ...Object.entries(TONE_TOKENS).flatMap(([family, keys]) => Object.entries(keys).map(([k, pair]) => `--beta-tone-${family}-${k}:${pair[i]}`)),
   ].join(";");
   /* Compose Semi Bold is the one weight the font has; 100 to 900 all map to it so a heading is not faux-bolded on top.

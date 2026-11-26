@@ -4,7 +4,7 @@
    keep SoLinePhotoStrip, which needs the staff login. */
 
 import { useEffect, useState, type ReactElement } from "react";
-import { BETA, BETA_HEX } from "./renovationBetaTheme";
+import { BETA, BETA_LIGHT_HEX } from "./renovationBetaTheme";
 
 export interface PlainPhoto { thumb: string; full: string; label: string }
 
@@ -41,7 +41,7 @@ function Viewer({ photos, at, onMove, onClose }: { photos: readonly PlainPhoto[]
     return () => window.removeEventListener("keydown", onKey);
   }, [at, n, onClose, onMove]);
   const ph = photos[at]!;
-  const nav = { padding: "10px 14px", borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", color: BETA_HEX.ink, fontSize: 15, fontWeight: 600, cursor: "pointer" } as const;
+  const nav = { padding: "10px 14px", borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", color: BETA_LIGHT_HEX.ink, fontSize: 15, fontWeight: 600, cursor: "pointer" } as const;
   return (
     <div role="dialog" aria-modal="true" aria-label={ph.label} onClick={onClose}
       style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(10,20,18,0.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 16 }}>

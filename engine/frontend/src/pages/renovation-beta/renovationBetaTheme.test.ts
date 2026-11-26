@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BETA, BETA_HEX, BETA_SKIN_CSS, TONES, betaTagTone } from "./renovationBetaTheme";
+import { BETA, BETA_LIGHT_HEX, BETA_SKIN_CSS, TONES, betaTagTone } from "./renovationBetaTheme";
 
 /** The CSS variable a token points at: "var(--beta-ink)" gives "--beta-ink". */
 const nameOf = (v: string): string => /^var\((--beta-[\w-]+)\)$/.exec(v)?.[1] ?? "";
@@ -15,9 +15,9 @@ describe("Beta colours", () => {
   });
 
   it("the light values come out as written for PDFs and canvases", () => {
-    expect(BETA_HEX.ink).toBe("#111216");
-    expect(BETA_HEX.accent).toBe("#0F5F58");
-    expect(Object.values(BETA_HEX).some((v) => v.startsWith("var("))).toBe(false);
+    expect(BETA_LIGHT_HEX.ink).toBe("#111216");
+    expect(BETA_LIGHT_HEX.accent).toBe("#0F5F58");
+    expect(Object.values(BETA_LIGHT_HEX).some((v) => v.startsWith("var("))).toBe(false);
   });
 
   it("the dark values sit under the skin attribute and light is the default", () => {
