@@ -118,8 +118,8 @@ const FINANCE_PART_ICON: Record<string, string> = {
   Collections: 'hand-coins', Bank: 'landmark', Reports: 'chart-line', Setup: 'settings',
 };
 
-/* Company-wide System screens sit in both sidebars at the same address, so opening one keeps the side the person is on
-   (workspaceOf answers null for them). */
+/* Users and roles, Settings and System health sit in both sidebars at the same address, so opening one keeps the side
+   the person is on (workspaceOf answers null for them). Integrations is The Conts' only (owner, 26 Nov 2026). */
 const SYSTEM_ADMIN_ITEMS: NavItem[] = [
   { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
   { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
@@ -131,9 +131,7 @@ const SYSTEM_ADMIN_ITEMS: NavItem[] = [
   ] },
   { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
 ];
-// Claude / ChatGPT reading the ERP with the person's own login (owner, 25 Nov 2026). Every desk person: staff ask for
-// access here; management approves, sees every lookup and disconnects (functions/api/ai-connector checks who).
-const AI_CONNECTOR_ITEM: NavItem = { key: 'aiConnector', label: 'AI Connector', icon: 'bot', path: '/system/ai-connector' };
+const DREAM_CRAFTER_SYSTEM_ITEMS = SYSTEM_ADMIN_ITEMS.filter(item => item.key !== 'integrations');
 
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
@@ -230,7 +228,9 @@ export const NAV: NavGroup[] = [
     // books, so no permission area; adding and changing rooms needs Manage meeting rooms (area meetingRooms). Its count comes
     // from lib/meetingsUnread.ts.
     { key: 'meetings', label: 'Meetings', icon: 'calendar-clock', path: '/system/meetings', badge: 'meetings' },
-    AI_CONNECTOR_ITEM,
+    // Claude / ChatGPT reading the ERP with the person's own login (owner, 25 Nov 2026). Every desk person: staff ask for
+    // access here; management approves, sees every lookup and disconnects (functions/api/ai-connector checks who).
+    { key: 'aiConnector', label: 'AI Connector', icon: 'bot', path: '/system/ai-connector' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
@@ -325,11 +325,10 @@ export const NAV: NavGroup[] = [
   // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
   // Category access sets, per person, which product categories the renovation beta screens show (management only, so Full on Users and roles).
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
-    ...SYSTEM_ADMIN_ITEMS,
+    ...DREAM_CRAFTER_SYSTEM_ITEMS,
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
     { key: 'meetingsSupply', label: 'Meetings', icon: 'calendar-clock', path: '/supply/meetings' },
-    AI_CONNECTOR_ITEM,
   ] },
 ];
 

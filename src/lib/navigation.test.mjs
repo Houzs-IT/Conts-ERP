@@ -13,8 +13,8 @@ const systemPaths = side => navFor('management', true)
   .flatMap(group => group.items.flatMap(item => [item.path, ...(item.children ?? []).map(child => child.path)]))
   .filter(Boolean);
 
-test('Settings, My account, Users and roles, System health and AI Connector keep whichever side the person is on', () => {
-  for (const path of ['/account', '/notifications', '/system/settings/company', '/system/users', '/system/health', '/system/ai-connector']) {
+test('Settings, My account, Users and roles and System health keep whichever side the person is on', () => {
+  for (const path of ['/account', '/notifications', '/system/settings/company', '/system/users', '/system/health']) {
     assert.equal(workspaceOf(path), null, path);
   }
 });
@@ -24,12 +24,16 @@ test('Dream Crafter System offers every company-wide screen The Conts System doe
   const missing = systemPaths('rental').filter(path => workspaceOf(path) === null && !dreamCrafterSystem.has(path));
   assert.deepEqual(missing, []);
   assert.ok(dreamCrafterSystem.has('/account'));
+  assert.ok(!dreamCrafterSystem.has('/system/integrations'));
+  assert.ok(!dreamCrafterSystem.has('/system/ai-connector'));
 });
 
 test('one-side screens still switch the sidebar to their side', () => {
   assert.equal(workspaceOf('/supply/it-support'), 'supply');
   assert.equal(workspaceOf('/system/category-access'), 'supply');
   assert.equal(workspaceOf('/system/it-support'), 'rental');
+  assert.equal(workspaceOf('/system/integrations'), 'rental');
+  assert.equal(workspaceOf('/system/ai-connector'), 'rental');
   assert.equal(workspaceOf('/properties/units'), 'rental');
   assert.equal(workspaceOf('/sales/orders'), 'supply');
 });
