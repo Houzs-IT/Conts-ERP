@@ -293,3 +293,14 @@ html.conts-embedded[data-beta-skin="night"] :is(input, select, textarea):is([rea
 html.conts-embedded[data-beta-skin="night"] {
   --field-fill: #151823; --field-edge: #6576AC; --field-fill-locked: #232736; --field-edge-locked: #323A55; --field-edge-width: 1px;
 }
+/* Night: the phone shell (.hz-m, mobile/mobile.css) on the two phone-designed screens Property OS opens on a phone
+   (embed.ts PHONE_DESIGNED). Its frame, cards, borders and inks are variables on .hz-m, so night re-points them here. */
+html.conts-embedded[data-beta-skin="night"] .hz-m {
+  --ink: #EEF1F8; --ink2: #B9C0D0; --mut: #ADB4C5; --mut2: #ADB4C5;
+  --brand: #7FD6C8; --brand-d: #EEF1F8; --brand-bg: rgba(40,200,180,.16); --gold: #E0C48F;
+  --green: #7FD1A8; --green-bg: rgba(60,190,120,.16); --amber: #F7CD73; --amber-bg: rgba(245,190,80,.16);
+  --red: #FF9B90; --red-bg: rgba(255,110,100,.16);
+  --line: rgba(150,175,255,.18); --line-card: rgba(150,175,255,.24); --line2: rgba(150,175,255,.11);
+  --bg: #151823; --card: #1C2030; --app-bg: #151823;
+  color-scheme: dark;
+}

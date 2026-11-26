@@ -9,6 +9,16 @@ const embedCss = readSource("conts/embed.css");
 const nightValue = (name: string): string | undefined =>
   new RegExp(`${name}:\\s*([^;]+);`).exec(embedCss)?.[1].trim();
 
+function contrastOnCard(hexColour: string): number {
+  const luminance = (hex: string): number => {
+    const [red, green, blue] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)
+      .map((unit) => (unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const [lighter, darker] = [luminance(hexColour), luminance("#1C2030")].sort((left, right) => right - left);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 function withoutVariables(css: string): string {
   let stripped = css;
   for (let previous = ""; previous !== stripped; ) {
@@ -69,6 +79,19 @@ describe("night surfaces the engine paints with fixed light colours", () => {
     const statInk = /const STAT_INK[^}]+\}/.exec(readSource("pages/scm-v2/WarehouseRacks.tsx"))?.[0] ?? "";
     expect(statInk).not.toBe("");
     expect(bareColours(statInk)).toEqual([]);
+  });
+
+  it("the phone shell's colour variables all have night values, and its inks read on the night card", () => {
+    const shellBlock = /\.hz-m \{([^}]*)\}/.exec(readSource("mobile/mobile.css"))?.[1] ?? "";
+    const colourVariables = [...shellBlock.matchAll(/(--[a-z0-9-]+):\s*#[0-9a-f]{6}/gi)].map((match) => match[1])
+      .filter((name) => name !== "--ink-dark" && name !== "--gold-lt");
+    const nightShell = /\[data-beta-skin="night"\] \.hz-m \{([^}]*)\}/.exec(embedCss)?.[1] ?? "";
+    const nightOf = (name: string): string | undefined => new RegExp(`${name}:\\s*([^;]+);`).exec(nightShell)?.[1].trim();
+    expect(colourVariables.length).toBeGreaterThan(10);
+    expect(colourVariables.filter((name) => !nightOf(name))).toEqual([]);
+    const lowInks = ["--ink", "--ink2", "--mut", "--brand", "--green", "--amber", "--red"]
+      .filter((name) => contrastOnCard(nightOf(name) ?? "#000000") < 4.5);
+    expect(lowInks).toEqual([]);
   });
 
   it("statement and ledger errors use the night error ink and the account range fields get an edge", () => {
