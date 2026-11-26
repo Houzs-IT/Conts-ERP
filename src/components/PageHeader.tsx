@@ -55,7 +55,7 @@ export default function PageHeader({ title, sub, right, actions, primary, back, 
         </div>
         {hasActions && (
           // Right-aligned beside the title; once wrapped under it on a phone, left-aligned with it, not a ragged right stack.
-          <div data-print-hide className="flex items-center gap-2 flex-wrap justify-start sm:justify-end">
+          <div data-print-hide className="flex items-center gap-2 flex-wrap justify-start sm:justify-end min-w-0 max-w-full">
             <HeaderActions actions={actions} primary={primary}>{right}</HeaderActions>
           </div>
         )}
