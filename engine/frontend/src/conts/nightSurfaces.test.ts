@@ -157,6 +157,8 @@ describe("form control tokens", () => {
   const expandHex = (hex: string): string => (hex.length === 4 ? `#${[...hex.slice(1)].map((digit) => digit + digit).join("")}` : hex).toLowerCase();
   const lightHexOf = (name: string): string => {
     const value = new RegExp(`${name}:\\s*([^;]+);`).exec(engineRoot)?.[1].trim() ?? "";
+    const literal = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(value);
+    if (literal) return `#${literal.slice(1).map((channel) => Number(channel).toString(16).padStart(2, "0")).join("")}`;
     const channels = /^rgb\(var\((--eng-[a-z0-9-]+)\)\)$/.exec(value);
     if (channels) {
       const triple = new RegExp(`${channels[1]}:\\s*(\\d+) (\\d+) (\\d+);`).exec(engineRoot)?.slice(1) ?? [];
@@ -187,6 +189,13 @@ describe("form control tokens", () => {
     ].filter(([, ratio]) => ratio < 4.5).map(([theme, ratio]) => `${theme} ${ink} on ${fill} ${ratio.toFixed(2)}`));
     expect(failures).toEqual([]);
     expect(contrast(nightValue("--input-border") ?? "#000000", nightValue("--input-bg") ?? "#000000")).toBeGreaterThanOrEqual(3);
+  });
+
+  it("an editable field's outline reaches 3:1 on its fill in light, as the build ships it", () => {
+    const edges: Array<[string, string]> = [["--input-border", "--input-bg"], ["--input-border", "--input-bg-muted"], ["--input-border-soft", "--input-bg-muted"]];
+    const failures = edges.map(([edge, fill]) => [`${edge} on ${fill}`, contrast(shippedLight(edge), shippedLight(fill))] as const)
+      .filter(([, ratio]) => ratio < 3).map(([pair, ratio]) => `${pair} ${ratio.toFixed(2)}`);
+    expect(failures).toEqual([]);
   });
 
   it("no field rule outside the light-only phone app paints a fixed neutral fill, text or edge, so night always reaches it", () => {

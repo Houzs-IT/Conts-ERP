@@ -44,8 +44,10 @@
   --input-bg-locked: rgb(var(--eng-surface-2));
   --input-fg: rgb(var(--eng-ink));
   --input-fg-muted: var(--fg-muted);
-  --input-border: rgb(var(--eng-border));
-  --input-border-soft: var(--line);
+  /* A field's own outline must read as a control (WCAG 3:1): the Conts field outline, 3.8:1 on white, not the 1.4:1
+     hairline the cards and tables use. Read-only fields keep the hairline. */
+  --input-border: rgb(127, 133, 122);
+  --input-border-soft: rgb(127, 133, 122);
   --input-border-locked: rgb(var(--eng-border));
   /* Resolves to IBM Plex Sans / Noto Sans SC via vendor tokens.css (--font-system) — see that file. */
   font-family: var(--font-system, system-ui), sans-serif;
