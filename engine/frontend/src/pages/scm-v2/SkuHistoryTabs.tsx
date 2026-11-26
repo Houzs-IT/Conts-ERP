@@ -17,18 +17,18 @@ type Tab = 'cost' | 'selling' | 'supplier';
 
 const H3: React.CSSProperties = {
   fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#767b6e', marginBottom: 'var(--space-2)',
+  letterSpacing: '0.06em', color: 'var(--fg-muted)', marginBottom: 'var(--space-2)',
 };
-const muted: React.CSSProperties = { color: '#767b6e', fontSize: 'var(--fs-13)' };
-const dateStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-11)', color: '#767b6e' };
+const muted: React.CSSProperties = { color: 'var(--fg-muted)', fontSize: 'var(--fs-13)' };
+const dateStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-11)', color: 'var(--fg-muted)' };
 
 function tabButton(active: boolean): React.CSSProperties {
   return {
     fontSize: 'var(--fs-12)', fontWeight: 600, cursor: 'pointer',
     borderRadius: 'var(--radius-sm)', padding: '4px 10px',
     border: `1px solid ${active ? 'var(--c-orange)' : 'rgb(var(--eng-border-strong))'}`,
-    background: active ? '#16695f' : '#fff',
-    color: active ? '#fff' : '#3a3f36',
+    background: active ? 'var(--badge-pill-chosen-bg, #16695f)' : 'rgb(var(--eng-surface))',
+    color: active ? 'var(--badge-pill-chosen-fg, #fff)' : 'var(--badge-text-strong-fg, #3a3f36)',
   };
 }
 
@@ -36,8 +36,8 @@ function Row({ date, main, meta }: { date: string; main: ReactNode; meta?: React
   return (
     <div style={{ padding: '8px 0', borderBottom: '1px solid rgb(var(--eng-border-subtle))' }}>
       <div style={dateStyle}>{date}</div>
-      <div style={{ fontSize: 'var(--fs-13)', color: '#2b2f28', marginTop: 1 }}>{main}</div>
-      {meta != null && <div style={{ fontSize: 'var(--fs-12)', color: '#767b6e', marginTop: 1 }}>{meta}</div>}
+      <div style={{ fontSize: 'var(--fs-13)', color: 'var(--badge-text-strong-fg, #2b2f28)', marginTop: 1 }}>{main}</div>
+      {meta != null && <div style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)', marginTop: 1 }}>{meta}</div>}
     </div>
   );
 }

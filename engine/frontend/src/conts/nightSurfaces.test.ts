@@ -78,6 +78,19 @@ describe("night surfaces the engine paints with fixed light colours", () => {
     expect(bareColours(creditNoteTabs)).toEqual([]);
   });
 
+  it("the product suppliers drawer and every part it shows paint no fixed colour, so night turns all of it dark", () => {
+    const withoutComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const products = readSource("pages/scm-v2/Products.tsx");
+    const drawerStart = products.indexOf("const ProductSuppliersDrawer");
+    const drawer = products.slice(drawerStart, products.indexOf("\nconst ", drawerStart + 1));
+    expect(drawer.length).toBeGreaterThan(1000);
+    const parts = ["pages/scm-v2/ProductPriceTimeline.tsx", "pages/scm-v2/SkuHistoryTabs.tsx", "pages/scm-v2/AddSupplierBinding.tsx", "pages/scm-v2/CostAnchorCard.tsx", "vendor/scm/components/CategorySwapSelect.tsx"];
+    const offenders = [["ProductSuppliersDrawer", drawer] as const, ...parts.map((path) => [path, readSource(path)] as const)]
+      .flatMap(([name, source]) => bareColours(withoutComments(source)).map((colour) => `${name} ${colour}`));
+    expect(offenders).toEqual([]);
+    expect(nightValue("--teal-soft")).toBeTruthy();
+  });
+
   it("warehouse rack stat values read on the dark card", () => {
     const statInk = /const STAT_INK[^}]+\}/.exec(readSource("pages/scm-v2/WarehouseRacks.tsx"))?.[0] ?? "";
     expect(statInk).not.toBe("");

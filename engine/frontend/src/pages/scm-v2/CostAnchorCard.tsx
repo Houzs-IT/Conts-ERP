@@ -23,12 +23,12 @@ export const CostAnchorCard = ({
   fallbackSupplierId: string | null;
 }) => {
   const label = (
-    <h3 style={{ fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#767b6e', marginBottom: 'var(--space-2)' }}>
+    <h3 style={{ fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-muted)', marginBottom: 'var(--space-2)' }}>
       Product Maintenance Cost
     </h3>
   );
   const cardStyle: CSSProperties = {
-    background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-lg)',
+    background: 'rgb(var(--eng-surface))', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-lg)',
     padding: 'var(--space-3) var(--space-4)',
   };
   const pill = (fg: string, bg: string, text: string) => (
@@ -51,7 +51,7 @@ export const CostAnchorCard = ({
   );
   const figure = (text: string, muted: boolean) => (
     <div>
-      <div style={{ fontSize: 'var(--fs-11)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#767b6e' }}>
+      <div style={{ fontSize: 'var(--fs-11)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--fg-muted)' }}>
         Product Maintenance cost
       </div>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-24, 22px)', fontWeight: 600, color: muted ? 'var(--c-error, #b71c1c)' : undefined, fontVariantNumeric: 'tabular-nums' }}>
@@ -78,7 +78,7 @@ export const CostAnchorCard = ({
     </div>
   );
   const line = (children: ReactNode) => (
-    <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px dashed rgb(var(--eng-border))', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', fontSize: 'var(--fs-13)', color: '#5d6357' }}>
+    <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px dashed rgb(var(--eng-border))', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', fontSize: 'var(--fs-13)', color: 'var(--badge-text-fg, #5d6357)' }}>
       {children}
     </div>
   );
@@ -91,8 +91,8 @@ export const CostAnchorCard = ({
       <section style={{ marginBottom: 'var(--space-5)' }}>
         {label}
         <div style={cardStyle}>
-          {top(figure('—', false), pill('#5d6357', 'var(--bg-subtle, #eceeea)', 'Service item'))}
-          {line(<span style={{ color: '#767b6e', fontSize: 'var(--fs-12)' }}>
+          {top(figure('—', false), pill('var(--badge-text-fg, #5d6357)', 'var(--bg-subtle, #eceeea)', 'Service item'))}
+          {line(<span style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-12)' }}>
             Service items are not priced from suppliers — cost is labour / freight, set separately.
           </span>)}
         </div>
@@ -111,7 +111,7 @@ export const CostAnchorCard = ({
           {top(figure('Empty', true), pill('var(--c-error, #b71c1c)', 'var(--c-error-bg, rgba(211,47,47,0.08))', 'Missing price · binding gap'))}
           {line(<>
             <AlertTriangle size={13} strokeWidth={2} style={{ color: 'var(--c-error, #b71c1c)' }} />
-            <span style={{ color: '#767b6e', fontSize: 'var(--fs-12)' }}>{why}</span>
+            <span style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-12)' }}>{why}</span>
             {supplierId != null && cta('Fix in Binding', supplierId)}
           </>)}
         </div>
@@ -133,7 +133,7 @@ export const CostAnchorCard = ({
         )}
         {line(<>
           <span>Anchored to {anchorBadge(anchor.anchorSupplierName)}</span>
-          <span style={{ color: '#767b6e', fontSize: 'var(--fs-12)' }}>{setLabel}</span>
+          <span style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-12)' }}>{setLabel}</span>
           {conflict && cta('Review / fix', anchor.anchorSupplierId)}
         </>)}
       </div>

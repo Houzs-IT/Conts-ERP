@@ -54,14 +54,14 @@ export const ProductPriceTimeline = ({ row }: { row: MfgProductRow }) => {
 
   const h3 = {
     fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase' as const,
-    letterSpacing: '0.06em', color: '#767b6e', marginBottom: 'var(--space-2)',
+    letterSpacing: '0.06em', color: 'var(--fg-muted)', marginBottom: 'var(--space-2)',
   };
   const fieldLabel = {
     fontSize: 'var(--fs-11)', fontWeight: 700, textTransform: 'uppercase' as const,
-    letterSpacing: '0.04em', color: '#767b6e', marginBottom: 4, display: 'block',
+    letterSpacing: '0.04em', color: 'var(--fg-muted)', marginBottom: 4, display: 'block',
   };
   const inputBox = {
-    background: '#fff', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-sm)',
+    background: 'rgb(var(--eng-surface))', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)',
     padding: '4px 8px', fontSize: 'var(--fs-13)', outline: 'none',
   };
 
@@ -73,17 +73,17 @@ export const ProductPriceTimeline = ({ row }: { row: MfgProductRow }) => {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
         <span style={{
           display: 'inline-flex', alignItems: 'baseline', gap: 6, padding: '3px 10px',
-          background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-pill)',
-          fontSize: 'var(--fs-12)', color: '#3a3f36',
+          background: 'rgb(var(--eng-surface))', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-pill)',
+          fontSize: 'var(--fs-12)', color: 'var(--badge-text-strong-fg, #3a3f36)',
         }}>
-          <span style={{ color: '#767b6e', textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 'var(--fs-11)', fontWeight: 700 }}>Now</span>
+          <span style={{ color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 'var(--fs-11)', fontWeight: 700 }}>Now</span>
           {fmtSen(current)}
         </span>
         {pending && (
           <span style={{
             display: 'inline-flex', alignItems: 'baseline', gap: 6, padding: '3px 10px',
             background: 'rgba(232, 107, 58, 0.08)', border: '1px solid rgba(232, 107, 58, 0.35)',
-            borderRadius: 'var(--radius-pill)', fontSize: 'var(--fs-12)', color: '#b64a1e',
+            borderRadius: 'var(--radius-pill)', fontSize: 'var(--fs-12)', color: 'var(--badge-warn-fg, #b64a1e)',
           }}>
             <span style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 'var(--fs-11)', fontWeight: 700 }}>Next</span>
             {fmtSen(pending.sellPriceSen)} from {pending.effectiveFrom}
@@ -124,14 +124,14 @@ export const ProductPriceTimeline = ({ row }: { row: MfgProductRow }) => {
         </Button>
       </div>
       {formError && (
-        <p style={{ margin: '0 0 var(--space-3)', color: '#b3261e', fontSize: 'var(--fs-12)' }}>{formError}</p>
+        <p style={{ margin: '0 0 var(--space-3)', color: 'var(--badge-error-fg, #b3261e)', fontSize: 'var(--fs-12)' }}>{formError}</p>
       )}
 
       {/* Dated history — newest first. */}
       {q.isLoading ? (
-        <p style={{ color: '#767b6e', fontSize: 'var(--fs-13)' }}>Loading price timeline…</p>
+        <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-13)' }}>Loading price timeline…</p>
       ) : history.length === 0 ? (
-        <p style={{ color: '#767b6e', fontSize: 'var(--fs-13)' }}>
+        <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-13)' }}>
           No scheduled prices yet. The flat price {fmtSen(current)} applies until you schedule one.
         </p>
       ) : (
@@ -156,8 +156,8 @@ export const ProductPriceTimeline = ({ row }: { row: MfgProductRow }) => {
                     )}
                   </td>
                   <td className={styles.numCell}>{fmtSen(h.sell_price_sen)}</td>
-                  <td style={{ color: '#3a3f36' }}>{h.created_by || '—'}</td>
-                  <td style={{ color: '#767b6e', fontSize: 'var(--fs-12)' }}>{h.notes || ''}</td>
+                  <td style={{ color: 'var(--badge-text-strong-fg, #3a3f36)' }}>{h.created_by || '—'}</td>
+                  <td style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-12)' }}>{h.notes || ''}</td>
                 </tr>
               );
             })}

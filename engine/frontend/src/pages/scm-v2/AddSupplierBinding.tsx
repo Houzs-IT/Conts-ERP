@@ -59,12 +59,12 @@ export const AddSupplierBinding = ({ productCode, productName, hasBindings }: { 
     padding: '5px 11px', cursor: 'pointer',
   };
   const inputBox: React.CSSProperties = {
-    background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)',
+    background: 'rgb(var(--eng-surface))', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)',
     padding: '4px 8px', fontSize: 'var(--fs-13)', outline: 'none',
   };
   const fieldLabel: React.CSSProperties = {
     fontSize: 'var(--fs-11)', fontWeight: 700, textTransform: 'uppercase',
-    letterSpacing: '0.04em', color: '#767b6e', marginBottom: 4, display: 'block',
+    letterSpacing: '0.04em', color: 'var(--fg-muted)', marginBottom: 4, display: 'block',
   };
 
   if (!open) {
@@ -77,7 +77,7 @@ export const AddSupplierBinding = ({ productCode, productName, hasBindings }: { 
 
   const list = suppliers.data ?? [];
   return (
-    <div style={{ marginTop: 'var(--space-2)', padding: 'var(--space-3)', background: '#fff', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)' }}>
+    <div style={{ marginTop: 'var(--space-2)', padding: 'var(--space-3)', background: 'rgb(var(--eng-surface))', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)' }}>
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 200 }}>
           <label style={fieldLabel}>Supplier</label>
@@ -113,7 +113,7 @@ export const AddSupplierBinding = ({ productCode, productName, hasBindings }: { 
             style={{ ...inputBox, width: 110, textAlign: 'right' }}
           />
         </div>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-12)', color: '#3a3f36', paddingBottom: 6 }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-12)', color: 'var(--badge-text-strong-fg, #3a3f36)', paddingBottom: 6 }}>
           <input type="checkbox" checked={isMain} onChange={(e) => setIsMain(e.target.checked)} />
           Main supplier{firstBinding ? ' (first supplier of this item)' : ''}
         </label>
@@ -124,7 +124,7 @@ export const AddSupplierBinding = ({ productCode, productName, hasBindings }: { 
           <button type="button" style={cta} onClick={() => { reset(); setOpen(false); }}>Cancel</button>
         </div>
       </div>
-      {error && <p role="alert" style={{ margin: 'var(--space-2) 0 0', color: '#b3261e', fontSize: 'var(--fs-12)' }}>{error}</p>}
+      {error && <p role="alert" style={{ margin: 'var(--space-2) 0 0', color: 'var(--badge-error-fg, #b3261e)', fontSize: 'var(--fs-12)' }}>{error}</p>}
     </div>
   );
 };
