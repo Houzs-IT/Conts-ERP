@@ -356,6 +356,13 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
     `/api/analytics?range=ytd`, statements, reservations x2; Dream Crafter: `/api/sales-invoices` + `/api/purchase-invoices`;
     `data_gaps` = `/api/units` (units under "Owner to be confirmed") + `/api/owners` (no bank details / no contract) +
     `/api/reviews?matched=no` + `/api/tasks?assignee=none` (next 3 days) + `/api/lettings` (rented, no end date).
+  - Observed locally (PGlite demo data + `wrangler pages dev`, 26 Nov 2026), each tool over POST /api/mcp as a new
+    Operations / Operations Staff account, compared with the same endpoints read directly with that account's cookie:
+    the ERP refused contracts, portfolio, dashboard, statements, payouts, analytics, invoices and owners, and the
+    connector named exactly those as "no access" (revenue_summary, Dream Crafter report and owner statements refused
+    outright); money appeared only from what the ERP gave that account (reservation guest totals, the unit page's
+    ADR / RevPAR). Management and Finance Admin got the full answers. Mail Center's waiting count answered 501 there
+    (no engine locally): the live engine path is UNTESTED until it runs on production.
   - Skipped: none of C1-C11 / D4. Limits said in the answers: pace "booked by then" uses the reservation's created date
     (imported ones carry their import date) and cannot see later cancellations; company_report year is this year to
     date only (Performance's own range); revenue_summary takes a month or quarter (Portfolio's own periods).
