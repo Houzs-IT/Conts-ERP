@@ -321,8 +321,8 @@ export function BetaStageFilter({ stages, selected, onSelect, layer }: {
               <span style={{ boxSizing: "border-box", width: size, height: size, marginTop: on ? 0 : small ? 2 : 3, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: small ? 10.5 : 12, fontWeight: 700, color: on ? "transparent" : BETA.muted, ...dot }}>
                 {on ? <span style={{ width: small ? 8 : 12, height: small ? 8 : 12, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#FFFFFF,#FFE3EA)" }} /> : i + 1}
               </span>
-              <span style={{ marginTop: small ? 8 : 10, fontSize: small ? 12.5 : 13, fontWeight: on ? 700 : 600, color: on ? BETA.ink : BETA.muted, whiteSpace: "nowrap" }}>{t.label}</span>
-              <span style={{ marginTop: 2, fontSize: small ? 11.5 : 12, fontWeight: on ? 600 : 400, color: on ? BETA.stepNow : BETA.faint }}>{t.count} {t.count === 1 ? "project" : "projects"}</span>
+              <span style={{ marginTop: small ? 8 : 10, fontSize: small ? 12.5 : 13, fontWeight: on ? 700 : 500, color: BETA.ink, whiteSpace: "nowrap" }}>{t.label}</span>
+              <span style={{ marginTop: 2, fontSize: small ? 11.5 : 12, fontWeight: on ? 600 : 400, color: on ? BETA.stepNow : BETA.muted }}>{t.count} {t.count === 1 ? "project" : "projects"}</span>
             </button>
           </li>
         );
