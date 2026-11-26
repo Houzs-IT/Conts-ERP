@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { navFor, subTabsFor, type BadgeKey } from '../lib/navigation';
+import { navFor, subTabsFor, workspaceOf, type BadgeKey } from '../lib/navigation';
+import { readWs } from './Sidebar';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
 import { count as countLabel } from '../lib/format';
@@ -17,7 +18,10 @@ export default function SubNav({ path, navigate, phone }: { path: string; naviga
   const { user } = useSession();
   // The engine-only areas never hold sub-tabs, so the menu is read without asking whether the engine is set up.
   const groups = useMemo(() => (user ? navFor(user.role, false, user.access) : []), [user]);
-  const found = subTabsFor(groups, path, phone);
+  // A screen on both sides (My account) takes the tabs of the side the person is on, as the sidebar does.
+  const side = workspaceOf(path) ?? readWs();
+  const sideGroups = groups.filter(group => group.workspace === side);
+  const found = subTabsFor(sideGroups.length ? sideGroups : groups, path, phone);
   const counts = useNavCounts(path);
   const bar = useRef<HTMLElement>(null);
   // The open tab scrolls into view on a narrow screen (the last Owners tab is off the right edge on a phone).
