@@ -62,6 +62,19 @@ describe("badge tones on the night skin", () => {
     expect(missing).toEqual([]);
   });
 
+  it("schedule statuses, the outstanding filter and POD chips take their ink from badge variables", () => {
+    const inksByScreen: Record<string, string[]> = {
+      "pages/ScheduleReconcile.tsx": ["changed", "missing", "new", "match", "failed"].map((key) => `--badge-schedule-${key}-fg`),
+      "pages/scm-v2/ConsignmentOrders.tsx": ["fg", "bg", "line"].map((part) => `--badge-filter-outstanding-${part}`),
+      "vendor/scm/components/DeliveryPlanningBoard.tsx": ["done", "missing"].flatMap((key) => [`--badge-pod-${key}-fg`, `--badge-pod-${key}-line`]),
+    };
+    const missing = Object.entries(inksByScreen).flatMap(([screen, inks]) => {
+      const source = readFileSync(resolve(__dirname, "..", screen), "utf8");
+      return inks.filter((ink) => !source.includes(ink)).map((ink) => `${screen} ${ink}`);
+    });
+    expect(missing).toEqual([]);
+  });
+
   it("every badge ink keeps 4.5:1 on its own tint over the dark card and the striped row", () => {
     const failures: string[] = [];
     for (const [name, value] of nightBadges) {

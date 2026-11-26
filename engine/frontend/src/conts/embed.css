@@ -168,6 +168,9 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-category-renovation-fg: #E0C48F;
   --badge-category-works-bg: rgba(224,196,143,.16);
   --badge-category-works-fg: #E0C48F;
+  --badge-filter-outstanding-bg: rgba(40,200,180,.16);
+  --badge-filter-outstanding-fg: #7BE8D8;
+  --badge-filter-outstanding-line: rgba(40,200,180,.4);
   --badge-mail-default-bg: rgba(224,196,143,.16);
   --badge-mail-default-fg: #E0C48F;
   --badge-minibadge-danger-bg: rgba(255,110,100,.16);
@@ -187,6 +190,10 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-plan-file-fg: #ADB4C5;
   --badge-plan-file-line: rgba(150,175,255,.24);
   --badge-plan-file-remove-fg: #FF9B90;
+  --badge-pod-done-fg: #7FD1A8;
+  --badge-pod-done-line: rgba(60,190,120,.4);
+  --badge-pod-missing-fg: #F7CD73;
+  --badge-pod-missing-line: rgba(245,190,80,.4);
   --badge-project-status-cancelled-bg: rgba(255,110,100,.16);
   --badge-project-status-cancelled-fg: #FF9B90;
   --badge-project-status-confirmed-bg: rgba(60,190,120,.16);
@@ -195,6 +202,11 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-project-status-pending-fg: #F7CD73;
   --badge-reno-status-done-fg: #7FD1A8;
   --badge-reno-status-overdue-fg: #FF9B90;
+  --badge-schedule-changed-fg: #F7CD73;
+  --badge-schedule-failed-fg: #FF9B90;
+  --badge-schedule-match-fg: #7FD1A8;
+  --badge-schedule-missing-fg: #FF9B90;
+  --badge-schedule-new-fg: #A9C4FF;
   --badge-so-line-active-fg: #E0C48F;
   --badge-so-line-done-fg: #7FD1A8;
   --badge-so-line-stopped-fg: #FF9B90;

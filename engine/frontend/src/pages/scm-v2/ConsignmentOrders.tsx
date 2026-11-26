@@ -933,10 +933,10 @@ export const ConsignmentOrders = () => {
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)',
           padding: 'var(--space-1) var(--space-3)',
-          background: 'rgba(22, 105, 95, 0.10)',
-          border: '1px solid #16695f',
+          background: 'var(--badge-filter-outstanding-bg, rgba(22, 105, 95, 0.10))',
+          border: '1px solid var(--badge-filter-outstanding-line, #16695f)',
           borderRadius: 'var(--radius-pill)',
-          color: '#16695f',
+          color: 'var(--badge-filter-outstanding-fg, #16695f)',
           fontFamily: 'var(--font-button)',
           fontSize: 'var(--fs-12)',
           fontWeight: 600,
@@ -946,7 +946,7 @@ export const ConsignmentOrders = () => {
           <button type="button" onClick={clearOutstanding} aria-label="Clear outstanding filter"
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               width: 18, height: 18, padding: 0, background: 'transparent', border: 'none',
-              color: '#16695f', cursor: 'pointer', borderRadius: '50%' }}>
+              color: 'inherit', cursor: 'pointer', borderRadius: '50%' }}>
             <X size={14} strokeWidth={1.75} />
           </button>
         </div>
