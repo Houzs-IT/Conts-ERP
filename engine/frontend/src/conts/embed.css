@@ -279,25 +279,27 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-type-so-fg: #ADB4C5;
 }
 
-/* Night fields sit a step below the card with a 3.6:1 edge, as on the main app's Dream Crafter pages, so they read as
-   "type here"; read-only and disabled ones keep the raised fill, so the two never look alike. Their text takes the night inks
-   too, since a field class written with a dark ink would otherwise put dark text on the dark fill. */
+/* Night form controls: the --input-* pairs (light values in index.css) turn as one, so a field's fill and its text never
+   come from different themes. Fields sit a step below the card with a 3.6:1 edge, as on the main app's Dream Crafter
+   pages, so they read as "type here"; read-only and disabled ones keep the raised fill, so the two never look alike. The
+   muted fill and the soft edge match the plain ones on night, since there every field takes the one sunken look.
+   --input-border-width is night only: a bare field (no class) keeps no edge in light. */
+html.conts-embedded[data-beta-skin="night"] {
+  --input-bg: #151823; --input-bg-muted: #151823; --input-bg-locked: #232736;
+  --input-fg: #EEF1F8; --input-fg-muted: #ADB4C5;
+  --input-border: #6576AC; --input-border-soft: #6576AC; --input-border-locked: #323A55; --input-border-width: 1px;
+}
 html.conts-embedded[data-beta-skin="night"] :is(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color]), select, textarea) {
-  background-color: #151823;
-  border-color: #6576AC;
-  color: #EEF1F8;
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--input-fg);
 }
 html.conts-embedded[data-beta-skin="night"] :is(input, select, textarea):is([readonly], :disabled) {
-  background-color: #232736;
-  border-color: #323A55;
-  color: #B9C0D0;
+  background-color: var(--input-bg-locked);
+  border-color: var(--input-border-locked);
+  color: var(--input-fg-muted);
 }
-html.conts-embedded[data-beta-skin="night"] :is(input, textarea)::placeholder { color: #ADB4C5; }
-/* The engine's own field classes (.fieldInput, DateField's box) read these, so the box a DateField draws around its
-   text matches the sunken input inside it instead of framing a dark strip in a lighter box. */
-html.conts-embedded[data-beta-skin="night"] {
-  --field-fill: #151823; --field-edge: #6576AC; --field-fill-locked: #232736; --field-edge-locked: #323A55; --field-edge-width: 1px;
-}
+html.conts-embedded[data-beta-skin="night"] :is(input, textarea)::placeholder { color: var(--input-fg-muted); }
 /* Night: the phone shell (.hz-m, mobile/mobile.css) on the two phone-designed screens Property OS opens on a phone
    (embed.ts PHONE_DESIGNED). Its frame, cards, borders and inks are variables on .hz-m, so night re-points them here. */
 html.conts-embedded[data-beta-skin="night"] .hz-m {

@@ -10,15 +10,17 @@ const embedCss = readSource("conts/embed.css");
 const nightValue = (name: string): string | undefined =>
   new RegExp(`${name}:\\s*([^;]+);`).exec(embedCss)?.[1].trim();
 
-function contrastOnCard(hexColour: string): number {
+function contrast(firstHex: string, secondHex: string): number {
   const luminance = (hex: string): number => {
     const [red, green, blue] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)
       .map((unit) => (unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4));
     return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
   };
-  const [lighter, darker] = [luminance(hexColour), luminance("#1C2030")].sort((left, right) => right - left);
+  const [lighter, darker] = [luminance(firstHex), luminance(secondHex)].sort((left, right) => right - left);
   return (lighter + 0.05) / (darker + 0.05);
 }
+
+const contrastOnCard = (hexColour: string): number => contrast(hexColour, "#1C2030");
 
 function withoutVariables(css: string): string {
   let stripped = css;
@@ -56,10 +58,10 @@ describe("night surfaces the engine paints with fixed light colours", () => {
   it("a DateField's box is the same sunken fill and edge as the night input inside it", () => {
     expect(bareColoursIn("vendor/scm/components/DateField.module.css", /^\.wrap$/)).toEqual([]);
     const dateField = readSource("vendor/scm/components/DateField.module.css");
-    expect(dateField).toContain("var(--field-fill,");
-    expect(dateField).toContain("var(--field-edge,");
-    const nightInput = /:is\(input:not\([^{]+\{\s*background-color:\s*(#[0-9A-Fa-f]{6});\s*border-color:\s*(#[0-9A-Fa-f]{6});/.exec(embedCss);
-    expect(nightInput?.slice(1)).toEqual([nightValue("--field-fill"), nightValue("--field-edge")]);
+    expect(dateField).toContain("background: var(--input-bg-muted)");
+    expect(dateField).toContain("border: 1px solid var(--input-border-soft)");
+    expect(nightValue("--input-bg-muted")).toBe(nightValue("--input-bg"));
+    expect(nightValue("--input-border-soft")).toBe(nightValue("--input-border"));
   });
 
   it("shared field and select text follows the night ink", () => {
@@ -95,13 +97,12 @@ describe("night surfaces the engine paints with fixed light colours", () => {
     expect(lowInks).toEqual([]);
   });
 
-  it("night fields take light text, a muted read-only text and a muted placeholder", () => {
+  it("night fields take their fill, text and edge from the paired input tokens, never fixed colours", () => {
     const fieldRule = /:is\(input:not\([^{]+\{([^}]*)\}/.exec(embedCss)?.[1] ?? "";
     const lockedRule = /:is\(input, select, textarea\):is\(\[readonly\], :disabled\) \{([^}]*)\}/.exec(embedCss)?.[1] ?? "";
-    const textColourIn = (rule: string): string | undefined => /(?<![-\w])color:\s*(#[0-9A-F]{6})/i.exec(rule)?.[1];
-    expect(textColourIn(fieldRule)).toBe("#EEF1F8");
-    expect(textColourIn(lockedRule)).toBe("#B9C0D0");
-    expect(embedCss).toMatch(/:is\(input, textarea\)::placeholder \{ color: #ADB4C5; \}/);
+    expect(fieldRule.replace(/\s+/g, " ").trim()).toBe("background-color: var(--input-bg); border-color: var(--input-border); color: var(--input-fg);");
+    expect(lockedRule.replace(/\s+/g, " ").trim()).toBe("background-color: var(--input-bg-locked); border-color: var(--input-border-locked); color: var(--input-fg-muted);");
+    expect(embedCss).toMatch(/:is\(input, textarea\)::placeholder \{ color: var\(--input-fg-muted\); \}/);
   });
 
   it("no field outside the light-only phone app sets an inline fixed light fill or dark text, which night would not reach", () => {
@@ -140,8 +141,68 @@ describe("night surfaces the engine paints with fixed light colours", () => {
     const ledger = readSource("pages/scm-v2/GeneralLedger.tsx");
     for (const label of ["From account", "To account"]) {
       const rangeField = ledger.split("\n").find((line) => line.includes(`aria-label="${label}"`)) ?? "";
-      expect(rangeField).toContain("var(--field-edge-width,0px)");
+      expect(rangeField).toContain("var(--input-border-width,0px)");
     }
-    expect(nightValue("--field-edge-width")).toBe("1px");
+    expect(nightValue("--input-border-width")).toBe("1px");
+  });
+});
+
+describe("form control tokens", () => {
+  const engineRoot = readSource("index.css");
+  const designTokens = readSource("vendor/design-system/tokens.css");
+  const PAIRED_TOKENS = ["--input-bg", "--input-bg-muted", "--input-bg-locked", "--input-fg", "--input-fg-muted", "--input-border", "--input-border-soft", "--input-border-locked"];
+  const palette = new Map(
+    [...readFileSync(resolve(SRC, "../conts/palette.mjs"), "utf8").matchAll(/'([0-9a-f]{6})': '([0-9a-f]{6})'/g)].map((match) => [match[1], match[2]]),
+  );
+  const expandHex = (hex: string): string => (hex.length === 4 ? `#${[...hex.slice(1)].map((digit) => digit + digit).join("")}` : hex).toLowerCase();
+  const lightHexOf = (name: string): string => {
+    const value = new RegExp(`${name}:\\s*([^;]+);`).exec(engineRoot)?.[1].trim() ?? "";
+    const channels = /^rgb\(var\((--eng-[a-z0-9-]+)\)\)$/.exec(value);
+    if (channels) {
+      const triple = new RegExp(`${channels[1]}:\\s*(\\d+) (\\d+) (\\d+);`).exec(engineRoot)?.slice(1) ?? [];
+      return `#${triple.map((channel) => Number(channel).toString(16).padStart(2, "0")).join("")}`;
+    }
+    const alias = /^var\((--[a-z0-9-]+)\)$/.exec(value)?.[1];
+    return expandHex(alias ? new RegExp(`${alias}:\\s*(#[0-9a-fA-F]{3,6})`).exec(designTokens)?.[1] ?? "" : value);
+  };
+  const shippedLight = (name: string): string => {
+    const hex = lightHexOf(name);
+    return `#${palette.get(hex.slice(1)) ?? hex.slice(1)}`;
+  };
+  const FIELD_LITERALS = /#fff\b|#ffffff\b|\bwhite\b|#f4f6f3\b|#11140f\b|#767b6e\b|#d6d9d2\b/i;
+  const INPUT_LIKE = /\b(input|select|textarea)\b|[.#][\w-]*(input|Input|select|Select|field|Field|search|Search|textarea|Textarea|picker|Picker|combo|Combo)[\w-]*/;
+  const NOT_A_FIELD = /label|Label|wrap|Wrap|row|Row|grid|Grid|list|List|item|Item|hint|Hint|error|Error|title|Title/;
+
+  it("every paired token has a light value in index.css and a night value in embed.css", () => {
+    expect(PAIRED_TOKENS.filter((name) => !new RegExp(`${name}:`).test(engineRoot))).toEqual([]);
+    expect(PAIRED_TOKENS.filter((name) => !nightValue(name))).toEqual([]);
+    expect(designTokens).toMatch(/--line:/);
+  });
+
+  it("field text reaches 4.5:1 on its fill in light, as the build ships it, and on night", () => {
+    const pairs: Array<[string, string]> = [["--input-fg", "--input-bg"], ["--input-fg", "--input-bg-muted"], ["--input-fg-muted", "--input-bg-muted"], ["--input-fg-muted", "--input-bg-locked"]];
+    const failures = pairs.flatMap(([ink, fill]) => [
+      ["light", contrast(shippedLight(ink), shippedLight(fill))] as const,
+      ["night", contrast(nightValue(ink) ?? "#000000", nightValue(fill) ?? "#000000")] as const,
+    ].filter(([, ratio]) => ratio < 4.5).map(([theme, ratio]) => `${theme} ${ink} on ${fill} ${ratio.toFixed(2)}`));
+    expect(failures).toEqual([]);
+    expect(contrast(nightValue("--input-border") ?? "#000000", nightValue("--input-bg") ?? "#000000")).toBeGreaterThanOrEqual(3);
+  });
+
+  it("no field rule outside the light-only phone app paints a fixed neutral fill, text or edge, so night always reaches it", () => {
+    const listCss = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) return name === "mobile" ? [] : listCss(path);
+      return /\.css$/.test(name) ? [path] : [];
+    });
+    const offenders = listCss(SRC)
+      .filter((file) => !/conts[\\/]embed\.css$|[\\/]index\.css$|design-system[\\/]tokens\.css$/.test(file))
+      .flatMap((file) => [...readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter(([, selector]) => INPUT_LIKE.test(selector) && !(NOT_A_FIELD.test(selector) && !/\b(input|select|textarea)\b/.test(selector)))
+        .flatMap(([, selector, body]) => body.split(";")
+          .filter((declaration) => /^\s*(color|background(-color)?|border(-(top|right|bottom|left))?(-color)?)\s*:/.test(declaration))
+          .filter((declaration) => FIELD_LITERALS.test(withoutVariables(declaration)))
+          .map((declaration) => `${relative(SRC, file)} ${selector.trim()} ${declaration.trim()}`)));
+    expect(offenders).toEqual([]);
   });
 });

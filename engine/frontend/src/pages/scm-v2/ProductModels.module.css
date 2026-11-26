@@ -51,17 +51,17 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  background: #fff;
+  background: var(--input-bg);
   border: 1px solid rgb(var(--eng-border));
   border-radius: 999px;
   width: 260px;
-  color: #767b6e;
+  color: var(--input-fg-muted);
 }
 /* Focus affordance mirrors Inventory's .searchInput — the pill itself
    carries it because the inner <input> is transparent + borderless. */
 .searchBox:focus-within {
   border-color: rgb(var(--eng-border-strong));
-  background: #f4f6f3;
+  background: var(--input-bg-muted);
 }
 .searchBox input {
   border: none;
@@ -70,7 +70,7 @@
   flex: 1;
   font-family: var(--font-sans);
   font-size: var(--fs-13);
-  color: #11140f;
+  color: var(--input-fg);
 }
 
 /* ── Category filter chips ─────────────────────────────────────────── */
@@ -227,8 +227,8 @@
   padding: var(--space-3) var(--space-4);
   border: 1px solid rgb(var(--eng-border-strong));
   border-radius: var(--radius-sm);
-  background: #fff;
-  color: #11140f;
+  background: var(--input-bg);
+  color: var(--input-fg);
 }
 .field input:focus, .field select:focus {
   outline: none;
@@ -273,7 +273,7 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #767b6e;
+  color: var(--input-fg-muted);
   line-height: 1.2;
 }
 .compactField input,
@@ -283,8 +283,8 @@
   padding: 6px 9px;
   border: 1px solid rgb(var(--eng-border-strong));
   border-radius: var(--radius-sm);
-  background: #fff;
-  color: #11140f;
+  background: var(--input-bg);
+  color: var(--input-fg);
   width: 100%;
   min-width: 0;
   box-sizing: border-box;

@@ -302,11 +302,11 @@
      Padding bumps from 3px → 6px so text doesn't crowd the border. */
   font-family: var(--font-sans);
   font-size: var(--fs-12);
-  background: var(--field-fill, #fff);
-  border: 1px solid var(--field-edge, rgb(var(--eng-border)));
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   padding: 6px 10px;
-  color: rgb(var(--eng-ink));
+  color: var(--input-fg);
   outline: none;
   width: 100%;
   line-height: 1.3;
@@ -314,7 +314,7 @@
 .fieldInput:focus,
 .fieldSelect:focus {
   border-color: rgb(var(--eng-primary-ink));
-  background: var(--field-fill, #fff);
+  background: var(--input-bg);
   box-shadow: 0 0 0 2px rgba(232, 107, 58, 0.16);
 }
 /* Scan blue-diff — a field whose value the operator changed from the
@@ -336,9 +336,9 @@
 .fieldInput:disabled,
 .fieldSelect:disabled,
 .fieldInput[readonly] {
-  background: var(--field-fill-locked, #f4f6f3);
-  border-color: var(--field-edge-locked, rgb(var(--eng-border)));
-  color: var(--fg-muted, #767b6e);
+  background: var(--input-bg-locked);
+  border-color: var(--input-border-locked);
+  color: var(--input-fg-muted);
   cursor: not-allowed;
 }
 /* PR — commander 2026-05-27 followup: native UA chevron varies wildly

@@ -37,6 +37,16 @@
   --eng-warning-text: 110 77 18;
   --eng-expired-bg: 247 233 233;
   --eng-expired-text: 122 34 34;
+  /* Form controls take their fill, text and edge as pairs from these, and conts/embed.css gives the night values, so a
+     field can never end up with its text from one theme and its fill from the other. */
+  --input-bg: rgb(var(--eng-surface));
+  --input-bg-muted: rgb(var(--eng-surface-2));
+  --input-bg-locked: rgb(var(--eng-surface-2));
+  --input-fg: rgb(var(--eng-ink));
+  --input-fg-muted: var(--fg-muted);
+  --input-border: rgb(var(--eng-border));
+  --input-border-soft: var(--line);
+  --input-border-locked: rgb(var(--eng-border));
   /* Resolves to IBM Plex Sans / Noto Sans SC via vendor tokens.css (--font-system) — see that file. */
   font-family: var(--font-system, system-ui), sans-serif;
   -webkit-font-smoothing: antialiased;

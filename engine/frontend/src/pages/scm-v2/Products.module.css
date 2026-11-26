@@ -37,18 +37,18 @@
 .searchIcon {
   position: absolute;
   left: var(--space-3);
-  color: #767b6e;
+  color: var(--input-fg-muted);
   pointer-events: none;
 }
 
 .searchInput {
   font-family: var(--font-sans);
   font-size: var(--fs-14);
-  background: #fff;
+  background: var(--input-bg);
   border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-7);
-  color: #11140f;
+  color: var(--input-fg);
   width: 260px;
   outline: none;
 }
@@ -59,7 +59,7 @@
 
 .searchInput:focus {
   border-color: rgb(var(--eng-border-strong));
-  background: #f4f6f3;
+  background: var(--input-bg-muted);
 }
 
 .eyebrow {
@@ -657,17 +657,17 @@
 .fieldSelect {
   font-family: var(--font-sans);
   font-size: var(--fs-13);
-  background: #fff;
+  background: var(--input-bg);
   border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3);
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
 }
 .fieldInput:focus,
 .fieldSelect:focus {
   border-color: rgb(var(--eng-border-strong));
-  background: #f4f6f3;
+  background: var(--input-bg-muted);
 }
 
 .iconBtn {

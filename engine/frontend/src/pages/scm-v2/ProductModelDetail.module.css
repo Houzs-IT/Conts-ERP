@@ -109,8 +109,8 @@
   padding: var(--space-3) var(--space-4);
   border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm);
-  background: #fff;
-  color: #11140f;
+  background: var(--input-bg);
+  color: var(--input-fg);
   resize: vertical;
 }
 /* Petrol border + soft ring — the same focus recipe the shared

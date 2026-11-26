@@ -49,21 +49,21 @@
   left: var(--space-3);
   top: 50%;
   transform: translateY(-50%);
-  color: #767b6e;
+  color: var(--input-fg-muted);
   pointer-events: none;
 }
 .searchInput {
   width: 100%;
   font-family: var(--font-sans);
   font-size: var(--fs-14);
-  background: #fff;
+  background: var(--input-bg);
   border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-7);
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
 }
-.searchInput:focus { border-color: rgb(var(--eng-border-strong)); background: #f4f6f3; }
+.searchInput:focus { border-color: rgb(var(--eng-border-strong)); background: var(--input-bg-muted); }
 
 /* ── Movements table filter (owner 2026-09-18) — a compact row above the
    Stock Card MOVEMENTS ledger. Type chips reuse .chip; the source-doc box
@@ -98,14 +98,14 @@
   height: 34px;
   font-family: var(--font-sans);
   font-size: var(--fs-13);
-  background: #fff;
+  background: var(--input-bg);
   border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: 0 var(--space-2);
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
 }
-.mvSelect:focus { border-color: rgb(var(--eng-border-strong)); background: #f4f6f3; }
+.mvSelect:focus { border-color: rgb(var(--eng-border-strong)); background: var(--input-bg-muted); }
 .mvDateRange {
   display: flex;
   align-items: center;
@@ -266,7 +266,7 @@
   border: none;
   border-bottom: 1px solid rgb(var(--eng-border));
   padding: var(--space-2) var(--space-3);
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
 }
 .whFilterList {
