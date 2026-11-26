@@ -1,5 +1,6 @@
 import { mayRun } from '../../lib/areaAccess';
 import { useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { color } from '../../theme';
 import { Card } from '../../components/Card';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -17,6 +18,7 @@ import { CentreModal, Labeled, Select } from './shared';
 
 interface Credential {
   id: string; kind: string; label: string;
+  unitId?: string; unitNumber?: string; propertyName?: string;
   /** Masked by the list endpoint, e.g. "••••17#". Empty = no code (or a field role). */
   secret: string;
   /** Dev sample only, so a reveal shows something with no backend. Never sent by the API. */
@@ -74,11 +76,16 @@ function IconAction({ name, label, onClick }: { name: string; label: string; onC
   );
 }
 
-export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }: { unitId: string; unitLabel: string; parking?: string; fullAccessCard?: boolean }) {
-  const { data, loading, error, reload } = useApi<Payload>(`/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
+const UNIT_ACCESS_TAB = 'access';
+const unitNameOf = (c: Credential) => `${c.propertyName ?? ''} ${c.unitNumber ?? ''}`.trim();
+
+export default function AccessTab({ unitId, unitLabel = '', parking, fullAccessCard }: { unitId?: string; unitLabel?: string; parking?: string; fullAccessCard?: boolean }) {
+  const isAllUnits = unitId === undefined;
+  const { data, loading, error, reload } = useApi<Payload>(isAllUnits ? '/access-credentials' : `/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
   const { user } = useSession();
   const toast = useToast();
-  const canEdit = mayRun(user, 'properties');
+  const canEdit = !isAllUnits && mayRun(user, 'properties');
+  const canReveal = mayRun(user, 'properties') || mayRun(user, 'passKeys');
 
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [localReveal, setLocalReveal] = useState<Record<string, { by: string; at: string }>>({});
@@ -119,7 +126,7 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
   async function save(body: Record<string, unknown>, existing: Credential | null) {
     try {
       if (existing) await api.patch(`/access-credentials/${existing.id}`, body);
-      else await api.post('/access-credentials', { ...body, unitId });
+      else if (unitId) await api.post('/access-credentials', { ...body, unitId });
       if (existing) remask(existing);
       setEditing(null);
       toast({ tone: 'success', title: existing ? 'Access updated.' : 'Access added.', body: `${String(body.label ?? existing?.label ?? '')} on ${unitLabel}. The change is in History; the code is not.` });
@@ -157,6 +164,8 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
             <IconAction name="EyeOff" label={`Mask the code for ${r.label}`} onClick={() => remask(r)} />
             <IconAction name="Copy" label={`Copy the code for ${r.label}`} onClick={() => copy(r)} />
           </span>
+        ) : !canReveal ? (
+          <span className="font-mono text-copy">{r.secret}</span>
         ) : (
           <button type="button" onClick={() => reveal(r)} aria-label={`Reveal the code for ${r.label}`}
             className="inline-flex items-center gap-[7px] h-[32px] max-md:h-11 px-[11px] py-0 rounded-control border border-solid border-line bg-card cursor-pointer [font-family:inherit] text-copy max-w-full self-start">
@@ -176,6 +185,9 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
     <span className="flex flex-col gap-2 min-w-0">
       <span className="flex items-start gap-2">
         <span className="flex flex-col gap-[2px] flex-1 min-w-0">
+          {isAllUnits && (r.unitId
+            ? <Link to={`/properties/units/${encodeURIComponent(r.unitId)}?tab=${UNIT_ACCESS_TAB}`} className="inline-flex items-center min-h-11 text-copy font-semibold text-ink no-underline [overflow-wrap:anywhere]">{unitNameOf(r)}</Link>
+            : <span className="text-copy font-semibold">{unitNameOf(r)}</span>)}
           <span className="text-copy font-semibold">{KIND_LABEL[r.kind] ?? r.kind}</span>
           <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.label}</span>
         </span>
@@ -194,6 +206,10 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
   );
   // The code itself is never exported: only its type, name, instruction and history.
   const columns: Column<Credential>[] = [
+    ...(isAllUnits ? [{ key: 'unit', label: 'Unit', value: unitNameOf, hideable: false, width: 170,
+      render: r => (r.unitId
+        ? <Link to={`/properties/units/${encodeURIComponent(r.unitId)}?tab=${UNIT_ACCESS_TAB}`} className="font-medium text-ink no-underline min-w-0 [overflow-wrap:anywhere]">{unitNameOf(r)}</Link>
+        : <span className="font-medium">{unitNameOf(r)}</span>) }] as Column<Credential>[] : []),
     { key: 'kind', label: 'Type', value: r => KIND_LABEL[r.kind] ?? r.kind, hideable: false, width: 170,
       render: r => (
         <span className="flex flex-col gap-[3px] min-w-0">
@@ -223,20 +239,22 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
   return (
     <>
       <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
-          <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-[15px] font-semibold tracking-[-0.01em]">Access and keys</span>
-            <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
-            <span className="text-meta"><span className="text-muted-ink">Car park:</span> {parking || 'No bays recorded. Add them on the Details tab.'}</span>
-            {fullAccessCard && <span className="text-meta"><span className="text-muted-ink">Building:</span> full access card (lobby, lift and car park on one card)</span>}
+        {!isAllUnits && (
+          <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
+            <div className="flex flex-col gap-1 min-w-0">
+              <span className="text-[15px] font-semibold tracking-[-0.01em]">Access and keys</span>
+              <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
+              <span className="text-meta"><span className="text-muted-ink">Car park:</span> {parking || 'No bays recorded. Add them on the Details tab.'}</span>
+              {fullAccessCard && <span className="text-meta"><span className="text-muted-ink">Building:</span> full access card (lobby, lift and car park on one card)</span>}
+            </div>
+            {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
           </div>
-          {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
-        </div>
+        )}
 
-        <DataTable<Credential> id="unit.access" urlPrefix="acc." bare noViews pageSize={0} maxHeight="none"
+        <DataTable<Credential> id={isAllUnits ? 'units.passKeys' : 'unit.access'} urlPrefix="acc." bare noViews {...(isAllUnits ? {} : { pageSize: 0, maxHeight: 'none' })}
           columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
-          noun={['access item', 'access items']} exportName="unit-access" renderCard={phoneCard}
-          empty={{ title: 'No access recorded for this unit yet.', icon: 'KeyRound',
+          noun={['access item', 'access items']} exportName={isAllUnits ? 'pass-keys' : 'unit-access'} renderCard={phoneCard}
+          empty={{ title: isAllUnits ? 'No access codes recorded on any unit yet.' : 'No access recorded for this unit yet.', icon: 'KeyRound',
             body: canEdit ? 'Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : undefined }} />
       </Card>
 
