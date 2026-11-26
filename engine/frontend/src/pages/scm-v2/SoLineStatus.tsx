@@ -41,14 +41,17 @@ export function useSoLineStatus(ids: readonly string[]): Record<string, LineStat
 }
 
 const LABEL: Readonly<Record<TrailStep["kind"], string>> = { so: "SO", po: "PO", production: "Production", gr: "GR", do: "DO" };
-const TONE: Readonly<Record<TrailStep["tone"], string>> = { done: "#11694a", active: "#b7791f", wait: "#77736b", stopped: "#b42318" };
+const TONE: Readonly<Record<TrailStep["tone"], string>> = {
+  done: "var(--badge-so-line-done-fg, #11694a)", active: "var(--badge-so-line-active-fg, #905f18)",
+  wait: "var(--badge-so-line-wait-fg, #6d6962)", stopped: "var(--badge-so-line-stopped-fg, #b42318)",
+};
 const STOCK: Readonly<Record<"stock" | "po" | "shortage", { word: string; color: string }>> = {
-  stock: { word: "In stock", color: "#11694a" }, po: { word: "Incoming", color: "#b7791f" }, shortage: { word: "Short", color: "#b42318" },
+  stock: { word: "In stock", color: TONE.done }, po: { word: "Incoming", color: TONE.active }, shortage: { word: "Short", color: TONE.stopped },
 };
 
 export function SoLineStatusCell({ s }: { s: LineStatus | undefined }): ReactElement {
   // Same width while loading: the grid measures its columns on the first paint.
-  if (!s) return <div style={{ minWidth: 280, color: "#77736b" }}>…</div>;
+  if (!s) return <div style={{ minWidth: 280, color: TONE.wait }}>…</div>;
   const steps = s.steps.filter((t) => t.kind !== "so");
   const st = s.stock ? STOCK[s.stock] : null;
   return (
@@ -56,17 +59,17 @@ export function SoLineStatusCell({ s }: { s: LineStatus | undefined }): ReactEle
       {st && (
         <span style={{ color: st.color, fontWeight: 600 }}>
           {st.word}{s.stock === "po" && s.eta ? ` · ETA ${fmtDate(s.eta)}` : ""}
-          {s.stock === "po" && s.incomingPo && steps.every((t) => t.no !== s.incomingPo) ? <span style={{ fontWeight: 400, color: "#77736b" }}> ({s.incomingPo})</span> : null}
+          {s.stock === "po" && s.incomingPo && steps.every((t) => t.no !== s.incomingPo) ? <span style={{ fontWeight: 400, color: TONE.wait }}> ({s.incomingPo})</span> : null}
         </span>
       )}
       {steps.map((t) => (
         <span key={`${t.kind}-${t.id}`}>
-          <span style={{ color: "#77736b" }}>{LABEL[t.kind]} </span>
+          <span style={{ color: TONE.wait }}>{LABEL[t.kind]} </span>
           <b style={{ fontWeight: 600 }}>{t.no}</b>
           <span style={{ color: TONE[t.tone] }}> · {[t.word, t.date ? fmtDate(t.date) : null].filter(Boolean).join(" ")}</span>
         </span>
       ))}
-      {!st && steps.length === 0 && <span style={{ color: "#77736b" }}>No PO yet</span>}
+      {!st && steps.length === 0 && <span style={{ color: TONE.wait }}>No PO yet</span>}
     </div>
   );
 }

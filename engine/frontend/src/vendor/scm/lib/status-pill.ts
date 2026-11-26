@@ -50,12 +50,12 @@
 export type StatusTone = 'neutral' | 'info' | 'progress' | 'success' | 'danger' | 'pending';
 
 export const STATUS_TONES: Record<StatusTone, { bg: string; fg: string }> = {
-  neutral:  { bg: 'rgba(34, 31, 32, 0.08)',   fg: 'var(--fg-muted)' },
-  info:     { bg: 'rgba(166, 71, 30, 0.12)',  fg: 'var(--c-burnt)' },
-  progress: { bg: 'rgba(166, 71, 30, 0.18)',  fg: 'var(--c-burnt)' },
-  success:  { bg: 'rgba(47, 93, 79, 0.28)',   fg: 'var(--c-secondary-a, #2F5D4F)' },
-  danger:   { bg: 'rgba(184, 51, 31, 0.10)',  fg: 'var(--c-festive-b, #B8331F)' },
-  pending:  { bg: 'rgba(214, 158, 46, 0.18)', fg: '#8a5a00' },
+  neutral:  { bg: 'var(--badge-status-neutral-bg, rgba(34, 31, 32, 0.08))',   fg: 'var(--fg-muted)' },
+  info:     { bg: 'var(--badge-status-info-bg, rgba(166, 71, 30, 0.12))',  fg: 'var(--c-burnt)' },
+  progress: { bg: 'var(--badge-status-progress-bg, rgba(166, 71, 30, 0.18))',  fg: 'var(--c-burnt)' },
+  success:  { bg: 'var(--badge-status-success-bg, rgba(47, 93, 79, 0.28))',   fg: 'var(--c-secondary-a, #2F5D4F)' },
+  danger:   { bg: 'var(--badge-status-danger-bg, rgba(184, 51, 31, 0.10))',  fg: 'var(--c-festive-b, #B8331F)' },
+  pending:  { bg: 'var(--badge-status-pending-bg, rgba(214, 158, 46, 0.18))', fg: 'var(--badge-status-pending-fg, #875800)' },
 };
 
 export type StatusDocType =

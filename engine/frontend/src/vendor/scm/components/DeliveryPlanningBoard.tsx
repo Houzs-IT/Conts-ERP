@@ -63,17 +63,18 @@ import { useDeliveryRowMarks, rowMarkTint, useBulkSetRowMark, useBulkClearRowMar
 /* HC "Remark 4" delivery sub-status → a small pill class (reuse the cream
    palette; unknown/blank → muted). Default-shown column. */
 const SUBSTATUS_TONE: Record<string, string> = {
-  'Pending Pickup': '#767b6e',
-  'Done Shipout': '#2f5d4f',
-  'Arrives EM Warehouse': '#2f5d4f',
-  'Done Delivered': '#2e7d32',
-  'Confirm': '#2f5d4f',
-  'House Not Ready': '#0c3f39',
-  'Request Hold': '#0c3f39',
+  'Pending Pickup': 'var(--badge-substatus-pending-pickup-fg, #6a6f63)',
+  'Done Shipout': 'var(--badge-substatus-done-shipout-fg, #2f5d4f)',
+  'Arrives EM Warehouse': 'var(--badge-substatus-arrives-em-warehouse-fg, #2f5d4f)',
+  'Done Delivered': 'var(--badge-substatus-done-delivered-fg, #2e7d32)',
+  'Confirm': 'var(--badge-substatus-confirm-fg, #2f5d4f)',
+  'House Not Ready': 'var(--badge-substatus-house-not-ready-fg, #0c3f39)',
+  'Request Hold': 'var(--badge-substatus-request-hold-fg, #0c3f39)',
 };
+const SUBSTATUS_TONE_UNKNOWN = 'var(--badge-substatus-unknown-fg, #6a6f63)';
 function SubstatusPill({ value }: { value: string | null }) {
-  if (!value) return <span style={{ color: '#767b6e' }}>—</span>;
-  const tone = SUBSTATUS_TONE[value] ?? '#767b6e';
+  if (!value) return <span style={{ color: SUBSTATUS_TONE_UNKNOWN }}>—</span>;
+  const tone = SUBSTATUS_TONE[value] ?? SUBSTATUS_TONE_UNKNOWN;
   return (
     <span style={{
       display: 'inline-block', padding: '1px 8px', borderRadius: 999,
@@ -159,31 +160,31 @@ export const rowIdOf = (o: PlanningOrder): string =>
    SubstatusPill use, so it reads consistently across the board. */
 function TypeChip({ order }: { order: PlanningOrder }) {
   let label = 'SO delivery';
-  let tone = '#767b6e';
-  let bg = 'rgba(34, 31, 32, 0.06)';
+  let tone = 'var(--badge-type-so-fg, #6a6f63)';
+  let bg = 'var(--badge-type-so-bg, rgba(34, 31, 32, 0.06))';
   if (isDp(order)) {
     label = dpLabel(order);
-    tone = '#8a2f66';
-    bg = 'rgba(166, 50, 107, 0.12)';
+    tone = 'var(--badge-type-dp-fg, #8a2f66)';
+    bg = 'var(--badge-type-dp-bg, rgba(166, 50, 107, 0.12))';
   } else if (isProject(order)) {
     // PMS project setup/dismantle — reuse the SETUP/DISMANTLE label, distinct tone.
     label = dpLabel(order);
-    tone = '#1f5e73';
-    bg = 'rgba(31, 94, 115, 0.12)';
+    tone = 'var(--badge-type-project-fg, #1f5e73)';
+    bg = 'var(--badge-type-project-bg, rgba(31, 94, 115, 0.12))';
   } else if (isAssr(order)) {
     // The three ASSR legs keep their own tones; the WORDS come from the shared
     // map so the chip, the search index and the export cannot drift (they did,
     // four ways, before the 2026-08-03 rename).
     label = assrJobKindLabel(order.job_kind);
     if (order.job_kind === 'customer_pickup') {
-      tone = '#0c3f39';
-      bg = 'rgba(232, 107, 58, 0.12)';
+      tone = 'var(--badge-type-pickup-fg, #0c3f39)';
+      bg = 'var(--badge-type-pickup-bg, rgba(232, 107, 58, 0.12))';
     } else if (order.job_kind === 'inspection') {
-      tone = '#5a3fa0';
-      bg = 'rgba(90, 63, 160, 0.12)';
+      tone = 'var(--badge-type-inspection-fg, #5a3fa0)';
+      bg = 'var(--badge-type-inspection-bg, rgba(90, 63, 160, 0.12))';
     } else {
-      tone = '#2f5d4f';
-      bg = 'rgba(47, 93, 79, 0.12)';
+      tone = 'var(--badge-type-delivery-fg, #2f5d4f)';
+      bg = 'var(--badge-type-delivery-bg, rgba(47, 93, 79, 0.12))';
     }
   }
   return (

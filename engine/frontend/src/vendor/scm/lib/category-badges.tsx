@@ -47,15 +47,15 @@ export const CATEGORY_BADGE: Record<string, CategoryBadgeSpec> = {
   service:   { bg: 'rgba(90, 96, 102, 0.12)',  fg: 'var(--fg-muted)',                label: 'SERVICE' },
   /* Conts renovation groups (migration 0060). Furniture and Soft furnishing reuse
      the furniture swatches they absorb; Works and Built-in take the brand gold. */
-  works:     { bg: 'rgba(138, 106, 47, 0.14)', fg: '#6b5223',                         label: MFG_CATEGORY_LABELS.WORKS.toUpperCase() },
-  builtin:   { bg: 'rgba(138, 106, 47, 0.10)', fg: '#8a6a2f',                         label: MFG_CATEGORY_LABELS.BUILTIN.toUpperCase() },
+  works:     { bg: 'var(--badge-category-works-bg, rgba(138, 106, 47, 0.14))', fg: 'var(--badge-category-works-fg, #6b5223)', label: MFG_CATEGORY_LABELS.WORKS.toUpperCase() },
+  builtin:   { bg: 'var(--badge-category-builtin-bg, rgba(138, 106, 47, 0.10))', fg: 'var(--badge-category-builtin-fg, #795d29)', label: MFG_CATEGORY_LABELS.BUILTIN.toUpperCase() },
   furniture: { bg: 'rgba(47, 93, 79, 0.12)',   fg: 'var(--c-secondary-a, #2F5D4F)',  label: MFG_CATEGORY_LABELS.FURNITURE.toUpperCase() },
   lighting:  { bg: 'rgba(199, 127, 62, 0.16)', fg: 'var(--c-festive-a, #C77F3E)',    label: MFG_CATEGORY_LABELS.LIGHTING.toUpperCase() },
-  appliance: { bg: 'rgba(52, 84, 122, 0.12)',  fg: '#34547a',                         label: MFG_CATEGORY_LABELS.APPLIANCE.toUpperCase() },
+  appliance: { bg: 'var(--badge-category-appliance-bg, rgba(52, 84, 122, 0.12))', fg: 'var(--badge-category-appliance-fg, #34547a)', label: MFG_CATEGORY_LABELS.APPLIANCE.toUpperCase() },
   soft:      { bg: 'rgba(166, 71, 30, 0.10)',  fg: 'var(--c-burnt)',                 label: MFG_CATEGORY_LABELS.SOFT.toUpperCase() },
   /* A renovation contract's lines (and the PO / GRN lines that buy them) keep item_group RENOVATION for accounting;
      they showed as OTHERS (owner run, 1 Nov 2026). */
-  renovation: { bg: 'rgba(138, 106, 47, 0.14)', fg: '#6b5223',                        label: 'RENOVATION' },
+  renovation: { bg: 'var(--badge-category-renovation-bg, rgba(138, 106, 47, 0.14))', fg: 'var(--badge-category-renovation-fg, #6b5223)', label: 'RENOVATION' },
 };
 
 /** Resolve a badge spec for any item_group string, case-insensitively.
@@ -104,8 +104,8 @@ const BRAND_BADGE_DEFAULT: CategoryBadgeSpec = {
 };
 
 const BRAND_BADGE: Record<string, CategoryBadgeSpec> = {
-  AKEMI:    { bg: 'rgba(120, 81, 169, 0.14)', fg: '#5B3E99', label: 'AKEMI' },
-  ZANOTTI:  { bg: 'rgba(120, 81, 169, 0.14)', fg: '#5B3E99', label: 'ZANOTTI' },
+  AKEMI:    { bg: 'var(--badge-brand-akemi-bg, rgba(120, 81, 169, 0.14))', fg: 'var(--badge-brand-akemi-fg, #5B3E99)', label: 'AKEMI' },
+  ZANOTTI:  { bg: 'var(--badge-brand-zanotti-bg, rgba(120, 81, 169, 0.14))', fg: 'var(--badge-brand-zanotti-fg, #5B3E99)', label: 'ZANOTTI' },
 };
 
 export const brandingFor = (brand: string | null | undefined): CategoryBadgeSpec => {

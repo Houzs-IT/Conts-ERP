@@ -87,7 +87,7 @@ export const cancelBucketOf = (status: string | null | undefined): AmendmentBuck
 
 /** Red, not one of the approver blues: a cancellation is the destructive row in
  *  this queue and must never read as a fourth lane. */
-export const CANCEL_TONE = { bg: 'rgba(184, 51, 31, 0.13)', fg: '#B8331F' };
+export const CANCEL_TONE = { bg: 'var(--badge-cancel-bg, rgba(184, 51, 31, 0.13))', fg: 'var(--badge-cancel-fg, #A12C18)' };
 
 /** Which desk a cancellation waits on — level 1 is the Sales Director, level 2
  *  the Purchaser (backend/src/scm/shared/document-cancel.ts CANCEL_APPROVE_KEY).
