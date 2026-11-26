@@ -103,7 +103,8 @@ test('leases, vacancy, unit, gaps, owner payouts, cancellations, reviews, channe
   }, { data: [] }, { data: [{ propertyId: 'pa', unitNumber: 'A-1', outstanding: 5000, externalRef: 'TC-1' }, { propertyId: 'pa', unitNumber: 'A-10', outstanding: 9000 }] });
   assert.equal(u.guestNow.guest, 'Ann'); assert.equal(u.nextReservation.guest, 'Bob');
   assert.deepEqual([u.arrears.directGuestsOwing, u.arrears.owedRm], [1, 50]);
-  assert.equal('adrRm' in u.thisMonth, false, 'no revenue in the reply: no ADR either');
+  // Same as the unit page: ADR / RevPAR as the reply carries them, income absent because the reply has none.
+  assert.equal(u.thisMonth.adrRm, 150); assert.equal('incomeRm' in u.thisMonth, false);
 
   const g = P.summariseGaps(t, O, {
     units: { data: [{ propertyName: 'Alpha', unitNumber: 'A-1', ownerName: 'Owner to be confirmed' }, { ownerName: 'Tan' }] },
@@ -252,7 +253,9 @@ test('PERMISSIONS: staff without finance get no money from any tool, and are tol
     const body = JSON.parse(txt);
     // Reservations money (guest totals, and channel_mix's ADR = guest total / nights from the same list) is what the
     // Reservations list itself shows to staff; every other money key must be gone.
-    const allowed = new Set(['guestTotalRm', 'owedRm', 'expectedPayoutRm', 'stillOwedRm', 'lostGuestTotalRm', ...(name === 'channel_mix' ? ['adrRm'] : [])]);
+    // unit_overview's ADR / RevPAR: GET /api/units/detail sends them to everyone with Units access, so the tool does too
+    // (owner, 26 Nov 2026: follow the ERP's RBAC exactly, no stricter and no looser).
+    const allowed = new Set(['guestTotalRm', 'owedRm', 'expectedPayoutRm', 'stillOwedRm', 'lostGuestTotalRm', ...(name === 'channel_mix' ? ['adrRm'] : []), ...(name === 'unit_overview' ? ['adrRm', 'revparRm'] : [])]);
     const leaked = moneyKeys(body).filter(k => !allowed.has(k));
     assert.deepEqual(leaked, [], `${name} leaked money to staff: ${leaked.join(', ')}`);
   }

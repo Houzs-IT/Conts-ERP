@@ -149,12 +149,14 @@ export function summariseUnit(origin: string, today: string, detail: unknown, le
     thisMonth: {
       month: str(perf.period), occupancyPct: num(perf.occupancy), nights: num(perf.occupiedNights),
       rating: perf.rating === null || perf.rating === undefined ? null : num(perf.rating), reviews: num(perf.reviewCount),
-      ...(money ? { incomeRm: rm(perf.revenue), guestTotalRm: rm(perf.gross), adrRm: rm(perf.adr), revparRm: rm(perf.revpar) } : {}),
+      // Exactly what the unit page gets: ADR and RevPAR go to everyone with Units access, income only to finance.
+      ...(has(perf, 'adr') ? { adrRm: rm(perf.adr) } : {}), ...(has(perf, 'revpar') ? { revparRm: rm(perf.revpar) } : {}),
+      ...(has(perf, 'revenue') ? { incomeRm: rm(perf.revenue) } : {}), ...(has(perf, 'gross') ? { guestTotalRm: rm(perf.gross) } : {}),
     },
     openMaintenanceJobs: num(d.openMaintenanceCount),
     link: `${origin}/properties/units/${enc(str(u.id))}`,
     ...(others.length ? { otherMatches: others.slice(0, 5).map(o => o.label) } : {}),
-    note: `Money in RM.${money ? '' : ' Money figures are not shown for this account.'} Tenant = the Agent-to-let record when the unit is let out.`,
+    note: `Money in RM.${money ? '' : ' Income is not shown for this account (the ERP shows it to finance only).'} Tenant = the Agent-to-let record when the unit is let out.`,
   };
 }
 
