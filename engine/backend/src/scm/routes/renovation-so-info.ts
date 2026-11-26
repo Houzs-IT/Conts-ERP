@@ -144,7 +144,7 @@ export async function applyRenovationSoInfo(
   db: Db,
   docNo: string,
   input: RenovationSoInput,
-  ctx: { companyId: number; companySql: string; actorId: number },
+  ctx: { companyId: number; companySql: string; actorId: number; newOrder?: boolean },
 ): Promise<{ ok: true; projectId: number | null } | { ok: false; status: 404 | 422; body: Record<string, unknown> }> {
   if (input.projectId != null && !(await readProjectShared(db, input.projectId, ctx.companySql))) {
     return { ok: false, status: 422, body: { error: 'project_not_found', message: 'That project does not exist in this company.' } };
@@ -170,7 +170,9 @@ export async function applyRenovationSoInfo(
     /* Every shared field as the SO now holds it (header, address, salesperson, property just stamped). */
     const shared: SoShared | null = await readSoShared(db, docNo);
     if (!shared) return { ok: false, status: 404, body: { error: 'so_not_found' } };
-    await writeSoToProject(db, input.projectId, shared, ctx.actorId, ctx.companyId, docNo);
+    /* Newly put on this project: the project's values win and the SO takes them; already on it: an edit here is the
+       project's edit too (owner, 1 Nov 2026), and every order of the project follows. */
+    await writeSoToProject(db, input.projectId, shared, ctx.actorId, ctx.companyId, docNo, { fillOnly: ctx.newOrder === true || prev !== input.projectId });
     await shareBrandWithProject(db, docNo, input.projectId);
   }
   return { ok: true, projectId: input.projectId };

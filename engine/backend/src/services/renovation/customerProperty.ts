@@ -179,9 +179,14 @@ export async function readSoShared(db: Db, docNo: string): Promise<SoShared | nu
 }
 
 /** SO -> project: every filled SO value becomes the project's; an empty one never clears a project field. */
-export async function writeSoToProject(db: Db, projectId: number, so: SoShared, actorId: number, companyId: number, docNo: string): Promise<void> {
+export async function writeSoToProject(db: Db, projectId: number, so: SoShared, actorId: number, companyId: number, docNo: string,
+  opts: { fillOnly?: boolean } = {}): Promise<void> {
   const fields = await projectFields(db);
-  const sets = fields.map((f) => `${f.project} = coalesce(${castOf(f.kind)}, ${f.project})`);
+  /* fillOnly: the project is the master record (owner, 26 Nov 2026: "所有的资料 例如名字不一样 都是以project为主"). An SO
+     newly put on a project only fills the project's empty fields; what the project already holds stays. */
+  const sets = fields.map((f) => (opts.fillOnly
+    ? `${f.project} = CASE WHEN ${f.project} IS NULL OR ${f.project}::text = '' THEN coalesce(${castOf(f.kind)}, ${f.project}) ELSE ${f.project} END`
+    : `${f.project} = coalesce(${castOf(f.kind)}, ${f.project})`));
   const args = fields.map((f) => bindOf(so[f.key]));
   await db.prepare(
     `UPDATE projects SET ${sets.join(", ")},
@@ -204,6 +209,9 @@ export async function writeSoToProject(db: Db, projectId: number, so: SoShared, 
   await regenerateProjectName(db, projectId);
   await db.prepare(`INSERT INTO project_activity (project_id, action, to_value, note, user_id, company_id) VALUES (?, 'customer_info_from_so', ?, ?, ?, ?)`)
     .bind(projectId, docNo, "Customer and property information saved from the sales order", actorId, companyId).run();
+  /* Then every order of the project carries the project's values, so two orders never show two names. The
+     salesperson stays each order's own: a second order may be another salesperson's sale (commission follows it). */
+  await pushProjectToOpenSos(db, projectId, { keepSalesperson: true });
 }
 
 /** The project's name follows its building and unit (projectNameFrom in scm/shared/renovation-property.ts;
@@ -221,11 +229,12 @@ export async function regenerateProjectName(db: Db, projectId: number): Promise<
 
 /** "Link existing SO" on the project (owner, 14 Oct 2026): the SO's shared fields come into the project at
     once, by the same rule as saving the SO. */
-export async function copySoIntoProject(db: Db, docNo: string, projectId: number, actorId: number, companyId: number): Promise<boolean> {
+export async function copySoIntoProject(db: Db, docNo: string, projectId: number, actorId: number, companyId: number,
+  opts: { fillOnly?: boolean } = {}): Promise<boolean> {
   if (!(await propertyColumnsReady(db))) return false;
   const so = await readSoShared(db, docNo);
   if (!so) return false;
-  await writeSoToProject(db, projectId, so, actorId, companyId, docNo);
+  await writeSoToProject(db, projectId, so, actorId, companyId, docNo, opts);
   return true;
 }
 
@@ -290,12 +299,12 @@ export async function readSoRooms(db: Db, docNo: string): Promise<{ roomSections
 
 /** Project -> every linked SO that is not cancelled: every filled project value becomes the SO's; an empty one
     never clears an SO field. Returns the doc numbers refreshed (`kept` stays for callers and is always empty). */
-export async function pushProjectToOpenSos(db: Db, projectId: number): Promise<{ updated: string[]; kept: string[] }> {
+export async function pushProjectToOpenSos(db: Db, projectId: number, opts: { keepSalesperson?: boolean } = {}): Promise<{ updated: string[]; kept: string[] }> {
   const p = await readProjectShared(db, projectId, "");
   if (!p) return { updated: [], kept: [] };
   /* Every SO column exists; before 0115 the project's structured values are blank (its single address is split
      into lines 1 and 2 by readProjectShared), and a blank never clears the SO's. */
-  const fields = SHARED_FIELDS;
+  const fields = opts.keepSalesperson ? SHARED_FIELDS.filter((f) => f.key !== "salespersonId") : SHARED_FIELDS;
   const sos = await db.prepare(
     `SELECT doc_no, so_kind, status::text AS status, processing_date::text AS processing_date, proceeded_at::text AS proceeded_at
        FROM scm.mfg_sales_orders WHERE project_id = ? AND status::text <> 'CANCELLED' ORDER BY doc_no`,

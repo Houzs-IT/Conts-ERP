@@ -4898,7 +4898,7 @@ mfgSalesOrders.post('/', async (c) => {
     const createdDocNo = out.body.docNo;
     const applied = await applyRenovationSoInfo(c.env.DB as unknown as RenoInfoDb, createdDocNo, { ...renoBlock, roomSections: null }, {
       companyId: activeCompanyId(c) ?? 1, companySql: activeCompanySql(c, 'p.company_id'),
-      actorId: Number(c.get('houzsUser')?.id ?? 0),
+      actorId: Number(c.get('houzsUser')?.id ?? 0), newOrder: true,
     }).then(async (r) => {
       /* Rooms: the room list and each line's room (body.items[i].room), matched to the inserted lines. */
       if (r.ok) await stampCreatedRooms(c.env.DB as unknown as RenoInfoDb, createdDocNo, renoBlock.roomSections, peek!.items);
