@@ -531,7 +531,7 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
             <input type="checkbox" aria-label={`Pay ${c.row.soDocNo}`} checked={!!picked[c.key]} onChange={(e) => setPicked({ ...picked, [c.key]: e.target.checked })} />
           </td>
           <td style={{ paddingLeft: 8, whiteSpace: "nowrap" }}>
-            <button type="button" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit", fontWeight: 600 }}>{c.row.soDocNo}</button>
+            <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
           </td>
           <td style={{ paddingLeft: 8 }}>{c.row.projectName || c.row.customerName}</td>
           <td style={{ paddingLeft: 8, color: MUTED }}>{isOwn(c) ? "Own sale" : `Manager · ${c.row.salespersonName ?? "team"}`}</td>
@@ -625,7 +625,7 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
                         {x.paid.length === 0 ? <div style={{ color: MUTED }}>Nothing paid this month.</div> : x.paid.map((p) => (
                           <div key={p.id} style={{ display: "flex", gap: 10, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
                             <span style={{ color: MUTED, whiteSpace: "nowrap" }}>{p.paidOn}</span>
-                            <button type="button" onClick={() => onOpen(p.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{p.soDocNo}</button>
+                            <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(p.soDocNo)} style={{ border: 0, background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>{p.soDocNo}</button>
                             <span style={{ flex: 1, color: MUTED }}>{project(p.soDocNo)}</span>
                             <span style={{ ...num, fontWeight: 600 }}>{rm(p.amountSen)}</span>
                           </div>
