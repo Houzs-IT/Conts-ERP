@@ -822,10 +822,10 @@ function Overview({ data, people, allowEveryone, onOpen }: {
   const listItem = (p: PersonTotal) => {
     const on = p.staffId === (picked?.staffId ?? "");
     return (
-      <button key={p.staffId || "all"} type="button" onClick={() => pick(p.staffId)} aria-pressed={on}
+      <button key={p.staffId || "all"} type="button" onClick={() => pick(p.staffId)} aria-pressed={on} className={on ? undefined : "bg-surface"}
         style={{
           display: "flex", flexDirection: "column", gap: 2, width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 8, cursor: "pointer", font: "inherit",
-          border: on ? `1px solid ${GOOD}` : "1px solid var(--line)", background: on ? "var(--c-success-bg)" : "var(--bg-surface, #fff)",
+          border: on ? `1px solid ${GOOD}` : "1px solid var(--line)", background: on ? "var(--c-success-bg)" : undefined,
         }}>
         <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <span style={{ fontWeight: 600 }}>{p.staffId === data.viewer.staffId ? `${p.staffName} (me)` : p.staffName}</span>
@@ -912,10 +912,10 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
               const team = teamIn(x);
               const on = m?.month === mo;
               return (
-                <button key={mo} type="button" onClick={() => setMonth(on ? null : mo)} aria-pressed={on}
+                <button key={mo} type="button" onClick={() => setMonth(on ? null : mo)} aria-pressed={on} className={on ? undefined : "bg-surface"}
                   style={{
                     flex: "0 0 168px", display: "flex", flexDirection: "column", gap: 3, padding: "8px 10px", borderRadius: 8, textAlign: "left", cursor: "pointer", font: "inherit",
-                    border: on ? `1px solid ${GOOD}` : "1px solid var(--line)", background: on ? "var(--c-success-bg)" : "var(--bg-surface, #fff)",
+                    border: on ? `1px solid ${GOOD}` : "1px solid var(--line)", background: on ? "var(--c-success-bg)" : undefined,
                   }}>
                   <span style={{ fontWeight: 600 }}>{monthLabel(mo)}</span>
                   <span style={{ height: 4, borderRadius: 2, background: "var(--line)", overflow: "hidden" }}>

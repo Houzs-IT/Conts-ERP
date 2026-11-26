@@ -1,5 +1,5 @@
 {
-  "total": 4122,
+  "total": 4120,
   "files": {
     "src/auth/AuthScreens.tsx": 3,
     "src/components/AmbientSnow.tsx": 2,
@@ -19,7 +19,7 @@
     "src/components/so-list-filter/SoFilterRowsEditor.tsx": 1,
     "src/components/StockRemarkPill.tsx": 3,
     "src/conts/AiUsage.tsx": 2,
-    "src/conts/Commission.tsx": 7,
+    "src/conts/Commission.tsx": 5,
     "src/conts/Debtors.tsx": 2,
     "src/conts/DepartmentSpend.tsx": 5,
     "src/conts/EInvoice.tsx": 7,
