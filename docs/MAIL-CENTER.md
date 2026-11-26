@@ -101,7 +101,8 @@ All additive and idempotent (`if not exists`); new tables owned by `scm_engine` 
 - `engine/backend/src/routes/mail-center.ts` (threads, compose, reply, inbound ingest), `mail-inbound.ts` (pre-auth
   webhook), `mail-personal.ts` (`/visibility`, `/directory`, `/recipients/history`, `/mail-host/pending|confirm`),
   `mail-claim.ts`, `mail-acks.ts`, `mail-access-log.ts` (`/access/changes`, `/scope-departments`, `/sync-status`),
-  `mail-reply-guard.ts`, `mail-senders.ts`, `lib/mail-outbox-mask.ts`.
+  `mail-reply-guard.ts` (routes; its helpers are in `lib/mail-reply-guard.ts`, Conts only, to avoid an import cycle),
+  `mail-senders.ts`, `lib/mail-outbox-mask.ts`.
 - `engine/backend/src/lib/mail-*.ts` (threading, reads, acks, access, delivery, provision, recipient history,
   attachments), `services/email.ts` (queue), `conts/mail-cron.ts` (scheduled work), `conts/sso.ts` (provisioning).
 - `engine/frontend/src/pages/MailCenter/`, `pages/MailboxesTab.tsx`, `pages/mail-access-levels.tsx`,

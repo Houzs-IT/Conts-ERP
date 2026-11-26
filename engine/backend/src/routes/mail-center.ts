@@ -22,7 +22,7 @@
 //
 // Timestamp columns are TEXT, written via new Date().toISOString() (per mig 0008).
 // ---------------------------------------------------------------------------
-import { afterReplySent, replyConflict, replyingOn } from "./mail-reply-guard";
+import { afterReplySent, replyConflict, replyingOn } from "../lib/mail-reply-guard";
 import { afterGrantChange, departmentIdsOf, extraScopeDepartments, departmentMailboxes, isInManagement, LEVEL_NAME, recordAccessChange } from "../lib/mail-access";
 import { Hono } from "hono";
 import type { Context } from "hono";
