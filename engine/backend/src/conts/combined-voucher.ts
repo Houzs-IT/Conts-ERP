@@ -10,7 +10,8 @@
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { linesStillOwed } from './payment-requests';
-import { claimsDeps, FULL_KEY, isFloatAccountCode, NOT_A_BANK, payBackBank, savedBanksOf } from './petty-cash-routes';
+import { claimsDeps, FULL_KEY, isFloatAccountCode, NOT_A_BANK, payBackBank, raiseTopUp, savedBanksOf } from './petty-cash-routes';
+import { topUpFloatOf } from './petty-cash-topup';
 import { linesOf, staffNames, type ReceiptLineRow } from './petty-cash-store';
 import { liveBillOf } from './request-ap-invoice';
 import { requestPayments } from './request-vouchers';
@@ -24,7 +25,7 @@ const OPEN = new Set(['SUBMITTED', 'PART_PAID']);
 const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try { return await c.req.json(); } catch { return null; } };
 const ids = (raw: unknown): string[] => (Array.isArray(raw) ? [...new Set(raw.map(String).filter(Boolean))] : []);
 
-type ReqRow = { id: string; request_no: string; payee_name: string; status: string; note: string | null; type: string };
+type ReqRow = { id: string; request_no: string; payee_name: string; status: string; note: string | null; type: string; source_key: string | null };
 type ReqLine = { id: string; request_id: string; department: string; unit_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
 type Out = { debit: string; amount: number; description: string; department: string; project_id: number | null; unit_id: string | null; sub_department_id: string | null; payment_request_id: string | null; staff_receipt_id: string | null };
 
@@ -51,10 +52,21 @@ export async function makeCombinedVoucher(c: Ctx, input: { requestIds: string[];
 
   /* Payment requests: what each still owes, line by line (a part-paid one pays only the rest). */
   const { data: qd } = input.requestIds.length
-    ? await sb.from('payment_requests').select('id, request_no, payee_name, status, note, type').eq('company_id', co.companyId).in('id', input.requestIds)
+    ? await sb.from('payment_requests').select('id, request_no, payee_name, status, note, type, source_key').eq('company_id', co.companyId).in('id', input.requestIds)
     : { data: [] };
   const reqs = ((qd ?? []) as ReqRow[]).sort((a, b) => a.request_no.localeCompare(b.request_no));
   if (reqs.length !== input.requestIds.length) problems.push('A request was not found. Open the list again.');
+  /* A petty cash top-up request (petty-cash-topup.ts) is paid as the float's top-up, on its own: its voucher brings the
+     float back to its amount as it stands now and pays the request when it posts. */
+  const topUps = reqs.filter(r => topUpFloatOf(r.source_key));
+  if (topUps.length) {
+    if (reqs.length + input.receiptIds.length > 1) return c.json({ error: 'cannot_pay', message: `${topUps.map(r => r.request_no).join(', ')} tops a petty cash float up: pay it on its own.` }, 409);
+    const r = topUps[0]!;
+    if (!OPEN.has(r.status)) return c.json({ error: 'cannot_pay', message: `${r.request_no} is not waiting for payment.` }, 409);
+    const { data: fl } = await sb.from('petty_cash_floats').select('*').eq('company_id', co.companyId).eq('id', topUpFloatOf(r.source_key)).maybeSingle();
+    if (!fl || !(fl as { active?: boolean }).active) return c.json({ error: 'cannot_pay', message: `${r.request_no}: its petty cash float is closed.` }, 409);
+    return raiseTopUp(c, co.companyId, fl as Parameters<typeof raiseTopUp>[2], bank);
+  }
   const pays = await requestPayments(sb, reqs.map(r => r.id));
   const { data: ld } = reqs.length ? await sb.from('payment_request_lines').select('*').in('request_id', reqs.map(r => r.id)) : { data: [] };
   for (const r of reqs) {

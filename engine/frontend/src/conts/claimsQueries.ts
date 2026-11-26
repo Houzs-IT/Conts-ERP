@@ -54,7 +54,7 @@ export function requestStatusNote(r: { status: string; reason: string | null; de
 }
 
 export type FloatSummary = {
-  id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested?: boolean;
+  id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested?: boolean; topUpRequestNo?: string | null;
   departmentName?: string; keeperName?: string; warnPct?: number; active?: boolean;
   /** The float's own account in the chart, e.g. 315-0101 PETTY CASH - AMIN; null books nothing. */
   accountCode: string | null; accountName: string | null;

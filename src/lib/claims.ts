@@ -44,7 +44,7 @@ export interface PaymentRequest {
   askedAmountSen?: number | null;
 }
 export interface Me { userId: string; name: string; field: boolean; lineDepartment: LineDepartment; route: 'float' | 'finance'; keepsFloat: boolean }
-export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean }; receipts: Receipt[] }
+export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean; topUpRequestNo?: string | null }; receipts: Receipt[] }
 /** A line as staff send it: the engine sets the department from the person and finance sets the account (2 Nov 2026). */
 export interface NewLine { unitId?: string; maintenanceIssueId?: string; projectId?: number; amountSen: number; description?: string; subDepartmentId?: string;
   /** On a line for a unit (a payment request, or a claim): what its owner pays back (chew, 20 and 23 Nov 2026). */

@@ -666,9 +666,10 @@ function KeptFloat() {
           <Card className="col-span-2 lg:col-span-1 p-4 flex flex-col justify-between gap-3">
             <span className="text-meta text-muted-ink">When the cash runs low, ask finance to top the float back up.</span>
             <div><Button variant="secondary" size="sm" disabled={f.topUpRequested} disabledReason="Finance has been asked already." onClick={async () => {
-              try { await api.post('/claims/float/top-up-request', {}); toast({ tone: 'success', title: 'Finance has been asked for a top-up' }); q.reload(); }
+              /* A payment request to finance, made out to me (chew, 26 Nov 2026). */
+              try { const r = await api.post<{ requestNo: string }>('/claims/float/top-up-request', {}); toast({ tone: 'success', title: `Payment request ${r.requestNo} sent to finance`, body: 'It lists on Payment requests; once paid the float is back to its amount.' }); q.reload(); }
               catch (e) { toast({ tone: 'critical', title: 'Not sent', body: errorMessage(e) }); }
-            }}>{f.topUpRequested ? 'Top-up asked for' : 'Ask for a top-up'}</Button></div>
+            }}>{f.topUpRequested ? `Top-up asked for${f.topUpRequestNo ? ` (${f.topUpRequestNo})` : ''}` : 'Ask for a top-up'}</Button></div>
           </Card>
         </div>
       )}
