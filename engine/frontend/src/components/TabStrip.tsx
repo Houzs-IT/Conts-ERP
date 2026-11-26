@@ -72,10 +72,10 @@ export function TabStrip<V extends string>({
               {t.count != null && t.count > 0 && (
                 <span
                   className={cn(
-                    "inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 font-mono text-[9px] font-bold",
+                    "box-border inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border px-[5px] text-[11px] font-semibold tabular-nums",
                     active
-                      ? "bg-primary text-white"
-                      : "bg-surface-dim text-ink-muted"
+                      ? "border-primary bg-primary text-white"
+                      : "border-ink-muted bg-transparent text-ink-secondary"
                   )}
                 >
                   {t.count}

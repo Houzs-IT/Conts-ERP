@@ -7,7 +7,7 @@ import { recolourCssValue } from "../../conts/palette.mjs";
 const LIGHT_HEX_BY_VARIABLE: Record<string, string> = {
   bg: "#eef0ec", surface: "#ffffff", "surface-2": "#f4f6f3", "surface-dim": "#e3e6e0",
   border: "#d6d9d2", "border-subtle": "#e3e6e0", "border-strong": "#c2c6bd",
-  ink: "#11140f", "ink-secondary": "#414539", "ink-muted": "#767b6e",
+  ink: "#11140f", "ink-secondary": "#414539",
   "primary-soft": "#e1efed", "primary-ink": "#0c3f39", "accent-soft": "#f3ece0", "accent-ink": "#5a3a14",
   "synced-bg": "#e2f0e9", "err-bg": "#f8eaea", "warning-bg": "#f6efd9", "warning-text": "#6e4d12",
   "expired-bg": "#f7e9e9", "expired-text": "#7a2222",
@@ -30,4 +30,12 @@ describe("engine theme variables", () => {
       expect(recolour(`rgb(${triple})`)).toBe(toRgbFunction(recolour(originalHex)));
     },
   );
+
+  it("light muted ink is the house muted text colour, readable on the dim chip fill", () => {
+    const houseTokens = readFileSync(resolve(__dirname, "../../../../tokens.css"), "utf8");
+    const houseMuted = /--color-text-muted:\s*(#[0-9a-fA-F]{6});/.exec(houseTokens)?.[1];
+    const triple = /--eng-ink-muted:\s*(\d+ \d+ \d+);/.exec(indexCss)?.[1];
+    expect(houseMuted).toBeDefined();
+    expect(recolour(`rgb(${triple})`)).toBe(toRgbFunction(houseMuted ?? ""));
+  });
 });
