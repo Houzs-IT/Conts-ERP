@@ -23,6 +23,7 @@
 //   GET  /cleaning-invoices/:id/payments/:paymentId/slip   the slip
 
 import { companyDocPrefix, requireActiveCompanyId } from '../scm/lib/companyScope';
+import { SCM_SYSTEM_STAFF_ID } from '../scm/middleware/auth';
 import { insertWithDocNoRetry } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { buildItemRow, nextSiNumber, recomputeTotals } from '../scm/lib/si-from-do';
@@ -191,7 +192,7 @@ export const createCleaningInvoiceHandler = async (c: Ctx): Promise<Response> =>
     no => sb.from('sales_invoices').insert({
       company_id: co.companyId, invoice_number: no, debtor_code: CLEANING_DEBTOR, debtor_name: customerName, invoice_date: invoiceDate,
       phone: text(b.phone, 40) || null, address1: text(b.address, 300) || null, ref: CLEANING_REF, customer_so_no: key,
-      currency: 'MYR', status: 'SENT', sent_at: now, confirmed_at: now, created_by: staff.userId,
+      currency: 'MYR', status: 'SENT', sent_at: now, confirmed_at: now, created_by: SCM_SYSTEM_STAFF_ID, // scm.staff FK: the engine's own identity for every caller (scm/middleware/auth); who billed is in notes
       notes: `Cleaning jobs billed by ${staff.name || 'the cleaning team'}.`.slice(0, 500),
     }).select('id, invoice_number').single(),
   );
@@ -311,7 +312,7 @@ export const recordCleaningPaymentHandler = async (c: Ctx): Promise<Response> =>
   }
 
   const { data: pay, error: pErr } = await insertSiPaymentRow(sb, {
-    salesInvoiceId: id, companyId: co.companyId, paidAt, method, amountSen, note: text(b.note, 300) || null, createdBy: staff.userId,
+    salesInvoiceId: id, companyId: co.companyId, paidAt, method, amountSen, note: [text(b.note, 300), `Recorded by ${staff.name || 'the cleaning team'}`].filter(Boolean).join(' · ').slice(0, 400), createdBy: SCM_SYSTEM_STAFF_ID,
   });
   if (pErr || !pay) return c.json({ error: 'save_failed', message: pErr?.message ?? 'insert returned nothing' }, 500);
   if (slip) await sb.from('sales_invoice_payments').update(slip).eq('id', (pay as { id: string }).id);
