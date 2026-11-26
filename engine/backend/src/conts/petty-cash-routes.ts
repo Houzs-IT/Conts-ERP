@@ -28,6 +28,7 @@ import { todayMyt } from '../scm/lib/my-time';
 import { CONTROL_ROLES, resolveRoles } from '../acc/rules';
 import { projectLimit } from './project-limit';
 import { topUpAmount } from './petty-cash';
+import { linkTopUpRequest, openTopUpRequests } from './petty-cash-topup';
 import { postReceiptJournal, postWriteOffJournal } from './petty-cash-ledger';
 import { checkProjectsFit, resolveLinesSub } from './sub-departments';
 import { fileResponse } from './claims-files';
@@ -208,10 +209,12 @@ export const listFloatsHandler = async (c: Ctx): Promise<Response> => {
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const floats = await floatsOf(sb, co.companyId);
-  const [bal, names, depts, accts, waiting] = await Promise.all([
+  const [bal, names, depts, accts, waiting, asked] = await Promise.all([
     floatBalances(sb, floats), staffNames(sb), departmentNames(sb),
     accountNames(sb, co.companyId, floats.map(f => f.account_code).filter((x): x is string => !!x)),
     allRows<{ float_id: string; amount_sen: number }>((f, t) => sb.from('staff_receipts').select('id, float_id, amount_sen').eq('company_id', co.companyId).eq('status', 'HANDED_IN').not('float_id', 'is', null).order('id').range(f, t)),
+    /* A keeper's top-up ask is a payment request (petty-cash-topup.ts): asked while one is open. */
+    openTopUpRequests(sb, co.companyId, floats.map(f => f.id)),
   ]);
   const rows = floats.map(f => {
     const w = waiting.filter(r => r.float_id === f.id);
@@ -221,7 +224,7 @@ export const listFloatsHandler = async (c: Ctx): Promise<Response> => {
       keeperName: names.get(f.keeper_user_id) ?? '', accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null,
       openingSen: Number(f.opening_sen ?? 0), openingOn: f.opening_on ?? null,
       floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active,
-      balanceSen: b.balanceSen, low: b.low, lastTopUpOn: b.lastTopUpOn, topUpRequested: f.topup_requested_at != null,
+      balanceSen: b.balanceSen, low: b.low, lastTopUpOn: b.lastTopUpOn, topUpRequested: asked.has(f.id), topUpRequestNo: asked.get(f.id)?.requestNo ?? null,
       waitingCheckSen: w.reduce((n, r) => n + Number(r.amount_sen), 0), waitingCheckCount: w.length,
     };
   });
@@ -595,7 +598,14 @@ export const topUpHandler = async (c: Ctx): Promise<Response> => {
   if (!co.ok) return c.json(co.refusal, 409);
   const f = await loadFloat(c, co.companyId);
   if (!f || !f.active) return c.json({ error: 'not_found' }, 404);
-  const bank = String((await bodyOf(c))?.bankAccountCode ?? '').trim();
+  return raiseTopUp(c, co.companyId, f, String((await bodyOf(c))?.bankAccountCode ?? ''));
+};
+
+/** A draft voucher to the keeper bringing the float back to its amount, from the Petty cash page or by paying the
+ *  keeper's top-up request on Payment requests (petty-cash-topup.ts): either way the float's open request rides it. */
+export async function raiseTopUp(c: Ctx, companyId: number, f: FloatRow, bankAccountCode: string): Promise<Response> {
+  const co = { companyId };
+  const bank = bankAccountCode.trim();
   if (!bank) return c.json({ error: 'validation', message: 'Choose the bank the top-up is paid from.' }, 422);
   const sb = c.get('supabase');
   if (await isFloatAccountCode(sb, co.companyId, bank)) return c.json(NOT_A_BANK, 422);
@@ -625,9 +635,10 @@ export const topUpHandler = async (c: Ctx): Promise<Response> => {
   }
   /* The receipts this top-up covers are the ones checked now; a receipt checked later waits for the next one. */
   if (checked.length) await sb.from('staff_receipts').update({ topup_pv_id: made.id, updated_at: now() }).in('id', checked.map(r => r.id)).eq('status', 'CHECKED').is('topup_pv_id', null);
+  await linkTopUpRequest(sb, co.companyId, f.id, made.id, amount);
   await sb.from('petty_cash_floats').update({ topup_requested_at: null }).eq('id', f.id);
   return c.json({ pvId: made.id, pvNumber: made.pvNumber, amountSen: amount }, 201);
-};
+}
 
 type SavedBank = { bankName: string; accountNo: string; accountName: string | null };
 

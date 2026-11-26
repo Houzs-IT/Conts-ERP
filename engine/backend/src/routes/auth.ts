@@ -20,6 +20,7 @@ import { resolveCapabilities } from "../services/capabilities";
 import { isCostingDisplayEnabled } from "../scm/lib/costing-enabled";
 import { sendEmail, publicUrl, resetEmailHtml, inviteEmailHtml, erpProductName } from "../services/email";
 import { getBrandingForCompany } from "../services/branding";
+import { provisionPersonalMailbox } from "../lib/mail-provision";
 import { defaultCompanyCodeForHost } from "../middleware/companyContext";
 import { validatePasswordStrength } from "../services/passwordStrength";
 import { verifyTotp, consumeBackupCode } from "../services/totp";
@@ -580,6 +581,15 @@ app.post("/accept-invite", async (c) => {
   )
     .bind(inv.id)
     .run();
+
+  // An invite from before DEV-03, or one sent without a name, has no address
+  // yet; the name is known now. The account is already live, so best-effort.
+  // (Conts: staff normally arrive by sign-on from Property OS, conts/sso.ts, which provisions too.)
+  try {
+    await provisionPersonalMailbox(c.env, user.id);
+  } catch (e) {
+    console.error("[auth] accept-invite mailbox provisioning failed:", e);
+  }
 
   const token = await createSession(c.env, user.id);
   const sessionPass = await mintSessionPass(c.env, token, Date.now());

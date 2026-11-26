@@ -91,7 +91,7 @@ export function PettyCash() {
     },
     { key: "waiting", label: "Waiting for a check", align: "right", render: (f) => (f.waitingCheckCount ? <span><Money sen={f.waitingCheckSen} /> <span className="text-xs text-ink-muted">({f.waitingCheckCount})</span></span> : "—"), getValue: (f) => f.waitingCheckSen },
     { key: "topup", label: "Last top-up", render: (f) => (f.lastTopUpOn ?? "—"), getValue: (f) => f.lastTopUpOn ?? "" },
-    { key: "asked", label: "", render: (f) => (f.topUpRequested ? <span className="text-xs text-warning-text">Top-up asked for</span> : f.active ? null : <span className="text-xs text-ink-muted">Closed</span>), getValue: () => "" },
+    { key: "asked", label: "", render: (f) => (f.topUpRequested ? <span className="text-xs text-warning-text">Top-up asked for{f.topUpRequestNo ? ` (${f.topUpRequestNo})` : ""}</span> : f.active ? null : <span className="text-xs text-ink-muted">Closed</span>), getValue: () => "" },
   ], []);
 
   return (

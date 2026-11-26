@@ -289,9 +289,76 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
     the credential). `guest_document` = the existing print page link (browser Print / Save as PDF; no server PDF exists).
     `mcp-exports/` files are not deleted automatically yet (an R2 lifecycle rule on that prefix would do it).
   - Tests: `src/lib/mcpActions.test.mjs` (fence, permits, lifecycle SQL on PGlite, validation, flow shaping, links).
+- **Round 3 (owner, 26 Nov 2026): more quick answers, daily brief, Excel export, rate limit.** Code:
+  `functions/_lib/mcpMoreTools.ts` (tools), `mcpMore.ts` (pure shaping, allowlist, limit), `mcpXlsx.ts` (hand-built
+  .xlsx: zip + XML, deflate via CompressionStream, no new dependency). Tests `src/lib/mcpMore.test.mjs`. No migration:
+  the limit uses the existing `mcp_calls (user_id, created_at)` index from 0378.
+  - Every new tool reads ONLY through `readValue` as the person (same as erp_get), so the ERP's own RBAC and money
+    hiding apply. A refused read becomes "Your account does not have access to X" and the rest of the answer still comes.
+  - `occupancy_summary {month}` = `/api/portfolio/performance` + `/api/dashboard/kpis` + `/api/reservations?view=inhouse`
+    (tonight by building from that list's building counts). `arrears_summary` = `/api/reservations?todo=unpaid&size=100`
+    (direct guests owing, aged by days since check-in; host payouts outstanding) + `/api/sales-invoices` (customer
+    invoices, overdue aged by due date). `owner_statement_summary {month}` = `/api/statements`. `attendance_today` =
+    `/api/attendance` + `/api/leaves` (HR: office roles; field roles and owners get 403). `payables_summary` =
+    `/api/purchase-invoices` (supplier bills, aged past due, due this week) + `/api/finance/payables?paid=no` (contractor
+    claims). `today_summary` now also lists who checks in / out today (`/api/reservations?todo=arriving|departing`).
+  - `daily_brief` (+ prompt `daily-brief`): 6 parallel reads: `/api/nav/badges` (the bell, already per role),
+    `/api/tasks?assignee=u:<me>&to=today+3`, `/api/approvals?view=pending` (those `can.approve`), `/api/sales-orders`
+    (target date), `/api/purchase-orders` (expected date), `/api/maintenance/issues?view=open` (due date). Each section:
+    count, first 5, links. **Mail Center is not covered**: it lives on the supply chain engine and its sign-on is a POST
+    (`engine-session`), which the read-only connector cannot make; the brief says so.
+  - `export_excel {list, filters, search, from, to, fields}`: allowlist `EXPORT_LISTS` in `mcpMore.ts` (reservations,
+    guests, units, tasks, maintenance, statements, expenses, guest_documents, sales_orders, sales_invoices,
+    purchase_orders, purchase_invoices, suppliers, customers). Pages as the person up to 5,000 rows (first page gives the
+    total, the rest 4 at a time), money columns in RM, header row frozen + autofilter, stored under `mcp-exports/` and
+    served by the same 15-minute signed link as get_pdf (`/api/mcp/export` now sends the xlsx content type).
+  - Rate limit, per person, `tools/call` only: 30 a minute, 600 a day (`RATE_PER_MINUTE` / `RATE_PER_DAY`), counted from
+    `mcp_calls` (refused-for-limit rows, status 429, not counted). Over it: a normal tool result with isError ("Too many
+    requests — wait a minute" / "Daily limit reached"), never a 500; a failed count lets the call through. The admin leak
+    check never enters `callTool` (it uses `readEndpoint`), so it is not limited. The admin page shows the limits and
+    the tool list read-only (overview `limits`, `tools`).
+  - Speed: the rate limit's two counts ride in the door's token query (`resolveAccessToken(env, token, true)`, scalar
+    subqueries on the 0378 index) plus a per-request counter for batches, so the limit adds no DB round trip per call
+    (the separate `recentCallCounts` query is only the fallback). Every tool's reads run in one `Promise.all`; no tool
+    reads per row (no N+1); export reads page 1 for the total, then the rest 4 at a time. The identity check is already
+    once per request (`rememberVerified`). Local bench (PGlite + `wrangler pages dev`, demo data, management, median of
+    7, ms): business 68 / 67, reservations 153 / 82, today 267 / 141, search 154 / 86, occupancy 115 / 97, arrears
+    76 / 87, statements 52 / 54, attendance 63 / 143, payables 46 / 170, daily_brief 97 / 169, export 84 / 166 (before /
+    after moving the counts into the door query). PGlite serialises every query, so parallel reads do not overlap and
+    run-to-run noise is +-100 ms: the numbers show every tool answers in well under 300 ms locally, not a reliable
+    before/after. Production timings are in `mcp_calls.ms` once people use it (not yet measured).
+  - Not done: rent arrears (tenant rent on Agent-to-let records has no paid / unpaid record; the answer says so).
+- **FAQ (owner, 26 Nov 2026): each answered in ONE tool call.**
+
+  | # | Question | Tool | Reads |
+  | --- | --- | --- | --- |
+  | C1 | Who owes rent, and how much (arrears ageing)? | `arrears_summary` | guests owing (aged), host payouts, customer invoices (aged). Tenant rent is not tracked: said plainly. |
+  | C2 | What is occupancy today / this month, by building? | `occupancy_summary` | tonight by building + the month by building |
+  | C3 | Which owner statements are pending or sent? | `owner_statement_summary` | Draft / Final (waiting to send) / Sent / Paid, with links |
+  | C4 | Which check-ins / check-outs are today? | `today_summary` | counts + who (guest, unit, channel, link) |
+  | P3 | How much do we owe suppliers? | `payables_summary` | supplier invoices per supplier, aged, due this week; contractor claims (finance only) |
+  | E1 | What do I need to look at today? | `daily_brief` | see above |
+  | E2 | Export X to Excel | `export_excel` | see above |
 - Files: `functions/_lib/mcp*.ts`, `functions/_lib/aiConnector.ts`, `functions/api/mcp/`, `functions/api/ai-connector/`,
   `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests
-  `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`.
+  `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`, `src/lib/mcpMore.test.mjs`.
+
+## Mail Center re-synced with Houzs, 26 Nov 2026
+
+The engine's Mail Center (Property OS > Mail) now matches Houzs ERP's (owner, 26 Nov 2026): per-person read state and
+"read by", acknowledgements with a 48 h chase, failed replies queued instead of 502, personal mailboxes with
+first.last@theconts.com given at the first sign-on with Mail access, claims an admin approves, recipient picker and
+address suggestions, "What may I see", department-grouped sidebar, Delivered / Bounced, reply guard and auto-assign,
+access levels L1/L2/L3 with an access change log, department mailboxes linked by id, file chips, the Inbound mail page
+and the phone screens. Full write-up, adaptations and known gaps: `docs/MAIL-CENTER.md`.
+
+- **State:** code on branch `feat/mail-center-resync`. It reads eleven new migrations, **0381 to 0391**, which must be
+  applied (Actions > Apply migrations to production, dry run first) **before** the engine deploy that carries it.
+- **New admin step:** every new personal address appears on Team, Mailboxes as "Waiting to be added in Cloudflare
+  Email Routing"; it receives mail only after that custom address is added in Cloudflare (Send to a Worker:
+  conts-mail-inbound) and marked added (or its first email arrives).
+- **Scheduled work** rides the existing 5-minute call from the cron worker (`engineMailOutbox` ->
+  `engine/backend/src/conts/mail-cron.ts`); nothing new to deploy on the cron side.
 
 ## Blocked on the client
 

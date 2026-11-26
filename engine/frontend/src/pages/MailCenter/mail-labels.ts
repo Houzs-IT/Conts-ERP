@@ -63,7 +63,7 @@ export function chipStyle(color: string): {
   const hex = (color || "").trim();
   const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
   if (!m) {
-    return { backgroundColor: "#EFE9DD", color: "#6B5C32" };
+    return { backgroundColor: "var(--badge-mail-default-bg, #EFE9DD)", color: "var(--badge-mail-default-fg, #6B5C32)" };
   }
   const int = parseInt(m[1], 16);
   const r = (int >> 16) & 0xff;

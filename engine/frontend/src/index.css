@@ -53,7 +53,7 @@ body,
 
 body {
   background: #eef0ec;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   font-feature-settings: normal;
 }
 

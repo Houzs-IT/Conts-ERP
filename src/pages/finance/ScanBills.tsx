@@ -398,11 +398,15 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                         <div className="flex flex-col gap-2">
                           <UnitPicker label="Unit" units={roster} value={r.unitId} disabled={!editable}
                             onChange={id => patch(r.key, { unitId: id, accountId: id && id === r.scan?.unitId ? r.scan.match.accountId : null, tick: r.tick || !!id })} />
-                          <label className="flex items-center gap-2">
-                            <input type="checkbox" aria-label="Deduct from this unit's owner" checked={r.deductOwner !== false} disabled={!editable}
-                              onChange={e => patch(r.key, { deductOwner: e.target.checked })} />
-                            Deduct from owner
-                          </label>
+                          {/* Only on a bill split across units (chew, 26 Nov 2026): a bill on one unit is the owner's
+                              share, as before the split came in; split, each part says whether its owner shares it. */}
+                          {(r.shares ?? []).length > 0 && (
+                            <label className="flex items-center gap-2">
+                              <input type="checkbox" aria-label="Deduct from this unit's owner" checked={r.deductOwner !== false} disabled={!editable}
+                                onChange={e => patch(r.key, { deductOwner: e.target.checked })} />
+                              Deduct from owner
+                            </label>
+                          )}
                           {/* One bill for two or more units (chew, 25 Nov 2026): an amount typed for each other unit, each
                               deducted from its owner or not and paid back to its owner or not; this unit keeps the rest. */}
                           {(r.shares ?? []).length > 0 && (
@@ -413,7 +417,11 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                               <div className="flex items-center justify-between">
                                 <span className="font-semibold">Part {i + 2}</span>
                                 <Button size="sm" variant="ghost" disabled={!editable} aria-label={`Remove part ${i + 2}`}
-                                  onClick={() => patch(r.key, { shares: (r.shares ?? []).filter(y => y.key !== x.key) })}>Remove</Button>
+                                  onClick={() => {
+                                    const shares = (r.shares ?? []).filter(y => y.key !== x.key);
+                                    /* Back to one unit: the bill is the owner's share again, with no box left to say otherwise. */
+                                    patch(r.key, shares.length ? { shares } : { shares, deductOwner: true });
+                                  }}>Remove</Button>
                               </div>
                               <UnitPicker label={`Part ${i + 2} unit`} units={roster} value={x.unitId} disabled={!editable} onChange={id => patchShare(r.key, x.key, { unitId: id })} />
                               <MoneyInput aria-label={`Part ${i + 2} amount`} valueSen={x.amountSen} disabled={!editable} onChangeSen={v => patchShare(r.key, x.key, { amountSen: v })} />

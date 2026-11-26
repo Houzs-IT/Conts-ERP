@@ -5,7 +5,8 @@ import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
 import Icon, { toPascal } from './Icon';
-import { activeKey, readWs, saveWs, withoutOffItems } from './Sidebar';
+import { activeKey, LOOKS, readWs, saveWs, sidebarLookKey, useDarkTheme, withoutOffItems } from './Sidebar';
+import { glassColourVars } from './TopBar';
 import { count as countLabel } from '../lib/format';
 import { useMeetingsUnread } from '../lib/meetingsUnread';
 
@@ -39,8 +40,9 @@ export function mainTabs(groups: NavGroup[]): Tab[] {
   return out;
 }
 
-export default function MobileTabBar({ path, navigate }: { path: string; navigate: (p: string) => void }) {
+export default function MobileTabBar({ path, navigate, dreamCrafter = false }: { path: string; navigate: (p: string) => void; dreamCrafter?: boolean }) {
   const { user } = useSession();
+  const glassLook = LOOKS[sidebarLookKey(true, useDarkTheme())];
   const [moreOpen, setMoreOpen] = useState(false);
   const tabs = useMemo(() => (user ? mainTabs(navFor(user.role, false, user.access)) : []), [user]);
   const under = (p: string) => path === p || path.startsWith(p + '/');
@@ -52,7 +54,10 @@ export default function MobileTabBar({ path, navigate }: { path: string; navigat
         position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 40,
         height: `calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))`,
         paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -6px 20px rgba(0,0,0,0.06)',
-        display: 'grid', gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))`, alignItems: 'stretch', background: color.card, borderTop: `1px solid ${color.border}`,
+        display: 'grid', gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))`, alignItems: 'stretch',
+        ...(dreamCrafter
+          ? { ...glassLook.card, borderRadius: 0, border: 'none', borderTop: `1px solid ${glassLook.rule}`, ...glassColourVars(glassLook) }
+          : { background: color.card, borderTop: `1px solid ${color.border}` }),
       }}>
         {tabs.map(t => {
           const on = onTab(t);

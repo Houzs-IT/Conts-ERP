@@ -191,6 +191,6 @@ function renderActivityLine(a: NotificationItem): string {
     case "restored":
       return `${who}Restored the project`;
     default:
-      return `${who}${a.action}${a.note ? ` · ${a.note}` : ""}`;
+      return `${who}${a.title ?? a.action}${a.note ? ` · ${a.note}` : ""}`;
   }
 }

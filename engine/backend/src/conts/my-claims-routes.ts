@@ -32,6 +32,7 @@ import { CLAIM_WAITING_STATUSES, stillWaiting } from './finance-waiting';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
+import { askTopUp, openTopUpRequests } from './petty-cash-topup';
 import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
 import { readRecoveries, recoveriesOf, saveRecoveries } from './owner-recovery';
 import { RENO_KIND_OF, loadSubDepartments, projectRenoKind, projectSide, subForStaffDepartment } from './sub-departments';
@@ -123,14 +124,6 @@ export function claimBank(x: unknown): { bankName: string; accountNo: string; ac
   return { bankName, accountNo, accountName };
 }
 
-/** Does any line sit on a sub-department flagged for Reno review (0379)? A list that cannot be read counts as none. */
-async function needsRenoReview(sb: any, companyId: number, lines: Array<{ sub_department_id?: string | null }>): Promise<boolean> {
-  const loaded = await loadSubDepartments(sb, companyId);
-  if (!loaded.ok) return false;
-  const flagged = new Set(loaded.list.filter((s) => s.renoReview).map((s) => s.id));
-  return lines.some((l) => l.sub_department_id != null && flagged.has(l.sub_department_id));
-}
-
 export const handInHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -157,7 +150,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
     const { data: seen } = await sb.from('staff_receipts').select('id, receipt_no, float_id, submitter_user_id, status').eq('id', askedId).maybeSingle();
     if (seen) {
       if (seen.submitter_user_id !== staff.userId) return c.json({ error: 'conflict', message: 'That receipt id is taken.' }, 409);
-      return c.json({ id: seen.id, receiptNo: seen.receipt_no, route: seen.float_id ? 'float' : 'finance', renoReview: seen.status === 'RENO_REVIEW' }, 200);
+      return c.json({ id: seen.id, receiptNo: seen.receipt_no, route: seen.float_id ? 'float' : 'finance' }, 200);
     }
   }
   const decoded = decodeFiles(b.files, 'a photo of the receipt');
@@ -184,7 +177,6 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   const floatId = direct ? null : replaces ? replaces.float_id : await myFloatId(sb, co.companyId, staff);
   /* SOP 1.1: each line starts on the float's department's sub-department (a job's on Maintenance), else the person's. */
   await defaultLineSubs(sb, co.companyId, built.lines, { staffDepartmentId: staff.departmentId, floatId });
-  const renoReview = direct && await needsRenoReview(sb, co.companyId, built.lines);
   const source = c.get('claimsSource') === 'forward' ? (staff.field ? 'field_app' : 'property_os') : 'engine';
 
   /* Files first, under the receipt's own id: a failed upload leaves no receipt behind. */
@@ -205,7 +197,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
     no => sb.from('staff_receipts').insert({
       id, company_id: co.companyId, receipt_no: no, submitter_user_id: staff.userId, float_id: floatId, spend_date: spendDate,
       amount_sen: amountSen, vendor_name: b.vendorName ? String(b.vendorName).slice(0, 200) : null, note: b.note ? String(b.note).slice(0, 500) : null,
-      status: renoReview ? 'RENO_REVIEW' : 'HANDED_IN', replaces_id: replaces?.id ?? null, source,
+      status: 'HANDED_IN', replaces_id: replaces?.id ?? null, source,
       ...(bank ? { payee_bank_name: bank.bankName, payee_account_no: bank.accountNo, payee_account_name: bank.accountName } : {}),
     }).select('id, receipt_no').single(),
   );
@@ -216,7 +208,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (fr.error) return fail(fr.error.message);
   const rv = await saveRecoveries(sb, id, recover.byUnit, staff.userId, 'receipt');
   if (rv) return fail(rv);
-  return c.json({ id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance', renoReview }, 201);
+  return c.json({ id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance' }, 201);
 };
 
 export const myReceiptsHandler = async (c: Ctx): Promise<Response> => {
@@ -269,9 +261,9 @@ export const myFloatHandler = async (c: Ctx): Promise<Response> => {
   });
   const rows = all.sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
   const ids = rows.map(r => r.id);
-  const [bal, lines, files, names] = await Promise.all([floatBalances(sb, [f]), linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
+  const [bal, lines, files, names, asked] = await Promise.all([floatBalances(sb, [f]), linesOf(sb, ids), filesOf(sb, ids), staffNames(sb), openTopUpRequests(sb, co.companyId, [f.id])]);
   return c.json({
-    float: { id: f.id, floatSen: Number(f.float_sen), topUpRequested: f.topup_requested_at != null, ...bal.get(f.id) },
+    float: { id: f.id, floatSen: Number(f.float_sen), topUpRequested: asked.has(f.id), topUpRequestNo: asked.get(f.id)?.requestNo ?? null, ...bal.get(f.id) },
     receipts: rows.map(r => receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names)),
   });
 };
@@ -280,11 +272,13 @@ export const topUpRequestHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
-  const f = await keptFloat(sb, co.companyId, staffOf(c));
+  const staff = staffOf(c);
+  const f = await keptFloat(sb, co.companyId, staff);
   if (!f) return c.json({ error: 'not_found', message: 'You do not keep a petty cash float.' }, 404);
-  const { error } = await sb.from('petty_cash_floats').update({ topup_requested_at: new Date().toISOString() }).eq('id', f.id);
-  if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
-  return c.json({ ok: true });
+  /* A payment request to finance, made out to the keeper (petty-cash-topup.ts; chew, 26 Nov 2026). */
+  const r = await askTopUp(sb, co.companyId, staff.userId, f);
+  if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+  return c.json({ ok: true, requestId: r.id, requestNo: r.requestNo, amountSen: r.amountSen }, r.created ? 201 : 200);
 };
 
 export const myJobsHandler = async (c: Ctx): Promise<Response> => {

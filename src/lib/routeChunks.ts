@@ -10,6 +10,7 @@ const CHUNKS: Record<string, () => Promise<unknown>> = {
   '/operations/cleaning': () => import('../pages/CleaningPage'),
   '/operations/maintenance': () => import('../pages/MaintenancePage'),
   '/properties/units': () => import('../pages/UnitsPage'),
+  '/properties/pass-keys': () => import('../pages/PassKeysPage'),
   '/owners': () => import('../pages/OwnersPage'),
   '/owners/statements': () => import('../pages/StatementsPage'),
   '/owners/payouts': () => import('../pages/PayoutsPage'),

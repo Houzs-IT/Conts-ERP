@@ -174,16 +174,16 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
     try {
       if (way === 'supplier') {
         // A field worker names the supplier as on the bill; finance matches it to the list when it pays.
-        await postWithFiles('/claims/requests', {
+        const asked = await postWithFiles<{ renoReview: boolean }>('/claims/requests', {
           id: requestId, type: 'PAYMENT', payeeName: payeeName.trim(), amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: [line],
         }, files);
-        toast({ tone: 'success', title: tr.supplierSent });
+        toast({ tone: 'success', title: tr.supplierSent, body: asked.renoReview ? p.renoSent : undefined });
       } else {
-        const made = await postWithFiles<{ route: 'float' | 'finance'; renoReview?: boolean }>('/claims/receipts', {
+        const made = await postWithFiles<{ route: 'float' | 'finance' }>('/claims/receipts', {
           spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: [line],
           ...(way === 'finance' ? { payBack: 'finance', bank } : {}),
         }, files);
-        toast({ tone: 'success', title: tr.sent, body: made.renoReview ? p.renoSent : way === 'finance' ? p.directSent : made.route === 'float' ? tr.paidFromFloat : tr.paidByFinance });
+        toast({ tone: 'success', title: tr.sent, body: way === 'finance' ? p.directSent : made.route === 'float' ? tr.paidFromFloat : tr.paidByFinance });
       }
       onDone();
     } catch (e) { setProblem(errorMessage(e, tr.notSent)); } finally { setBusy(false); }
@@ -242,9 +242,9 @@ function KeptFloat() {
           <span className="text-meta text-muted-ink">{tr.float(rm(f.floatSen))}</span>
           {(f.balanceSen < 0 || f.low) && <span className="text-meta text-danger">{f.balanceSen < 0 ? tr.belowZero : tr.low}</span>}
           <Button size="touch" variant="secondary" disabled={f.topUpRequested} onClick={async () => {
-            try { await api.post('/claims/float/top-up-request', {}); toast({ tone: 'success', title: tr.askedTopUp }); q.reload(); }
+            try { const r = await api.post<{ requestNo: string }>('/claims/float/top-up-request', {}); toast({ tone: 'success', title: tr.askedTopUp, body: r.requestNo }); q.reload(); }
             catch (e) { toast({ tone: 'critical', title: tr.notSent, body: errorMessage(e) }); }
-          }}>{f.topUpRequested ? tr.topUpAsked : tr.askTopUp}</Button>
+          }}>{f.topUpRequested ? `${tr.topUpAsked}${f.topUpRequestNo ? ` (${f.topUpRequestNo})` : ''}` : tr.askTopUp}</Button>
         </div>
       )}
       {q.data && q.data.receipts.length > 0 && <span className="text-meta text-muted-ink">{tr.onFloat}</span>}

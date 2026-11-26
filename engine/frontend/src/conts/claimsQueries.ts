@@ -28,11 +28,12 @@ export type Receipt = {
   /** What each unit's owner pays back (0363): charged to the owner as O2 once finance checks the claim (`charged`). */
   recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
 };
-export type RequestStatus = "SUBMITTED" | "PART_PAID" | "PAID" | "REJECTED" | "CLOSED" | "WITHDRAWN";
+export type RequestStatus = "RENO_REVIEW" | "SUBMITTED" | "PART_PAID" | "PAID" | "REJECTED" | "CLOSED" | "WITHDRAWN";
 export type PaymentRequest = {
   id: string; requestNo: string; type: "PAYMENT" | "DEPOSIT"; requesterUserId: string; requesterName: string; supplierId: string | null;
   payeeName: string; payeeToCheck: boolean; purchaseOrderId: string | null; wantedOn: string | null; owesFormalInvoice: boolean;
   note: string | null; amountSen: number; status: RequestStatus; reason: string | null; decidedBy: string | null; createdAt: string;
+  renoReviewedBy?: string | null; renoReviewedAt?: string | null;
   lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; vouchers: { id: string; pvNumber: string; status: string }[];
   /** What each unit's owner pays back (0352): charged to the owner as O2 once the request is paid (`charged`). */
   recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
@@ -54,7 +55,7 @@ export function requestStatusNote(r: { status: string; reason: string | null; de
 }
 
 export type FloatSummary = {
-  id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested?: boolean;
+  id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested?: boolean; topUpRequestNo?: string | null;
   departmentName?: string; keeperName?: string; warnPct?: number; active?: boolean;
   /** The float's own account in the chart, e.g. 315-0101 PETTY CASH - AMIN; null books nothing. */
   accountCode: string | null; accountName: string | null;
@@ -72,7 +73,7 @@ export const RECEIPT_STATUS: Record<ReceiptStatus, string> = {
   REJECTED: "Rejected", REPAID: "Repaid", WRITTEN_OFF: "Written off", REPLACED: "Replaced",
 };
 export const REQUEST_STATUS: Record<RequestStatus, string> = {
-  SUBMITTED: "Waiting for payment", PART_PAID: "Part paid", PAID: "Paid", REJECTED: "Rejected", CLOSED: "Closed", WITHDRAWN: "Withdrawn",
+  RENO_REVIEW: "With renovation review", SUBMITTED: "Waiting for payment", PART_PAID: "Part paid", PAID: "Paid", REJECTED: "Rejected", CLOSED: "Closed", WITHDRAWN: "Withdrawn",
 };
 export const DEPARTMENT: Record<LineDepartment, string> = { rental: "Rental", supply: "Renovation", shared: "Shared" };
 

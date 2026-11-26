@@ -178,11 +178,18 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "beta_event_added": return { title: "Calendar entry added", body: [to ? humanize(to) : null, note].filter(Boolean).join(" · ") || null };
     case "beta_event_changed": return { title: "Calendar entry changed", body: [to ? humanize(to) : null, note].filter(Boolean).join(" · ") || null };
     case "beta_event_removed": return { title: "Calendar entry removed", body: [to ? humanize(to) : null, note].filter(Boolean).join(" · ") || null };
+    case "beta_client_link": return { title: "Client link made", body: note };
+    case "beta_client_read": return { title: "Client opened the link", body: note };
+    case "beta_line_warehouse": return { title: "Warehouse received item", body: [to, note].filter(Boolean).join(" · ") || null };
+    case "beta_po_drawing_amended": return { title: "PO amended for a drawing", body: [to, note].filter(Boolean).join(" · ") || null };
+    case "beta_po_drawing_amend_failed": return { title: "PO amendment not recorded", body: [to, note].filter(Boolean).join(" · ") || null };
+    case "beta_2d_sheets_uploaded": return { title: "2D sheets uploaded", body: [to, note].filter(Boolean).join(" · ") || null };
+    case "beta_3d_links_added": return { title: "3D links added", body: [to, note].filter(Boolean).join(" · ") || null };
     case "sla_changed": return { title: `${note ?? "SLA"} changed`, body: arrow(from, to) };
   }
   if (TEAM[action]) return { title: `${TEAM[action]} changed`, body: arrow(from, to) };
   const parts = [from || to ? arrow(from, to) : null, note].filter(Boolean);
-  return { title: humanize(action), body: parts.length ? parts.join(" · ") : null };
+  return { title: humanize(action.replace(/^beta_/, "")), body: parts.length ? parts.join(" · ") : null };
 }
 
 /** One project_flow_log row as words. */

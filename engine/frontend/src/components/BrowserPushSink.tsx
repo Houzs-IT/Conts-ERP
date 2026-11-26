@@ -92,6 +92,6 @@ function summarise(a: NotificationItem): string {
     case "finance_edit":
       return `${who}Updated finance`;
     default:
-      return `${who}${a.action}${a.note ? ` · ${a.note}` : ""}`;
+      return `${who}${a.title ?? a.action}${a.note ? ` · ${a.note}` : ""}`;
   }
 }

@@ -15,8 +15,9 @@ import { useSession } from '../../lib/session';
 import { date, todayMyt } from '../../lib/format';
 import { CentreModal, Labeled, Select } from './shared';
 
-interface Credential {
+export interface Credential {
   id: string; kind: string; label: string;
+  unitId?: string; unitNumber?: string; propertyName?: string;
   /** Masked by the list endpoint, e.g. "••••17#". Empty = no code (or a field role). */
   secret: string;
   /** Dev sample only, so a reveal shows something with no backend. Never sent by the API. */
@@ -74,11 +75,12 @@ function IconAction({ name, label, onClick }: { name: string; label: string; onC
   );
 }
 
-export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }: { unitId: string; unitLabel: string; parking?: string; fullAccessCard?: boolean }) {
+export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard, bare = false, onChanged }: { unitId: string; unitLabel: string; parking?: string; fullAccessCard?: boolean; bare?: boolean; onChanged?: () => void }) {
   const { data, loading, error, reload } = useApi<Payload>(`/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
   const { user } = useSession();
   const toast = useToast();
   const canEdit = mayRun(user, 'properties');
+  const canReveal = mayRun(user, 'properties') || mayRun(user, 'passKeys');
 
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [localReveal, setLocalReveal] = useState<Record<string, { by: string; at: string }>>({});
@@ -124,6 +126,7 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
       setEditing(null);
       toast({ tone: 'success', title: existing ? 'Access updated.' : 'Access added.', body: `${String(body.label ?? existing?.label ?? '')} on ${unitLabel}. The change is in History; the code is not.` });
       reload();
+      onChanged?.();
     } catch (e) { notifyFailure(e); }
   }
   function askDelete(c: Credential) {
@@ -137,7 +140,7 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
         try {
           await api.del(`/access-credentials/${c.id}`);
           toast({ tone: 'success', title: 'Access removed.', body: `${c.label} on ${unitLabel}.` });
-          setConfirm(null); remask(c); reload();
+          setConfirm(null); remask(c); reload(); onChanged?.();
         } catch (e) { notifyFailure(e); }
         finally { setBusy(false); }
       },
@@ -157,6 +160,8 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
             <IconAction name="EyeOff" label={`Mask the code for ${r.label}`} onClick={() => remask(r)} />
             <IconAction name="Copy" label={`Copy the code for ${r.label}`} onClick={() => copy(r)} />
           </span>
+        ) : !canReveal ? (
+          <span className="font-mono text-copy">{r.secret}</span>
         ) : (
           <button type="button" onClick={() => reveal(r)} aria-label={`Reveal the code for ${r.label}`}
             className="inline-flex items-center gap-[7px] h-[32px] max-md:h-11 px-[11px] py-0 rounded-control border border-solid border-line bg-card cursor-pointer [font-family:inherit] text-copy max-w-full self-start">
@@ -220,25 +225,30 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
       ) }] as Column<Credential>[] : []),
   ];
 
+  const table = (
+    <DataTable<Credential> id="unit.access" urlPrefix="acc." bare noViews noToolbar={bare} pageSize={0} maxHeight="none"
+      columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
+      noun={['access item', 'access items']} exportName="unit-access" renderCard={phoneCard}
+      empty={{ title: 'No access recorded for this unit yet.', icon: 'KeyRound',
+        body: canEdit ? 'Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : undefined }} />
+  );
+
   return (
     <>
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
-          <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-[15px] font-semibold tracking-[-0.01em]">Access and keys</span>
-            <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
-            <span className="text-meta"><span className="text-muted-ink">Car park:</span> {parking || 'No bays recorded. Add them on the Details tab.'}</span>
-            {fullAccessCard && <span className="text-meta"><span className="text-muted-ink">Building:</span> full access card (lobby, lift and car park on one card)</span>}
+      {bare ? table : (
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
+            <div className="flex flex-col gap-1 min-w-0">
+              <span className="text-[15px] font-semibold tracking-[-0.01em]">Access and keys</span>
+              <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
+              <span className="text-meta"><span className="text-muted-ink">Car park:</span> {parking || 'No bays recorded. Add them on the Details tab.'}</span>
+              {fullAccessCard && <span className="text-meta"><span className="text-muted-ink">Building:</span> full access card (lobby, lift and car park on one card)</span>}
+            </div>
+            {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
           </div>
-          {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
-        </div>
-
-        <DataTable<Credential> id="unit.access" urlPrefix="acc." bare noViews pageSize={0} maxHeight="none"
-          columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
-          noun={['access item', 'access items']} exportName="unit-access" renderCard={phoneCard}
-          empty={{ title: 'No access recorded for this unit yet.', icon: 'KeyRound',
-            body: canEdit ? 'Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : undefined }} />
-      </Card>
+          {table}
+        </Card>
+      )}
 
       {editing && <CredentialModal initial={editing === 'new' ? null : editing} unitLabel={unitLabel} onClose={() => setEditing(null)} onSubmit={save} />}
       <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />

@@ -34,8 +34,12 @@ export const selStyle: CSSProperties = {
 export const MiniBadge = ({ tone, children }: { tone: 'warn' | 'danger'; children: ReactNode }) => (
   <span style={{
     fontSize: 'var(--fs-11)', padding: '1px 7px', borderRadius: 999,
-    background: tone === 'danger' ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.14)',
-    color: tone === 'danger' ? 'var(--c-danger, #b91c1c)' : 'var(--c-warning, #b45309)',
+    background: tone === 'danger'
+      ? 'var(--badge-minibadge-danger-bg, rgba(220,38,38,0.12))'
+      : 'var(--badge-minibadge-warn-bg, rgba(217,119,6,0.14))',
+    color: tone === 'danger'
+      ? 'var(--badge-minibadge-danger-fg, #b91c1c)'
+      : 'var(--badge-minibadge-warn-fg, #a84d08)',
   }}>{children}</span>
 );
 
@@ -198,15 +202,15 @@ export const OverflowSection = ({ overflow, carriers, pick, onPick, onAssign, as
   onAssign: (o: OverflowGroup) => void;
   assigningKey: string | null;
 }) => (
-  <div style={{ borderRadius: 10, border: '1px solid rgba(217,119,6,0.4)', overflow: 'hidden' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', background: 'rgba(217,119,6,0.08)' }}>
+  <div style={{ borderRadius: 10, border: '1px solid var(--badge-overflow-line, rgba(217,119,6,0.4))', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', background: 'var(--badge-overflow-bg, rgba(217,119,6,0.08))' }}>
       <strong style={{ fontSize: 'var(--fs-13)' }}>3PL overflow ({overflow.length})</strong>
       <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
         Own fleet is full for these — assign a 3PL carrier and capture the cost.
       </span>
     </div>
     {carriers.length === 0 && (
-      <div style={{ padding: '8px 14px', fontSize: 'var(--fs-12)', color: 'var(--c-warning, #b45309)' }}>
+      <div style={{ padding: '8px 14px', fontSize: 'var(--fs-12)', color: 'var(--badge-overflow-fg, var(--c-warning, #b45309))' }}>
         No 3PL carrier on file for this region. Add an OUTSOURCE lorry (non-internal) in Fleet to assign overflow.
       </div>
     )}

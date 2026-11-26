@@ -1,11 +1,11 @@
 /** Payment requests to finance (SOP 3.2, 3.5; design docs/superpowers/specs/2026-10-28-payment-requests-petty-cash-design.md
  *  §4.6): a supplier payment, optionally against a PO, or a deposit. Its status follows the vouchers that pay it. */
 
-export type RequestStatus = 'SUBMITTED' | 'PART_PAID' | 'PAID' | 'REJECTED' | 'CLOSED' | 'WITHDRAWN';
-const FINAL = new Set<string>(['REJECTED', 'CLOSED', 'WITHDRAWN']);
+export type RequestStatus = 'SUBMITTED' | 'PART_PAID' | 'PAID' | 'REJECTED' | 'CLOSED' | 'WITHDRAWN' | 'RENO_REVIEW';
+const FINAL = new Set<string>(['REJECTED', 'CLOSED', 'WITHDRAWN', 'RENO_REVIEW']);
 
-/** Submitted until a voucher posts; part paid below its amount; paid at or above it. Rejected, closed and withdrawn
- *  requests stay as they are. */
+/** Submitted until a voucher posts; part paid below its amount; paid at or above it. Rejected, closed, withdrawn and
+ *  waiting-for-review requests stay as they are. */
 export function requestStatus(amountSen: number, postedVoucherSen: number, current: string): string {
   if (FINAL.has(current)) return current;
   if (postedVoucherSen <= 0) return 'SUBMITTED';

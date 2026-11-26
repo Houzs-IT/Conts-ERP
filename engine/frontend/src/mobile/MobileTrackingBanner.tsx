@@ -20,12 +20,12 @@ import {
 
 function dotColour(status: CaptureStatus): string {
   switch (status) {
-    case 'tracking': return '#15803d';   // green — live
-    case 'requesting': return '#d97706';  // amber — waiting on permission
+    case 'tracking': return 'var(--badge-tracking-live-dot, #15803d)';   // green: live
+    case 'requesting': return 'var(--badge-tracking-waiting-dot, #d97706)';  // amber: waiting on permission
     case 'denied':
     case 'unavailable':
-    case 'error': return '#b91c1c';       // red — off
-    default: return '#9ca3af';
+    case 'error': return 'var(--badge-tracking-off-dot, #b91c1c)';       // red: off
+    default: return 'var(--badge-tracking-idle-dot, #9ca3af)';
   }
 }
 
@@ -57,8 +57,8 @@ export function MobileTrackingBanner() {
         gap: 8,
         marginTop: 11,
         padding: '9px 11px',
-        background: capture.status === 'tracking' ? '#ecfdf3' : '#fff7ed',
-        border: `1px solid ${capture.status === 'tracking' ? '#bbf7d0' : '#fed7aa'}`,
+        background: capture.status === 'tracking' ? 'var(--badge-tracking-live-bg, #ecfdf3)' : 'var(--badge-tracking-waiting-bg, #fff7ed)',
+        border: `1px solid ${capture.status === 'tracking' ? 'var(--badge-tracking-live-line, #bbf7d0)' : 'var(--badge-tracking-waiting-line, #fed7aa)'}`,
         borderRadius: 11,
       }}
     >
@@ -73,7 +73,7 @@ export function MobileTrackingBanner() {
           boxShadow: capture.status === 'tracking' ? '0 0 0 3px rgba(21,128,61,0.15)' : 'none',
         }}
       />
-      <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: '#374151', lineHeight: 1.4 }}>
+      <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--badge-tracking-text-fg, #374151)', lineHeight: 1.4 }}>
         {label(capture.status)}
         {activeTrip?.trip_no ? (
           <span style={{ color: 'var(--mut)' }}> · {activeTrip.trip_no}</span>

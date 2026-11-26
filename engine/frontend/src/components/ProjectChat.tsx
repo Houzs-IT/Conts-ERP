@@ -486,7 +486,9 @@ function actionLabel(action: string): string {
       return "Restored";
     case "note":
       return "Message";
-    default:
-      return action;
+    default: {
+      const words = action.replace(/^beta_/, "").replace(/_/g, " ").trim();
+      return words.charAt(0).toUpperCase() + words.slice(1);
+    }
   }
 }

@@ -20,6 +20,7 @@ export interface NotificationItem {
   project_name: string | null;
   brand: string | null;
   action: string;
+  title?: string;
   from_value: string | null;
   to_value: string | null;
   note: string | null;

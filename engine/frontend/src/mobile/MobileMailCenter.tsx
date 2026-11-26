@@ -10,6 +10,9 @@ import { appendUniqueById } from "../lib/appendUniqueById";
 import { SearchScopeHint } from "../components/SearchScopeHint";
 import { useAuth } from "../auth/AuthContext";
 import { pickDefaultFromAddress } from "../pages/MailCenter/mail-from-default";
+import { deliveryLabel, deliveryTone, sentToast, type DeliveryStatus, type DeliveryTone } from "../pages/MailCenter/mail-delivery";
+
+const DELIVERY_TONE_COLORS: Record<DeliveryTone, string> = { bad: "#b42318", waiting: "#b54708", good: "#067647" };
 import {
   fetchOutbox,
   fetchOutboxDetail,
@@ -35,9 +38,22 @@ import {
   MAIL_ATTACH_MAX_COUNT,
   MAIL_ATTACH_MAX_TOTAL_BYTES,
 } from "../pages/MailCenter/mail-attachments";
-import { parseRecipients, firstInvalid } from "../pages/MailCenter/mail-recipients";
+import { parseRecipients, firstInvalid, addRecipients } from "../pages/MailCenter/mail-recipients";
+import { RecipientPicker } from "../pages/MailCenter/RecipientPicker";
+import { RecipientSuggestInput } from "../pages/MailCenter/RecipientSuggestInput";
+import { agoLabel, alreadyRepliedFrom, replyAllCc, useReplyingHeartbeat, type AlreadyReplied, type ReplyingPerson } from "../pages/MailCenter/mail-reply-parts";
+import { EMAIL_FRAME_SANDBOX_MEASURABLE, emailSrcDoc } from "../pages/MailCenter/mail-email-frame";
+import { MobileMessageAcks, MobileNeedsAck, MobilePendingAcks, MobileReadBy } from "./MobileMailAcks";
+import type { AckState, ThreadReaders } from "../pages/MailCenter/mail-acks";
+import { MobileVisibility } from "./MobileMailPersonal";
+import { reachTagOf, useMailVisibility } from "../pages/MailCenter/mail-sidebar";
 import "./mobile.css";
 import { fmtDate, fmtDateTime, fmtTime as fmtClock } from "../vendor/shared/format";
+import { mytDayOf, todayMyt } from "../vendor/scm/lib/dates";
+import { openLoadedTab } from "../lib/openLoadedTab";
+import { Paperclip } from "lucide-react";
+import { isImageAttachment, useAttachmentPreviewUrl } from "../pages/MailCenter/mail-attach-preview";
+import type { ThreadFilePreview } from "../pages/MailCenter/ThreadFileChips";
 
 // Mobile Mail Center — the email client, wired to /api/mail-center. Kept at
 // desktop feature parity (MailCenter/Inbox.tsx + Thread.tsx) minus the desktop-
@@ -85,6 +101,9 @@ type Thread = {
   starred: boolean;
   labels: string[];
   hasOutbound: boolean;
+  hasAttachment: boolean;
+  attachmentCount: number;
+  attachments: ThreadFilePreview[];
   createdAt: string;
   trashedAt?: string | null;
 };
@@ -120,10 +139,14 @@ type Message = {
   sentAt: string;
   receivedAt: string;
   createdAt: string;
+  deliveryStatus?: DeliveryStatus;
   attachments?: Attachment[];
+  acks?: AckState[];
+  ackRequestId?: string | null;
+  sentByName?: string;
 };
 
-type ThreadDetail = { thread: Thread; messages: Message[] };
+type ThreadDetail = { thread: Thread; readers?: ThreadReaders; messages: Message[]; replying?: ReplyingPerson[] };
 
 // A colleague a thread can be handed to. Shape as GET /api/users serves it.
 type UserOption = { id: string | number; name?: string; email?: string };
@@ -142,6 +165,7 @@ type Folder =
   | "inbox"
   | "starred"
   | "sent"
+  | "sentbyme"
   | "autosent"
   | "drafts"
   | "archive"
@@ -155,6 +179,7 @@ const FOLDERS: [Folder, string][] = [
   ["inbox", "Inbox"],
   ["starred", "Starred"],
   ["sent", "Sent"],
+  ["sentbyme", "Sent by me"],
   ["autosent", "Auto-sent"],
   ["drafts", "Drafts"],
   ["archive", "Archive"],
@@ -189,12 +214,9 @@ const fmtTime = (iso: string | null | undefined): string => {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(+d)) return "";
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return fmtClock(d);
-  const yest = new Date(now);
-  yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) return "Yesterday";
+  const day = mytDayOf(d.toISOString());
+  if (day === todayMyt()) return fmtClock(d);
+  if (day === todayMyt(-1)) return "Yesterday";
   return fmtDate(d);
 };
 
@@ -219,6 +241,8 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
   const { user } = useAuth();
   const [folder, setFolder] = useState<Folder>("inbox");
   const [mailbox, setMailbox] = useState<string>("all"); // "all" or an address
+  const vis = useMailVisibility();
+  const myAddress = vis?.myAddress ?? null;
   const [q, setQ] = useState("");
   /* The label the list is narrowed to, or null for all. Applying a label was
      already possible from the phone and LISTING by one was not, so "Urgent"
@@ -284,6 +308,7 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
     else if (folder === "archive") params.set("status", "closed");
     else if (folder === "starred") params.set("starred", "1");
     else if (folder === "sent") params.set("sent", "1");
+    else if (folder === "sentbyme") params.set("sentBy", "me");
     else if (folder === "trash") params.set("status", "trashed");
     if (mailbox !== "all") params.set("mailbox", mailbox);
     if (labelFilter) params.set("label", labelFilter);
@@ -448,7 +473,7 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
       <header className="hdr">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
           {onBack ? (
-            <span onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#16695f", cursor: "pointer" }}>
+            <span onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "var(--hz-c-primary)", cursor: "pointer" }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16695f" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
               Menu
             </span>
@@ -456,7 +481,7 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
           <button
             onClick={() => setCompose({ mode: "new" })}
             className="tinybtn"
-            style={{ background: "#16695f", borderColor: "#16695f", color: "#fff", display: "flex", alignItems: "center", gap: 5 }}
+            style={{ background: "var(--hz-c-primary)", borderColor: "#16695f", color: "#fff", display: "flex", alignItems: "center", gap: 5 }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
             New
@@ -470,13 +495,16 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
           className="cal-sel"
           style={{ marginBottom: 9 }}
         >
+          {myAddress && <option value={myAddress}>My mailbox · {myAddress}</option>}
           <option value="all">All mailboxes</option>
-          {activeAddresses.map((a) => (
+          {activeAddresses.filter((a) => a.address.toLowerCase() !== myAddress).map((a) => (
             <option key={a.id} value={a.address}>
               {a.address}
+              {reachTagOf(vis, a.address, a.assignedUserId != null) ? ` · ${reachTagOf(vis, a.address, a.assignedUserId != null)}` : ""}
             </option>
           ))}
         </select>
+        <MobileVisibility />
 
         <div className="searchbar" style={{ marginBottom: 9 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mut2)" strokeWidth="2" strokeLinecap="round">
@@ -490,7 +518,7 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
             aria-label="Search all mail"
           />
           {searching && (
-            <span role="status" aria-live="polite" style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 700, color: "#16695f", whiteSpace: "nowrap" }}>
+            <span role="status" aria-live="polite" style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 700, color: "var(--hz-c-primary)", whiteSpace: "nowrap" }}>
               Searching…
             </span>
           )}
@@ -551,6 +579,7 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
           </div>
         )}
         {folder === "autosent" && <OutboxList q={debouncedQ.trim()} />}
+        {usesThreadList && <MobilePendingAcks onOpen={setOpenId} />}
         {!listBusy && !error && usesThreadList && threads.length === 0 && (
           <div className="empty">
             <div className="empty-t">No messages</div>
@@ -598,32 +627,47 @@ export function MobileMailCenter({ onBack }: { onBack?: () => void }) {
 // subject (bold when unread) with the thread message count, a one-line snippet,
 // label chips, and a TRAILING teal unread dot. The unread border tint + weight
 // come from the live thread.unread. Star + reply direction stay from the wiring.
+function ThreadFileNames({ firstFile, fileCount }: { firstFile: ThreadFilePreview; fileCount: number }) {
+  const otherFileCount = fileCount - 1;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, minWidth: 0 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, minWidth: 0, maxWidth: "75%", border: "1px solid var(--hz-c-border-subtle)", borderRadius: 999, padding: "3px 9px", fontSize: 11.5, color: "var(--hz-c-ink)" }}>
+        <Paperclip aria-hidden="true" size={12} style={{ flex: "none", color: "var(--hz-c-ink-muted)" }} />
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{firstFile.filename}</span>
+      </span>
+      {otherFileCount > 0 && <span style={{ flex: "none", fontSize: 11.5, color: "var(--hz-c-ink-muted)" }}>+{otherFileCount}</span>}
+    </div>
+  );
+}
+
 function ThreadRow({ t, colorMap, onOpen }: { t: Thread; colorMap: Map<string, string>; onOpen: () => void }) {
   const who = t.counterpartyName || t.counterpartyEmail || "(unknown)";
   return (
     <div
       onClick={onOpen}
-      style={{ display: "flex", gap: 11, background: "#fff", border: `1px solid ${t.unread ? "#bcdcd7" : "#e3e6e0"}`, borderRadius: 13, padding: "11px 12px", cursor: "pointer" }}
+      style={{ display: "flex", gap: 11, background: "var(--hz-c-surface)", border: `1px solid ${t.unread ? "#bcdcd7" : "#e3e6e0"}`, borderRadius: 13, padding: "11px 12px", cursor: "pointer" }}
     >
       <div style={{ width: 38, height: 38, flex: "none", borderRadius: "50%", background: avColor(who), color: "#fff", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
         {initials(who)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: t.unread ? 800 : 600, color: "#11140f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{who}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: t.unread ? 800 : 600, color: "var(--hz-c-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{who}</span>
           {t.starred && (
             <svg width="13" height="13" viewBox="0 0 24 24" fill="#d8a85a" stroke="#d8a85a" strokeWidth="1.5" style={{ flex: "none" }}>
               <path d="M12 2l3 6 6 .9-4.5 4.3 1 6-5.5-3-5.5 3 1-6L3 8.9 9 8Z" />
             </svg>
           )}
-          <span className="money" style={{ fontSize: 10, color: "#9aa093", flex: "none", whiteSpace: "nowrap" }}>{fmtTime(t.lastMessageAt)}</span>
+          {t.hasAttachment && <Paperclip role="img" aria-label="Has attachment" size={12} style={{ flex: "none", color: "var(--hz-c-ink-muted)" }} />}
+          <span className="money" style={{ fontSize: 10, color: "var(--hz-c-ink-soft)", flex: "none", whiteSpace: "nowrap" }}>{fmtTime(t.lastMessageAt)}</span>
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: t.unread ? 700 : 500, color: "#11140f", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: 12.5, fontWeight: t.unread ? 700 : 500, color: "var(--hz-c-ink)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {t.lastDirection === "outbound" ? "You: " : ""}
           {t.subject}
-          {t.messageCount > 1 && <span style={{ color: "#9aa093", fontWeight: 600 }}> ({t.messageCount})</span>}
+          {t.messageCount > 1 && <span style={{ color: "var(--hz-c-ink-soft)", fontWeight: 600 }}> ({t.messageCount})</span>}
         </div>
-        <div style={{ fontSize: 11.5, color: "#767b6e", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.lastSnippet}</div>
+        <div style={{ fontSize: 11.5, color: "var(--hz-c-ink-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.lastSnippet}</div>
+        {t.attachments.length > 0 && <ThreadFileNames firstFile={t.attachments[0]} fileCount={t.attachmentCount} />}
         {t.labels.length > 0 && (
           <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
             {t.labels.map((l) => {
@@ -637,7 +681,7 @@ function ThreadRow({ t, colorMap, onOpen }: { t: Thread; colorMap: Map<string, s
           </div>
         )}
       </div>
-      {t.unread && <span style={{ width: 8, height: 8, flex: "none", borderRadius: "50%", background: "#16695f", marginTop: 6 }} />}
+      {t.unread && <span style={{ width: 8, height: 8, flex: "none", borderRadius: "50%", background: "var(--hz-c-primary)", marginTop: 6 }} />}
     </div>
   );
 }
@@ -684,6 +728,11 @@ function MailThread({
 
   const thread = data?.thread;
   const messages = data?.messages ?? [];
+  // Re-read every 20 s while open: a colleague's reply or "is writing" shows up.
+  useEffect(() => {
+    const t = setInterval(reload, 20_000);
+    return () => clearInterval(t);
+  }, [reload]);
 
   // Reply / reply-all reuse the same in-thread reply endpoint. Forward starts a
   // new conversation (compose) with a prefilled subject/body.
@@ -692,6 +741,8 @@ function MailThread({
       <MailReply
         thread={thread}
         replyAll={composeFor.mode === "replyall"}
+        messages={messages}
+        replying={data?.replying ?? []}
         onClose={clearCompose}
         onSent={() => {
           clearCompose();
@@ -885,7 +936,7 @@ function MailThread({
               onClick={trash}
               disabled={busy}
               className="tinybtn"
-              style={{ height: 22, padding: "0 9px", background: "#fbf1f0", borderColor: "#e3c4c1", color: "#b23a3a" }}
+              style={{ height: 22, padding: "0 9px", background: "var(--hz-dk-err-bg, #fbf1f0)", borderColor: "#e3c4c1", color: "var(--hz-c-err)" }}
             >
               {trashed ? "Restore" : "Trash"}
             </button>
@@ -916,6 +967,7 @@ function MailThread({
             </select>
           </div>
         )}
+        <MobileReadBy readers={data?.readers} />
       </header>
 
       <div className="scroll" style={{ padding: 14 }}>
@@ -924,7 +976,7 @@ function MailThread({
         {!loading && !error && messages.length === 0 && <Muted>No messages in this thread.</Muted>}
         {!loading &&
           !error &&
-          messages.map((m) => <MessageBubble key={m.id} m={m} />)}
+          messages.map((m) => <MessageBubble key={m.id} m={m} onAcked={reload} />)}
       </div>
 
       {thread && (
@@ -936,14 +988,14 @@ function MailThread({
             <button
               onClick={() => onCompose("replyall")}
               className="btn"
-              style={{ flex: 1, fontSize: 13.5, padding: "13px 6px", background: "#fff", color: "#16695f", border: "1.5px solid #16695f" }}
+              style={{ flex: 1, fontSize: 13.5, padding: "13px 6px", background: "var(--hz-c-surface)", color: "var(--hz-c-primary)", border: "1.5px solid var(--hz-c-primary)" }}
             >
               Reply all
             </button>
             <button
               onClick={() => onCompose("forward")}
               className="btn"
-              style={{ flex: 1, fontSize: 13.5, padding: "13px 6px", background: "#fff", color: "#16695f", border: "1.5px solid #16695f" }}
+              style={{ flex: 1, fontSize: 13.5, padding: "13px 6px", background: "var(--hz-c-surface)", color: "var(--hz-c-primary)", border: "1.5px solid var(--hz-c-primary)" }}
             >
               Forward
             </button>
@@ -999,7 +1051,7 @@ function LabelPicker({
               key={l.id}
               onClick={() => onPick(l.name)}
               className="tinybtn"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", background: "#fff", fontSize: 12.5 }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", background: "var(--hz-c-surface)", fontSize: 12.5 }}
             >
               <span style={{ width: 9, height: 9, borderRadius: "50%", background: l.color || "#767b6e", flex: "none" }} />
               {l.name}
@@ -1028,7 +1080,7 @@ function LabelPicker({
   );
 }
 
-function MessageBubble({ m }: { m: Message }) {
+function MessageBubble({ m, onAcked }: { m: Message; onAcked: () => void }) {
   const out = m.direction === "outbound";
   const who = out ? m.fromName || "You" : m.fromName || m.fromAddress || "Sender";
   const atts = m.attachments ?? [];
@@ -1044,18 +1096,21 @@ function MessageBubble({ m }: { m: Message }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#11140f" }}>{who}</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--hz-c-ink)" }}>{who}</span>
           {!out && m.fromAddress && (
-            <span style={{ fontSize: 10, color: "#9aa093", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fromAddress}</span>
+            <span style={{ fontSize: 10, color: "var(--hz-c-ink-soft)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fromAddress}</span>
           )}
-          <span style={{ fontSize: 10, color: "#9aa093", marginLeft: "auto", flex: "none" }}>{fmtMsgTime(m)}</span>
+          {deliveryLabel(m.deliveryStatus) && (
+            <span style={{ fontSize: 10, fontWeight: 700, flex: "none", color: DELIVERY_TONE_COLORS[deliveryTone(m.deliveryStatus)] }}>{deliveryLabel(m.deliveryStatus)}</span>
+          )}
+          <span style={{ fontSize: 10, color: "var(--hz-c-ink-soft)", marginLeft: "auto", flex: "none" }}>{fmtMsgTime(m)}</span>
         </div>
         {rawHtml ? (
-          <div style={{ background: out ? "#e1efed" : "#f4f6f3", borderRadius: 11, padding: "6px 8px", marginTop: 5 }}>
+          <div style={{ background: out ? "var(--hz-c-primary-soft)" : "var(--hz-c-surface-2)", borderRadius: 11, padding: "6px 8px", marginTop: 5 }}>
             <HtmlBody html={rawHtml} attachments={atts} />
           </div>
         ) : (
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: "#414539", marginTop: 5, background: out ? "#e1efed" : "#f4f6f3", borderRadius: 11, padding: "11px 12px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--hz-c-ink-secondary)", marginTop: 5, background: out ? "var(--hz-c-primary-soft)" : "var(--hz-c-surface-2)", borderRadius: 11, padding: "11px 12px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
             {plain || "(empty)"}
           </div>
         )}
@@ -1066,6 +1121,7 @@ function MessageBubble({ m }: { m: Message }) {
             ))}
           </div>
         )}
+        <MobileMessageAcks acks={m.acks} ackRequestId={m.ackRequestId} onAcked={onAcked} />
       </div>
     </div>
   );
@@ -1078,7 +1134,7 @@ function MessageBubble({ m }: { m: Message }) {
 // resolved falls back to the untouched HTML.
 function HtmlBody({ html, attachments }: { html: string; attachments: Attachment[] }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const [doc, setDoc] = useState<string>(() => emailSrcDoc(html));
+  const [doc, setDoc] = useState<string>(() => emailSrcDoc(html, MOBILE_EMAIL_HEAD));
 
   const inlineImgs = useMemo(
     () => attachments.filter((a) => a.contentId && /^image\//i.test(a.contentType || "")),
@@ -1109,7 +1165,7 @@ function HtmlBody({ html, attachments }: { html: string; attachments: Attachment
           }
         }
       }
-      if (!revoked) setDoc(emailSrcDoc(out));
+      if (!revoked) setDoc(emailSrcDoc(out, MOBILE_EMAIL_HEAD));
     })();
     return () => {
       revoked = true;
@@ -1123,7 +1179,7 @@ function HtmlBody({ html, attachments }: { html: string; attachments: Attachment
       title="Email"
       // allow-same-origin (NOT allow-scripts) — scripts stay blocked, but the
       // frame can be measured on load so it auto-sizes to its content.
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      sandbox={EMAIL_FRAME_SANDBOX_MEASURABLE}
       srcDoc={doc}
       style={{ width: "100%", border: "none", background: "transparent", minHeight: 60 }}
       onLoad={(e) => {
@@ -1143,8 +1199,7 @@ function AttachmentChip({ a }: { a: Attachment }) {
   const open = async () => {
     try {
       // Attachments are served through an authed stream route, not a public URL.
-      const url = await api.fetchBlobUrl(a.url);
-      window.open(url, "_blank", "noopener,noreferrer");
+      await openLoadedTab(() => api.fetchBlobUrl(a.url), 60_000);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't open attachment.");
     }
@@ -1152,14 +1207,14 @@ function AttachmentChip({ a }: { a: Attachment }) {
   return (
     <div
       onClick={open}
-      style={{ border: "1px solid #e3e6e0", borderRadius: 11, padding: "10px 12px", display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}
+      style={{ border: "1px solid var(--hz-c-border-subtle)", borderRadius: 11, padding: "10px 12px", display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a16a2e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 8 12 17a4 4 0 0 1-6-6l9-9a3 3 0 0 1 4 4l-9 9" />
       </svg>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: "#11140f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
-      {a.sizeBytes > 0 && <span style={{ fontSize: 10.5, color: "#9aa093", flex: "none" }}>{fmtBytes(a.sizeBytes)}</span>}
-      <span style={{ fontSize: 11, fontWeight: 700, color: "#a16a2e", flex: "none" }}>Download</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: "var(--hz-c-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
+      {a.sizeBytes > 0 && <span style={{ fontSize: 10.5, color: "var(--hz-c-ink-soft)", flex: "none" }}>{fmtBytes(a.sizeBytes)}</span>}
+      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--hz-c-accent)", flex: "none" }}>Download</span>
     </div>
   );
 }
@@ -1176,12 +1231,16 @@ function AttachmentChip({ a }: { a: Attachment }) {
 function MailReply({
   thread,
   replyAll,
+  messages,
+  replying,
   onClose,
   onSent,
   addresses,
 }: {
   thread: Thread | undefined;
   replyAll: boolean;
+  messages: Message[];
+  replying: ReplyingPerson[];
   onClose: () => void;
   onSent: () => void;
   addresses: MailAddress[];
@@ -1192,25 +1251,50 @@ function MailReply({
   const [files, setFiles] = useState<OutboundAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [needsAck, setNeedsAck] = useState(false);
+  const last = messages.length > 0 ? messages[messages.length - 1] : null;
+  const ours = addresses.map((a) => a.address);
+  /* Editable To / Cc / Bcc (owner 2026-11-21); "Reply all" starts Cc filled. */
+  const [to, setTo] = useState(thread?.counterpartyEmail ?? "");
+  const [cc, setCc] = useState(() => (replyAll ? replyAllCc(last, thread?.counterpartyEmail ?? "", ours) : ""));
+  const [bcc, setBcc] = useState("");
+  const [showCopies, setShowCopies] = useState(replyAll);
+  const [clash, setClash] = useState<AlreadyReplied | null>(null);
+  useReplyingHeartbeat(thread?.id ?? null, text.trim().length > 0);
   const subject = /^re:/i.test(thread?.subject ?? "") ? thread?.subject ?? "" : `Re: ${thread?.subject ?? ""}`;
 
-  const send = async () => {
+  const send = async (force: boolean) => {
     if (!thread) return;
     if (!text.trim()) {
       toast.error("Message body is empty.");
       return;
     }
+    const bad = firstInvalid(to) ?? firstInvalid(cc) ?? firstInvalid(bcc);
+    if (bad || parseRecipients(to).length === 0) {
+      toast.error(bad ? `Not a valid email address: ${bad}` : "Enter a recipient.");
+      return;
+    }
     setSending(true);
     try {
-      await api.post(`/api/mail-center/threads/${thread.id}/reply`, {
+      const res = await api.post<{ queued?: boolean }>(`/api/mail-center/threads/${thread.id}/reply`, {
         text: text.trim(),
-        ...(replyAll ? { replyAll: true } : {}),
+        to: parseRecipients(to),
+        cc: parseRecipients(cc),
+        bcc: parseRecipients(bcc),
+        afterMessageId: last?.id ?? null,
+        force,
+        ...(needsAck ? { needsAck: true } : {}),
         fromAddress: from || undefined,
         ...(files.length > 0 ? { attachments: attachmentPayload(files) } : {}),
       });
-      toast.success(replyAll ? "Reply sent to everyone." : "Reply sent.");
+      toast.success(sentToast(res.queued, "Reply sent."));
       onSent();
     } catch (e) {
+      const hit = alreadyRepliedFrom(e);
+      if (hit) {
+        setClash(hit);
+        return;
+      }
       toast.error(e instanceof Error ? e.message : "Couldn't send reply.");
     } finally {
       setSending(false);
@@ -1218,11 +1302,43 @@ function MailReply({
   };
 
   return (
-    <ComposeShell title={replyAll ? "Reply all" : "Reply"} onClose={onClose} onSend={send} sending={sending}>
+    <ComposeShell title={replyAll ? "Reply all" : "Reply"} onClose={onClose} onSend={() => void send(false)} sending={sending || clash != null}>
+      {replying.length > 0 && (
+        <div role="status" style={{ background: "var(--warn-bg, #f8ecd9)", color: "var(--warn, #9a5a12)", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
+          <b>{replying.map((p) => p.name).join(", ")}</b> {replying.length === 1 ? "is" : "are"} writing a reply to this conversation now. Check with them before you reply too.
+        </div>
+      )}
+      {clash && (
+        <div role="alert" style={{ border: "1px solid var(--err, #a3392b)", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
+          <b>{clash.by}</b> replied {agoLabel(clash.at, Date.now())}, while you were writing. <b>Yours has not been sent.</b>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button type="button" className="btn-ghost" style={{ flex: 1 }} disabled={sending} onClick={onClose}>Discard mine</button>
+            <button type="button" className="btn" style={{ flex: 1 }} disabled={sending} onClick={() => void send(true)}>Send mine too</button>
+          </div>
+        </div>
+      )}
       <label className="fld">
         <span className="fld-l">To</span>
-        <input className="fld-i" value={thread?.counterpartyName || thread?.counterpartyEmail || "—"} disabled readOnly />
+        <RecipientSuggestInput inputClassName="fld-i" value={to} onChange={setTo} placeholder="name@example.com" disabled={sending} invalid={false} />
       </label>
+      {!showCopies ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setShowCopies(true)} className="tinybtn" style={{ borderStyle: "dashed" }}>
+            Cc / Bcc
+          </button>
+        </div>
+      ) : (
+        <>
+          <label className="fld">
+            <span className="fld-l">Cc</span>
+            <RecipientSuggestInput inputClassName="fld-i" value={cc} onChange={setCc} placeholder="cc@example.com" disabled={sending} invalid={false} />
+          </label>
+          <label className="fld">
+            <span className="fld-l">Bcc</span>
+            <RecipientSuggestInput inputClassName="fld-i" value={bcc} onChange={setBcc} placeholder="bcc@example.com" disabled={sending} invalid={false} />
+          </label>
+        </>
+      )}
       <FromPicker addresses={addresses} value={from} onChange={setFrom} />
       <label className="fld">
         <span className="fld-l">Subject</span>
@@ -1239,7 +1355,45 @@ function MailReply({
         onFiles={setFiles}
         onError={setAttachError}
       />
+      <MobileNeedsAck checked={needsAck} onChange={setNeedsAck} disabled={sending} />
     </ComposeShell>
+  );
+}
+
+function MobilePickedAttachment({ file, onRemove }: { file: OutboundAttachment; onRemove: () => void }) {
+  const previewUrl = useAttachmentPreviewUrl(file);
+  const label = (
+    <>
+      {previewUrl && isImageAttachment(file) && (
+        <img src={previewUrl} alt="" style={{ width: 22, height: 22, borderRadius: 4, objectFit: "cover", flex: "none" }} />
+      )}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+    </>
+  );
+  return (
+    <span className="spill" style={{ display: "inline-flex", alignItems: "center", gap: 5, maxWidth: "100%", minHeight: 32 }}>
+      {previewUrl ? (
+        <a
+          href={previewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, minWidth: 0, color: "inherit", textDecoration: "underline" }}
+        >
+          {label}
+        </a>
+      ) : (
+        label
+      )}
+      <span style={{ opacity: 0.7, flex: "none" }}>{humanSize(file.size)}</span>
+      <span
+        role="button"
+        aria-label={`Remove ${file.name}`}
+        onClick={onRemove}
+        style={{ cursor: "pointer", opacity: 0.75, fontSize: 16, lineHeight: 1, padding: "4px 6px", flex: "none" }}
+      >
+        &times;
+      </span>
+    </span>
   );
 }
 
@@ -1296,30 +1450,19 @@ function AttachRow({
       {files.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7 }}>
           {files.map((f, i) => (
-            <span
+            <MobilePickedAttachment
               key={`${f.name}-${i}`}
-              className="spill"
-              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-            >
-              {f.name}
-              <span style={{ opacity: 0.7 }}>{humanSize(f.size)}</span>
-              <span
-                role="button"
-                aria-label={`Remove ${f.name}`}
-                onClick={() => {
-                  onFiles(files.filter((_, index) => index !== i));
-                  onError(null);
-                }}
-                style={{ cursor: "pointer", opacity: 0.75, fontSize: 12, lineHeight: 1 }}
-              >
-                &times;
-              </span>
-            </span>
+              file={f}
+              onRemove={() => {
+                onFiles(files.filter((_, index) => index !== i));
+                onError(null);
+              }}
+            />
           ))}
         </div>
       )}
       {error && (
-        <p role="alert" style={{ fontSize: 11, color: "#b23a3a", marginTop: 6 }}>{error}</p>
+        <p role="alert" style={{ fontSize: 11, color: "var(--hz-c-err)", marginTop: 6 }}>{error}</p>
       )}
     </div>
   );
@@ -1373,6 +1516,8 @@ function MailCompose({
   const [subject, setSubject] = useState(seed?.subject ?? "");
   const [text, setText] = useState(seed?.body ?? "");
   const [sending, setSending] = useState(false);
+  const [needsAck, setNeedsAck] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Same shared parser desktop uses: comma/semicolon separated, trimmed,
   // de-duplicated case-insensitively — and the same shape check on each entry.
@@ -1406,7 +1551,7 @@ function MailCompose({
     }
     setSending(true);
     try {
-      await api.post("/api/mail-center/compose", {
+      const res = await api.post<{ queued?: boolean }>("/api/mail-center/compose", {
         fromAddress: from,
         to: toList,
         ...(ccList.length ? { cc: ccList } : {}),
@@ -1414,8 +1559,9 @@ function MailCompose({
         subject: subject.trim(),
         text: text.trim(),
         ...(files.length > 0 ? { attachments: attachmentPayload(files) } : {}),
+        ...(needsAck ? { needsAck: true } : {}),
       });
-      toast.success("Email sent.");
+      toast.success(sentToast(res.queued, "Email sent."));
       onSent();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't send email.");
@@ -1425,32 +1571,33 @@ function MailCompose({
   };
 
   return (
+    <>
     <ComposeShell title={mode === "forward" ? "Forward" : "New email"} onClose={onClose} onSend={send} sending={sending}>
       <FromPicker addresses={addresses} value={from} onChange={setFromOverride} />
       <label className="fld">
         <span className="fld-l">To</span>
-        <input className="fld-i" value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com" />
+        <RecipientSuggestInput inputClassName="fld-i" value={to} onChange={setTo} placeholder="name@example.com" disabled={sending} invalid={false} />
       </label>
-      {!showCopies && (
-        <button
-          type="button"
-          onClick={() => setShowCopies(true)}
-          className="tinybtn"
-          style={{ alignSelf: "flex-start", borderStyle: "dashed" }}
-        >
-          Cc / Bcc
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" onClick={() => setPickerOpen(true)} className="tinybtn" style={{ borderStyle: "dashed" }}>
+          Org chart
         </button>
-      )}
+        {!showCopies && (
+          <button type="button" onClick={() => setShowCopies(true)} className="tinybtn" style={{ borderStyle: "dashed" }}>
+            Cc / Bcc
+          </button>
+        )}
+      </div>
       {/* One send carrying everyone, never one send each. */}
       {showCopies && (
         <>
           <label className="fld">
             <span className="fld-l">Cc</span>
-            <input className="fld-i" value={cc} onChange={(e) => setCc(e.target.value)} placeholder="cc@example.com" />
+            <RecipientSuggestInput inputClassName="fld-i" value={cc} onChange={setCc} placeholder="cc@example.com" disabled={sending} invalid={false} />
           </label>
           <label className="fld">
             <span className="fld-l">Bcc</span>
-            <input className="fld-i" value={bcc} onChange={(e) => setBcc(e.target.value)} placeholder="bcc@example.com" />
+            <RecipientSuggestInput inputClassName="fld-i" value={bcc} onChange={setBcc} placeholder="bcc@example.com" disabled={sending} invalid={false} />
           </label>
         </>
       )}
@@ -1469,7 +1616,22 @@ function MailCompose({
         onFiles={setFiles}
         onError={setAttachError}
       />
+      <MobileNeedsAck checked={needsAck} onChange={setNeedsAck} disabled={sending} />
     </ComposeShell>
+    <RecipientPicker
+      open={pickerOpen}
+      onClose={() => setPickerOpen(false)}
+      already={[to, cc, bcc]}
+      onPick={(picked, field) => {
+        if (field === "cc") {
+          setCc((prev) => addRecipients(prev, picked));
+          setShowCopies(true);
+        } else {
+          setTo((prev) => addRecipients(prev, picked));
+        }
+      }}
+    />
+    </>
   );
 }
 
@@ -1624,9 +1786,9 @@ function OutboxList({ q }: { q: string }) {
 
   return (
     <>
-      <div style={{ fontSize: 11, color: "#767b6e", padding: "0 2px 9px" }}>
+      <div style={{ fontSize: 11, color: "var(--hz-c-ink-muted)", padding: "0 2px 9px" }}>
         {counts.sent} sent &middot;{" "}
-        <span style={{ color: counts.failed > 0 ? "#B91C1C" : "#767b6e", fontWeight: counts.failed > 0 ? 800 : 400 }}>
+        <span style={{ color: counts.failed > 0 ? "#B91C1C" : "var(--hz-c-ink-muted)", fontWeight: counts.failed > 0 ? 800 : 400 }}>
           {counts.failed} failed
         </span>{" "}
         &middot; {counts.pending} pending
@@ -1644,28 +1806,28 @@ function OutboxList({ q }: { q: string }) {
               <div
                 key={it.id}
                 onClick={() => setOpenId(it.id)}
-                style={{ background: "#fff", border: `1px solid ${it.status === "FAILED" ? "#e3c4c1" : "#e3e6e0"}`, borderRadius: 13, padding: "11px 12px", cursor: "pointer" }}
+                style={{ background: "var(--hz-c-surface)", border: `1px solid ${it.status === "FAILED" ? "#e3c4c1" : "#e3e6e0"}`, borderRadius: 13, padding: "11px 12px", cursor: "pointer" }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: "#11140f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: "var(--hz-c-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {it.toAddress || "(no recipient)"}
                   </span>
-                  <span className="money" style={{ fontSize: 10, color: "#9aa093", flex: "none", whiteSpace: "nowrap" }}>
+                  <span className="money" style={{ fontSize: 10, color: "var(--hz-c-ink-soft)", flex: "none", whiteSpace: "nowrap" }}>
                     {fmtTime(it.sentAt || it.createdAt)}
                   </span>
                 </div>
-                <div style={{ fontSize: 12.5, fontWeight: 500, color: "#11140f", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--hz-c-ink)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {it.subject}
                 </div>
                 {it.snippet && (
-                  <div style={{ fontSize: 11.5, color: "#767b6e", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div style={{ fontSize: 11.5, color: "var(--hz-c-ink-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {it.snippet}
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 5, marginTop: 6, alignItems: "center", flexWrap: "wrap" }}>
                   <span className="rbadge" style={{ background: bg, color: fg }}>{outboxLabel(it.status)}</span>
                   {it.attempts > 0 && (
-                    <span style={{ fontSize: 10.5, color: "#9aa093" }}>
+                    <span style={{ fontSize: 10.5, color: "var(--hz-c-ink-soft)" }}>
                       {it.attempts} attempt{it.attempts === 1 ? "" : "s"}
                     </span>
                   )}
@@ -1742,23 +1904,23 @@ function OutboxSheet({ id, onClose }: { id: string; onClose: () => void }) {
             <div style={{ fontSize: 16, fontWeight: 800, color: "var(--ink)", marginBottom: 6, lineHeight: 1.25 }}>{data.subject}</div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
               <span className="rbadge" style={{ background: bg, color: fg }}>{outboxLabel(data.status)}</span>
-              <span style={{ fontSize: 11, color: "#767b6e" }}>To {data.toAddress || "(no recipient)"}</span>
-              <span style={{ fontSize: 11, color: "#9aa093" }}>
+              <span style={{ fontSize: 11, color: "var(--hz-c-ink-muted)" }}>To {data.toAddress || "(no recipient)"}</span>
+              <span style={{ fontSize: 11, color: "var(--hz-c-ink-soft)" }}>
                 {data.sentAt ? `Sent ${fmtDateTime(new Date(data.sentAt))}` : `Queued ${data.createdAt ? fmtDateTime(new Date(data.createdAt)) : "—"}`}
               </span>
               {data.attachmentNames.length > 0 && (
-                <span style={{ fontSize: 11, color: "#9aa093" }}>&middot; {data.attachmentNames.join(", ")}</span>
+                <span style={{ fontSize: 11, color: "var(--hz-c-ink-soft)" }}>&middot; {data.attachmentNames.join(", ")}</span>
               )}
             </div>
             {data.status === "FAILED" && data.lastError && (
-              <div style={{ background: "#fbf1f0", border: "1px solid #e3c4c1", borderRadius: 11, padding: "9px 11px", fontSize: 11.5, color: "#b23a3a", marginBottom: 10, wordBreak: "break-word" }}>
+              <div style={{ background: "var(--hz-dk-err-bg, #fbf1f0)", border: "1px solid #e3c4c1", borderRadius: 11, padding: "9px 11px", fontSize: 11.5, color: "var(--hz-c-err)", marginBottom: 10, wordBreak: "break-word" }}>
                 Error: {data.lastError}
               </div>
             )}
             {data.bodyHtml ? (
               <HtmlBody html={data.bodyHtml} attachments={[]} />
             ) : (
-              <div style={{ fontSize: 13, lineHeight: 1.6, color: "#414539", background: "#f4f6f3", borderRadius: 11, padding: "11px 12px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--hz-c-ink-secondary)", background: "var(--hz-c-surface-2)", borderRadius: 11, padding: "11px 12px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {data.bodyText || "(no content)"}
               </div>
             )}
@@ -1783,15 +1945,7 @@ function looksLikeHtml(s: string | undefined): boolean {
   );
 }
 
-// Wrap raw email HTML in a self-contained document with a responsive base style
-// and a new-tab base target, injected into the existing <head> when present.
-// Ported from the desktop Thread.tsx emailSrcDoc.
-function emailSrcDoc(rawHtml: string): string {
-  const inject = `<base target="_blank"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;padding:10px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;color:#11140f;word-break:break-word;overflow-x:hidden;background:transparent}img{max-width:100%;height:auto}table{max-width:100%}</style>`;
-  if (/<head[^>]*>/i.test(rawHtml)) return rawHtml.replace(/<head([^>]*)>/i, `<head$1>${inject}`);
-  if (/<html[^>]*>/i.test(rawHtml)) return rawHtml.replace(/<html([^>]*)>/i, `<html$1><head>${inject}</head>`);
-  return `<!doctype html><html><head>${inject}</head><body>${rawHtml}</body></html>`;
-}
+const MOBILE_EMAIL_HEAD = `<meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;padding:10px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;color:#11140f;word-break:break-word;overflow-x:hidden;background:transparent}img{max-width:100%;height:auto}table{max-width:100%}</style>`;
 
 // Strip HTML to a readable plain-text fallback when a message has no textBody.
 function stripHtml(html: string): string {

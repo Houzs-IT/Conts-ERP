@@ -34,6 +34,7 @@ import { overLimitBody, projectLimit } from './project-limit';
 import { allRows, inChunks, staffNames } from './petty-cash-store';
 import { claimsDeps, EDIT_KEY, FULL_KEY } from './petty-cash-routes';
 import { linesStillOwed } from './payment-requests';
+import { needsRenoReview } from './sub-departments';
 import type { Staff } from './staff-identity';
 import { balanceRequestHandler, billRefusal, liveBillOf, makeRequestApInvoiceHandler } from './request-ap-invoice';
 import { makeCombinedVoucher } from './combined-voucher';
@@ -50,18 +51,19 @@ const forbid = (c: Ctx) => c.json({ error: 'forbidden', message: "You don't have
 const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try { return await c.req.json(); } catch { return null; } };
 const now = () => new Date().toISOString();
 const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
-const REQ_COLS = 'id, request_no, type, requester_user_id, supplier_id, payee_name, payee_to_check, purchase_order_id, wanted_on, owes_formal_invoice, note, amount_sen, status, reason, decided_by, decided_at, created_at, source_key, ap_invoice_id, parent_request_id, asked_lines, asked_amount_sen';
+export const REQ_COLS = 'id, request_no, type, requester_user_id, supplier_id, payee_name, payee_to_check, purchase_order_id, wanted_on, owes_formal_invoice, note, amount_sen, status, reason, decided_by, decided_at, created_at, source_key, ap_invoice_id, parent_request_id, asked_lines, asked_amount_sen, reno_reviewed_by, reno_reviewed_at';
 
-type ReqRow = {
+export type ReqRow = {
   id: string; request_no: string; type: string; requester_user_id: string; supplier_id: string | null; payee_name: string; payee_to_check: boolean;
   purchase_order_id: string | null; wanted_on: string | null; owes_formal_invoice: boolean; note: string | null; amount_sen: number; status: string;
   reason: string | null; decided_by: string | null; decided_at: string | null; created_at: string; source_key?: string | null;
   ap_invoice_id?: string | null; parent_request_id?: string | null; asked_lines?: unknown; asked_amount_sen?: number | null;
+  reno_reviewed_by?: string | null; reno_reviewed_at?: string | null;
 };
 type ReqLine = { id: string; request_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
 
 /** Requests with their lines, files, vouchers and names, as the screens show them. Every list is read in full. */
-async function views(sb: any, companyId: number, rows: ReqRow[]) {
+export async function views(sb: any, companyId: number, rows: ReqRow[]) {
   const ids = rows.map(r => r.id);
   if (ids.length === 0) return [];
   const billIds = [...new Set(rows.map(r => r.ap_invoice_id).filter((x): x is string => !!x))];
@@ -86,6 +88,7 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
     supplierId: r.supplier_id, payeeName: r.payee_name, payeeToCheck: r.payee_to_check, purchaseOrderId: r.purchase_order_id,
     wantedOn: r.wanted_on, owesFormalInvoice: r.owes_formal_invoice, note: r.note, amountSen: Number(r.amount_sen), status: r.status,
     reason: r.reason, decidedBy: r.decided_by, decidedAt: r.decided_at, createdAt: r.created_at,
+    renoReviewedBy: r.reno_reviewed_by ?? null, renoReviewedAt: r.reno_reviewed_at ?? null,
     /* Made from utility bills (utility-bill-routes.ts): fixed and sent again from Utility bills, not My claims. */
     fromBills: String(r.source_key ?? '').startsWith('utility:'),
     apInvoice: (() => {
@@ -235,10 +238,10 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const askedId = typeof b.id === 'string' && UUID.test(b.id) ? b.id.toLowerCase() : null;
   if (askedId) {
-    const { data: seen } = await sb.from('payment_requests').select('id, request_no, requester_user_id').eq('id', askedId).maybeSingle();
+    const { data: seen } = await sb.from('payment_requests').select('id, request_no, requester_user_id, status').eq('id', askedId).maybeSingle();
     if (seen) {
       if (seen.requester_user_id !== staff.userId) return c.json({ error: 'conflict', message: 'That request id is taken.' }, 409);
-      return c.json({ id: seen.id, requestNo: seen.request_no }, 200);
+      return c.json({ id: seen.id, requestNo: seen.request_no, renoReview: seen.status === 'RENO_REVIEW' }, 200);
     }
   }
   const form = await readRequestForm(c, sb, co.companyId, staff, b);
@@ -257,10 +260,11 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
     return c.json({ error: 'save_failed', reason }, 500);
   };
   const today = todayMyt();
+  const renoReview = await needsRenoReview(sb, co.companyId, form.lines);
   const { data: row, error } = await insertWithDocNoRetry<{ id: string; request_no: string }>(
     () => mintMonthlyDocNo(sb, 'payment_requests', 'request_no', `PRQ-${docMonthTag(today)}`),
     no => sb.from('payment_requests').insert({
-      id, company_id: co.companyId, request_no: no, requester_user_id: staff.userId, ...headerOf(form, b), status: 'SUBMITTED',
+      id, company_id: co.companyId, request_no: no, requester_user_id: staff.userId, ...headerOf(form, b), status: renoReview ? 'RENO_REVIEW' : 'SUBMITTED',
     }).select('id, request_no').single(),
   );
   if (error || !row) return fail(error?.message ?? 'insert returned nothing');
@@ -270,7 +274,7 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   if (fr.error) return fail(fr.error.message);
   const rv = await saveRecoveries(sb, id, form.recover, staff.userId);
   if (rv) return fail(rv);
-  return c.json({ id, requestNo: row.request_no }, 201);
+  return c.json({ id, requestNo: row.request_no, renoReview }, 201);
 };
 
 /** A request its asker may change and send again (resubmitRequestHandler; utility-bill-routes for a utility one). */
@@ -332,14 +336,15 @@ export const resubmitRequestHandler = async (c: Ctx): Promise<Response> => {
     const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: r.id })));
     if (fr.error) return fail(fr.error.message);
   }
-  if (!(await claimRequest(sb, r.id, String(r.status), { ...headerOf(form, b), status: 'SUBMITTED' }, claim))) {
+  const renoReview = await needsRenoReview(sb, co.companyId, form.lines);
+  if (!(await claimRequest(sb, r.id, String(r.status), { ...headerOf(form, b), status: renoReview ? 'RENO_REVIEW' : 'SUBMITTED' }, claim))) {
     return c.json({ error: 'not_returned', message: 'This request was changed somewhere else. Open it again.' }, 409);
   }
   if (dropped.length) {
     await sb.from('payment_request_files').delete().in('id', dropped.map(f => f.id));
     await removeFiles(bucket, dropped.map(f => f.r2_key));
   }
-  return c.json({ id: r.id, requestNo: r.request_no }, 200);
+  return c.json({ id: r.id, requestNo: r.request_no, renoReview }, 200);
 };
 
 export const myRequestsHandler = async (c: Ctx): Promise<Response> => {
@@ -361,9 +366,10 @@ export const withdrawRequestHandler = async (c: Ctx): Promise<Response> => {
   const bill = await liveBillOf(sb, r.id);
   if (bill) return billRefusal(c, bill);
   const refused = () => c.json({ error: 'cannot_withdraw', message: 'Finance has started paying this request.' }, 409);
-  if (!(await claimRequest(sb, r.id, 'SUBMITTED', { status: 'WITHDRAWN' }))) return refused();
+  const from = r.status === 'RENO_REVIEW' ? 'RENO_REVIEW' : 'SUBMITTED';
+  if (!(await claimRequest(sb, r.id, from, { status: 'WITHDRAWN' }))) return refused();
   /* Claimed; a voucher made in the meantime wins, and the request goes back. */
-  if (live(await vouchersOf(sb, co.companyId, r.id)).length > 0) { await claimRequest(sb, r.id, 'WITHDRAWN', { status: 'SUBMITTED' }); return refused(); }
+  if (live(await vouchersOf(sb, co.companyId, r.id)).length > 0) { await claimRequest(sb, r.id, 'WITHDRAWN', { status: from }); return refused(); }
   return c.json({ ok: true });
 };
 

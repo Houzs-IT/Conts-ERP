@@ -249,7 +249,7 @@ describe('payment requests', () => {
     expect(made.id).toBe(id);
     const again = await ask(appFor(sb, TECH), byName);
     expect(again.status).toBe(200);
-    expect(await again.json()).toEqual({ id, requestNo: made.requestNo });
+    expect(await again.json()).toEqual({ id, requestNo: made.requestNo, renoReview: false });
     expect(sb.tables.payment_requests).toHaveLength(1);
     expect((await ask(appFor(sb, OPS), { ...byName, supplierId: 'S1' })).status).toBe(409);
     expect(sb.tables.payment_requests).toHaveLength(1);
@@ -488,7 +488,7 @@ describe('a withdrawn or rejected request is changed and sent again, keeping its
     const keep = fileIds(sb);
     const res = await again(a, first.id, { keepFileIds: keep });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ id: first.id, requestNo: first.requestNo });
+    expect(await res.json()).toEqual({ id: first.id, requestNo: first.requestNo, renoReview: false });
     expect(sb.tables.payment_requests).toHaveLength(1);
     expect(sb.tables.payment_requests[0]).toMatchObject({ id: first.id, request_no: first.requestNo, status: 'SUBMITTED', amount_sen: 6000 });
     expect(sb.tables.payment_request_lines).toHaveLength(1);
