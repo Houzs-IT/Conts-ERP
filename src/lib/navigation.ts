@@ -119,7 +119,8 @@ const FINANCE_PART_ICON: Record<string, string> = {
 };
 
 /* Users and roles, Settings and System health sit in both sidebars at the same address, so opening one keeps the side
-   the person is on (workspaceOf answers null for them). Integrations is The Conts' only (owner, 26 Nov 2026). */
+   the person is on (workspaceOf answers null for them). Integrations is The Conts' only, and Dream Crafter's Settings
+   holds only My account: the other tabs set up the rental business (owner, 26 Nov 2026). */
 const SYSTEM_ADMIN_ITEMS: NavItem[] = [
   { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
   { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
@@ -131,7 +132,11 @@ const SYSTEM_ADMIN_ITEMS: NavItem[] = [
   ] },
   { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
 ];
-const DREAM_CRAFTER_SYSTEM_ITEMS = SYSTEM_ADMIN_ITEMS.filter(item => item.key !== 'integrations');
+const DREAM_CRAFTER_SYSTEM_ITEMS = SYSTEM_ADMIN_ITEMS
+  .filter(item => item.key !== 'integrations')
+  .map(item => (item.key === 'settings'
+    ? { ...item, label: 'My account', icon: 'user-round', children: item.children?.filter(tab => tab.key === 'myAccount') }
+    : item));
 
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
