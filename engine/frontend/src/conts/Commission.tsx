@@ -477,84 +477,165 @@ const PAYOUT_COLUMNS: Column<CommissionPayout>[] = [
   { key: "by", label: "Recorded by", render: (r) => r.createdBy || "—", getValue: (r) => r.createdBy ?? "" },
   { key: "state", label: "", render: (r) => (r.voidedAt ? <span style={{ color: BAD }}>Taken back</span> : ""), getValue: (r) => (r.voidedAt ? 1 : 0) },
 ];
-/* Payouts: the month's panel HR pays from (owner, 26 Nov 2026): per person what was claimed that month and on which
-   orders, what each can still claim, then every payout ever recorded. */
+/* Payouts: the month's panel HR pays from (owner, 26 Nov 2026). Per person: what was paid that month, and what can be
+   claimed now split into the person's own orders and the team orders they earn on as manager. HR ticks and records the
+   payment here; it then shows under the month it was paid in. */
 function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim[]; onOpen: (soDocNo: string) => void }) {
   const thisMonth = today().slice(0, 7);
   const live = data.payouts.filter((p) => !p.voidedAt);
   const monthList = [...new Set([thisMonth, ...live.map((p) => p.paidOn.slice(0, 7))])].sort().reverse();
   const [month, setMonth] = useState(thisMonth);
   const [openPerson, setOpenPerson] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [paidOn, setPaidOn] = useState(today());
+  const [note, setNote] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const settle = useSettle();
+  const dialog = useDialog();
   const project = (so: string) => { const r = data.rows.find((x) => x.soDocNo === so); return r ? r.projectName || r.customerName : ""; };
+  const isOwn = (c: Claim) => c.share.role === "sales" || c.row.salespersonId === c.share.staffId;
   const inMonth = live.filter((p) => p.paidOn.startsWith(month));
-  const people = new Map<string, { id: string; name: string; paid: CommissionPayout[]; open: Claim[] }>();
-  const at = (id: string, name: string) => { let x = people.get(id); if (!x) { x = { id, name, paid: [], open: [] }; people.set(id, x); } return x; };
+  const people = new Map<string, { id: string; name: string; paid: CommissionPayout[]; own: Claim[]; team: Claim[] }>();
+  const at = (id: string, name: string) => { let x = people.get(id); if (!x) { x = { id, name, paid: [], own: [], team: [] }; people.set(id, x); } return x; };
   for (const p of inMonth) at(p.staffId, p.staffName).paid.push(p);
-  for (const c of claims) at(c.share.staffId, c.share.staffName).open.push(c);
+  for (const c of claims) { const x = at(c.share.staffId, c.share.staffName); (isOwn(c) ? x.own : x.team).push(c); }
   const list = [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
-  const sumPaid = (x: { paid: CommissionPayout[] }) => x.paid.reduce((t, p) => t + p.amountSen, 0);
-  const sumOpen = (x: { open: Claim[] }) => x.open.reduce((t, c) => t + c.share.claimableSen, 0);
+  const paidSum = (xs: CommissionPayout[]) => xs.reduce((t, p) => t + p.amountSen, 0);
+  const claimSum = (xs: Claim[]) => xs.reduce((t, c) => t + c.share.claimableSen, 0);
+  const allPaid = list.flatMap((x) => x.paid);
+  const allOpen = claims;
+
+  const pay = async (person: { name: string; own: Claim[]; team: Claim[] }) => {
+    setNote(null); setDone(null);
+    const chosen = [...person.own, ...person.team].filter((c) => picked[c.key]);
+    if (chosen.length === 0) { setNote("Tick the orders you are paying."); return; }
+    if (!paidOn) { setNote("Enter the date it was paid."); return; }
+    const sen = claimSum(chosen);
+    if (!(await dialog.confirm(`Record RM ${rm(sen)} paid to ${person.name} on ${paidOn} for ${chosen.length} order${chosen.length === 1 ? "" : "s"}?`))) return;
+    try {
+      await settle.mutateAsync({ paidOn, note: "", items: chosen.map((c) => ({ soDocNo: c.row.soDocNo, staffId: c.share.staffId, amountSen: c.share.claimableSen })) });
+      setPicked({}); setMonth(paidOn.slice(0, 7));
+      setDone(`Recorded RM ${rm(sen)} paid to ${person.name} on ${paidOn}. It now shows under ${monthLabel(paidOn.slice(0, 7))}.`);
+    } catch (e) { setNote(errText(e)); }
+  };
+
+  const claimTable = (title: string, rows: Claim[]) => rows.length === 0 ? null : (
+    <>
+      <tr style={{ background: "var(--bg-subtle, rgba(0,0,0,0.03))" }}>
+        <td colSpan={6} style={{ padding: "6px 10px", fontWeight: 600 }}>{title} ({rows.length})</td>
+        <td style={{ ...td, paddingRight: 10, fontWeight: 600 }}>{rm(claimSum(rows))}</td>
+      </tr>
+      {rows.map((c) => (
+        <tr key={c.key} style={{ borderTop: "1px solid var(--border)" }}>
+          <td style={{ padding: "6px 0 6px 10px", width: 28 }}>
+            <input type="checkbox" aria-label={`Pay ${c.row.soDocNo}`} checked={!!picked[c.key]} onChange={(e) => setPicked({ ...picked, [c.key]: e.target.checked })} />
+          </td>
+          <td style={{ paddingLeft: 8, whiteSpace: "nowrap" }}>
+            <button type="button" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit", fontWeight: 600 }}>{c.row.soDocNo}</button>
+          </td>
+          <td style={{ paddingLeft: 8 }}>{c.row.projectName || c.row.customerName}</td>
+          <td style={{ paddingLeft: 8, color: MUTED }}>{isOwn(c) ? "Own sale" : `Manager · ${c.row.salespersonName ?? "team"}`}</td>
+          <td style={td}>{rm(c.share.totalSen)}</td>
+          <td style={td}>{rm(c.share.paidSen)}</td>
+          <td style={{ ...td, paddingRight: 10 }}>
+            <div style={{ fontWeight: 600, color: GOOD }}>{rm(c.share.claimableSen)}</div>
+            {c.row.releasedBp < 10_000 && <div style={{ color: MUTED, fontSize: "var(--fs-12, 12px)" }}>{pctText(c.row.releasedBp)} released</div>}
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", fontSize: "var(--fs-13)" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label className={styles.field} style={{ width: 180 }}>
           <span className={styles.fieldLabel}>Month</span>
           <select className={styles.fieldInput} value={month} onChange={(e) => { setMonth(e.target.value); setOpenPerson(null); }}>
             {monthList.map((x) => <option key={x} value={x}>{monthLabel(x)}</option>)}
           </select>
         </label>
-        <Kpi label={`Claimed in ${monthLabel(month)}`} value={`RM ${rm(list.reduce((t, x) => t + sumPaid(x), 0))}`} strong />
-        <Kpi label="Still to claim (all months)" value={`RM ${rm(list.reduce((t, x) => t + sumOpen(x), 0))}`} />
-        <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>HR pays each person what they claimed this month. Tick claims under Monthly settlement to add them here. Click a person for the orders.</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingBottom: 4 }}>
+          <span style={{ color: MUTED }}>Paid in {monthLabel(month)}</span>
+          <span style={{ fontSize: "var(--fs-18, 18px)", fontWeight: 700 }}>RM {rm(paidSum(allPaid))} <span style={{ fontSize: "var(--fs-13)", fontWeight: 400, color: MUTED }}>on {allPaid.length} order{allPaid.length === 1 ? "" : "s"}</span></span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingBottom: 4 }}>
+          <span style={{ color: MUTED }}>Can claim now, not paid yet</span>
+          <span style={{ fontSize: "var(--fs-18, 18px)", fontWeight: 700, color: GOOD }}>RM {rm(claimSum(allOpen))} <span style={{ fontSize: "var(--fs-13)", fontWeight: 400, color: MUTED }}>on {allOpen.length} order{allOpen.length === 1 ? "" : "s"}</span></span>
+        </div>
       </div>
+      <div style={{ color: MUTED }}>Click a person to see each order they can claim. Tick what HR pays and press Record payment; it then shows under the month it was paid in. A wrong payment can be taken back from its order: click the order number.</div>
+      {note && <div role="alert" style={{ color: BAD }}>{note}</div>}
+      {done && <div role="status" style={{ color: GOOD }}>{done}</div>}
 
-      <div className="rounded-xl border border-border bg-surface shadow-stone" style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
           <thead><tr style={{ color: MUTED }}>
             <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Person</th>
-            <th style={th}>Claimed in {monthLabel(month)}</th><th style={th}>Orders</th>
-            <th style={th}>Still to claim</th><th style={{ ...th, paddingRight: 14 }}>Orders</th>
+            <th style={th}>Paid in {monthLabel(month)}</th>
+            <th style={th}>Own orders to claim</th>
+            <th style={th}>Team orders to claim</th>
+            <th style={{ ...th, paddingRight: 14 }}>Can claim now</th>
           </tr></thead>
           <tbody>
-            {list.length === 0 && <tr><td colSpan={5} style={{ padding: 14, color: MUTED }}>Nothing claimed or waiting.</td></tr>}
-            {list.map((x) => (
-              <Fragment key={x.id}>
-                <tr style={{ borderTop: "1px solid var(--line)", cursor: "pointer" }} onClick={() => setOpenPerson(openPerson === x.id ? null : x.id)}>
-                  <td style={{ padding: "8px 0 8px 14px", fontWeight: 600 }}>{openPerson === x.id ? "▾" : "▸"} {x.name}</td>
-                  <td style={{ ...td, fontWeight: 600, color: sumPaid(x) > 0 ? GOOD : MUTED }}>RM {rm(sumPaid(x))}</td>
-                  <td style={td}>{x.paid.length}</td>
-                  <td style={td}>RM {rm(sumOpen(x))}</td>
-                  <td style={{ ...td, paddingRight: 14 }}>{x.open.length}</td>
-                </tr>
-                {openPerson === x.id && (
-                  <tr><td colSpan={5} style={{ padding: "4px 14px 14px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
-                      <div>
-                        <div style={{ fontWeight: 600, padding: "6px 0" }}>Claimed in {monthLabel(month)}</div>
-                        {x.paid.length === 0 ? <div style={{ color: MUTED }}>Nothing this month.</div> : x.paid.map((p) => (
-                          <div key={p.id} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--line)" }}>
+            {list.length === 0 && <tr><td colSpan={5} style={{ padding: 14, color: MUTED }}>Nothing paid or waiting.</td></tr>}
+            {list.map((x) => {
+              const opened = openPerson === x.id;
+              const both = [...x.own, ...x.team];
+              const ticked = both.filter((c) => picked[c.key]);
+              return (
+                <Fragment key={x.id}>
+                  <tr style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={() => setOpenPerson(opened ? null : x.id)}>
+                    <td style={{ padding: "8px 0 8px 14px", fontWeight: 600 }}>{opened ? "▾" : "▸"} {x.name}</td>
+                    <td style={td}>RM {rm(paidSum(x.paid))} <span style={{ color: MUTED }}>({x.paid.length})</span></td>
+                    <td style={td}>RM {rm(claimSum(x.own))} <span style={{ color: MUTED }}>({x.own.length})</span></td>
+                    <td style={td}>RM {rm(claimSum(x.team))} <span style={{ color: MUTED }}>({x.team.length})</span></td>
+                    <td style={{ ...td, paddingRight: 14, fontWeight: 700, color: both.length ? GOOD : MUTED }}>RM {rm(claimSum(both))}</td>
+                  </tr>
+                  {opened && (
+                    <tr><td colSpan={5} style={{ padding: "4px 14px 16px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div style={{ fontWeight: 700 }}>Can claim now: RM {rm(claimSum(both))}</div>
+                        {both.length === 0 ? <div style={{ color: MUTED }}>Nothing waiting.</div> : (
+                          <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+                              <thead><tr style={{ color: MUTED }}>
+                                <th style={{ ...th, textAlign: "left", paddingLeft: 10 }}>
+                                  <input type="checkbox" aria-label="Tick every order" checked={ticked.length === both.length}
+                                    onChange={(e) => { const p = { ...picked }; for (const c of both) p[c.key] = e.target.checked; setPicked(p); }} />
+                                </th>
+                                <th style={{ ...th, textAlign: "left" }}>Order</th><th style={{ ...th, textAlign: "left" }}>Project</th><th style={{ ...th, textAlign: "left" }}>As</th>
+                                <th style={th}>Total comm</th><th style={th}>Paid before</th><th style={{ ...th, paddingRight: 10 }}>Claim now</th>
+                              </tr></thead>
+                              <tbody>
+                                {claimTable("Own orders", x.own)}
+                                {claimTable("Team orders, as manager", x.team)}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {both.length > 0 && (
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                            <label className={styles.field} style={{ width: 170 }}><span className={styles.fieldLabel}>Paid on</span><DateField value={paidOn} onChange={(v) => setPaidOn(v)} /></label>
+                            <span style={{ paddingBottom: 8, fontWeight: 600 }}>{ticked.length} ticked, RM {rm(claimSum(ticked))}</span>
+                            <Button onClick={() => pay(x)} disabled={settle.isPending || ticked.length === 0}>{settle.isPending ? "Saving…" : "Record payment"}</Button>
+                          </div>
+                        )}
+                        <div style={{ fontWeight: 700, marginTop: 6 }}>Paid in {monthLabel(month)}: RM {rm(paidSum(x.paid))}</div>
+                        {x.paid.length === 0 ? <div style={{ color: MUTED }}>Nothing paid this month.</div> : x.paid.map((p) => (
+                          <div key={p.id} style={{ display: "flex", gap: 10, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
                             <span style={{ color: MUTED, whiteSpace: "nowrap" }}>{p.paidOn}</span>
-                            <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(p.soDocNo)} style={{ border: 0, background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>{p.soDocNo}</button>
+                            <button type="button" onClick={() => onOpen(p.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{p.soDocNo}</button>
                             <span style={{ flex: 1, color: MUTED }}>{project(p.soDocNo)}</span>
                             <span style={{ ...num, fontWeight: 600 }}>{rm(p.amountSen)}</span>
                           </div>
                         ))}
                       </div>
-                      <div>
-                        <div style={{ fontWeight: 600, padding: "6px 0" }}>Can claim now</div>
-                        {x.open.length === 0 ? <div style={{ color: MUTED }}>Nothing waiting.</div> : x.open.map((c) => (
-                          <div key={c.key} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--line)" }}>
-                            <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
-                            <span style={{ flex: 1, color: MUTED }}>{c.row.projectName || c.row.customerName}</span>
-                            <span style={{ ...num, fontWeight: 600, color: GOOD }}>{rm(c.share.claimableSen)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </td></tr>
-                )}
-              </Fragment>
-            ))}
+                    </td></tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -562,7 +643,7 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
       <div style={sectionTitle}>Every payout</div>
       <DataTable<CommissionPayout>
         tableId="conts-commission-payouts" exportName="commission-payouts" exportXlsx columns={PAYOUT_COLUMNS} rows={data.payouts}
-        emptyLabel="No commission paid yet. Tick claims under Monthly settlement to pay them." getRowKey={(r) => r.id}
+        emptyLabel="No commission paid yet." getRowKey={(r) => r.id}
       />
     </div>
   );
