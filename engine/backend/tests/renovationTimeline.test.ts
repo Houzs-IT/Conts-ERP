@@ -50,6 +50,18 @@ describe("timeline: system entries in words", () => {
     expect(activityText({ action: "handover_signed", to_value: "Ms Lim" })).toEqual({ title: "Handover signed", body: "Signed by Ms Lim" });
     expect(activityText({ action: "stage_started", from_value: "hacking", to_value: "in_progress" })).toEqual({ title: "Stage started", body: "hacking to in_progress" });
   });
+  test("saved beta actions without a case read as words", () => {
+    expect(activityText({ action: "beta_client_link", note: "Client PO link made, valid until 2026-12-01" })).toEqual({ title: "Client link made", body: "Client PO link made, valid until 2026-12-01" });
+    expect(activityText({ action: "beta_client_read", note: "Opened" })).toEqual({ title: "Client opened the link", body: "Opened" });
+    expect(activityText({ action: "beta_line_warehouse", to_value: "PO-1", note: "A1: received at Main" })).toEqual({ title: "Warehouse received item", body: "PO-1 · A1: received at Main" });
+    expect(activityText({ action: "beta_po_drawing_amended", to_value: "2D V2", note: "PO-1" })).toEqual({ title: "PO amended for a drawing", body: "2D V2 · PO-1" });
+    expect(activityText({ action: "beta_po_drawing_amend_failed", to_value: "2D V2", note: "The PO amendment was not recorded." })).toEqual({ title: "PO amendment not recorded", body: "2D V2 · The PO amendment was not recorded." });
+    expect(activityText({ action: "beta_2d_sheets_uploaded", to_value: "2D V1", note: "Plan, Elevation" })).toEqual({ title: "2D sheets uploaded", body: "2D V1 · Plan, Elevation" });
+    expect(activityText({ action: "beta_3d_links_added", to_value: "3D V1", note: "Living" })).toEqual({ title: "3D links added", body: "3D V1 · Living" });
+  });
+  test("an unknown beta action never shows a leading Beta", () => {
+    expect(activityText({ action: "beta_some_new_thing" }).title).toBe("Some new thing");
+  });
   test("step history and hold flag use the company's step labels", () => {
     const labels = { signed: "Contract signed" };
     expect(flowLogText({ kind: "manual_step", from_value: "design", to_value: "signed", reason: "deposit in" }, labels))

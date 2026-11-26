@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { allowedCompanyIds } from "../scm/lib/companyScope";
 import { getDb } from "../db/client";
+import { activityText } from "../services/renovation/timeline";
 import {
   project_activity,
   project_reads,
@@ -205,7 +206,7 @@ app.get("/", async (c) => {
     .then((r) => r[0]);
 
   return c.json({
-    feed: trimmedRows,
+    feed: trimmedRows.map((row) => ({ ...row, title: activityText(row).title })),
     unread_by_project,
     total_unread,
     has_more: hasMore,
