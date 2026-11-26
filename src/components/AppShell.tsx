@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
-import Sidebar, { LOOKS, sidebarLookKey, useDarkTheme } from './Sidebar';
+import Sidebar, { LOOKS, readWs, sidebarLookKey, useDarkTheme } from './Sidebar';
 import TopBar, { glassColourVars } from './TopBar';
 import PageTabs from './PageTabs';
 import { DemoBand } from './DemoMode';
@@ -65,8 +65,9 @@ export default function AppShell({
   // and takes the keyboard (PageUp/PageDown, arrows, Space) without a click first.
   const mainRef = useRef<HTMLElement>(null);
   useScrollMemory(mainRef, path);
-  // A supply chain screen is Dream Crafter's side: the phone header shows its logo there, as the sidebar does.
-  const dc = workspaceOf(path) === 'supply';
+  // A supply chain screen is Dream Crafter's side: the phone header shows its logo there, as the sidebar does. A screen on
+  // both sides or neither (Settings, My account) keeps the side last picked, as the sidebar does.
+  const dc = (workspaceOf(path) ?? readWs()) === 'supply';
   // Dream Crafter's pages paint the glass backdrop in their frame; painting the same one behind the top bar lets it float
   // over the page as the designs draw it, with no seam where the frame starts.
   const dark = useDarkTheme();

@@ -108,7 +108,8 @@ check('a field role gets no supply chain IT Support', !supply(M.navFor('housekee
 const systemGroups = (role, access) => M.navFor(role, true, access).filter((g) => g.label === 'SYSTEM');
 check('Rental and Dream Crafter each have a SYSTEM group', systemGroups('management').map((g) => g.workspace).join(' ') === 'rental supply', systemGroups('management').map((g) => g.workspace).join(' '));
 check('Category access is in the Dream Crafter System group, next to IT Support, and not in Rental',
-  systemGroups('management').find((g) => g.workspace === 'supply')?.items.map((i) => i.path).join(' ') === '/system/category-access /supply/it-support'
+  ((supplySystem) => supplySystem.indexOf('/supply/it-support') === supplySystem.indexOf('/system/category-access') + 1 && supplySystem.includes('/system/category-access'))(
+    systemGroups('management').find((g) => g.workspace === 'supply')?.items.map((i) => i.path) ?? [])
     && !paths(M.navFor('management', true).filter((g) => g.workspace === 'rental')).includes('/system/category-access'));
 check('Category access keeps the Dream Crafter sidebar and its own breadcrumb', M.workspaceOf('/system/category-access') === 'supply' && M.findNav('/system/category-access')?.item === 'Category access',
   `${M.workspaceOf('/system/category-access')} ${JSON.stringify(M.findNav('/system/category-access'))}`);

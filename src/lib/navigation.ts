@@ -118,6 +118,21 @@ const FINANCE_PART_ICON: Record<string, string> = {
   Collections: 'hand-coins', Bank: 'landmark', Reports: 'chart-line', Setup: 'settings',
 };
 
+/* Users and roles, Settings and System health sit in both sidebars at the same address, so opening one keeps the side
+   the person is on (workspaceOf answers null for them). Integrations is The Conts' only (owner, 26 Nov 2026). */
+const SYSTEM_ADMIN_ITEMS: NavItem[] = [
+  { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
+  { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
+  // My account and Notifications are every person's own, so they carry an area no role is ever denied.
+  { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', tabs: true, children: [
+    ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
+    { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
+    { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
+  ] },
+  { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
+];
+const DREAM_CRAFTER_SYSTEM_ITEMS = SYSTEM_ADMIN_ITEMS.filter(item => item.key !== 'integrations');
+
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
@@ -205,15 +220,7 @@ export const NAV: NavGroup[] = [
     { key: 'mailboxes', label: 'Mailboxes', icon: 'at-sign', path: '/mail/mailboxes', area: 'mail', full: true },
   ] },
   { label: 'SYSTEM', workspace: 'rental', items: [
-    { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
-    { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
-    // My account and Notifications are every person's own, so they carry an area no role is ever denied.
-    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', tabs: true, children: [
-      ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
-      { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
-      { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
-    ] },
-    { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
+    ...SYSTEM_ADMIN_ITEMS,
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
@@ -318,6 +325,7 @@ export const NAV: NavGroup[] = [
   // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
   // Category access sets, per person, which product categories the renovation beta screens show (management only, so Full on Users and roles).
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
+    ...DREAM_CRAFTER_SYSTEM_ITEMS,
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
     { key: 'meetingsSupply', label: 'Meetings', icon: 'calendar-clock', path: '/supply/meetings' },
@@ -442,11 +450,13 @@ const SUPPLY_OFF_MENU: Record<string, [group: string, label: string, area: strin
 /** Which workspace an address belongs to; addresses outside the menu (records, profile) stay where they are. */
 export function workspaceOf(path: string): Workspace | null {
   if (SUPPLY_OFF_MENU[path]) return 'supply';
+  const sides = new Set<Workspace>();
   for (const g of NAV) for (const it of g.items) {
-    if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) return g.workspace;
-    if (it.children?.some(c => c.path === path || (it.tabs && path.startsWith(c.path + '/')))) return g.workspace;
+    if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) sides.add(g.workspace);
+    if (it.children?.some(c => c.path === path || (it.tabs && path.startsWith(c.path + '/')))) sides.add(g.workspace);
   }
-  return null;
+  const [only] = sides;
+  return sides.size === 1 ? only : null;
 }
 
 /** The sub-tabs to draw above a page: its menu item's tabs this person can open (the menu's own rule), when there are
