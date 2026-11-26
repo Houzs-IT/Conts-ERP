@@ -879,6 +879,7 @@ export const ALL_NAV_TABS: NavTab[] = [
     label: "Mail center",
     icon: Mail,
     anyPerm: ["mail_center.read"],
+    badge: "mail-waiting",
   },
 
   // ── Announcements — office-wide notices + read receipts (ported from Hookka).
@@ -1209,7 +1210,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Prop
         onMouseEnter={() => prefetchRoute(to)}
         title={
           tab.badge && badgeCounts[tab.badge] > 0
-            ? `${tab.label} · ${badgeCounts[tab.badge]} awaiting your approval`
+            ? `${tab.label} · ${badgeCounts[tab.badge]} ${tab.badge === "mail-waiting" ? "waiting for your reply" : "awaiting your approval"}`
             : collapsed
               ? tab.label
               : undefined

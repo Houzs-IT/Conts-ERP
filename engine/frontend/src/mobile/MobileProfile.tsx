@@ -19,6 +19,7 @@ import { useAuth } from "../auth/AuthContext";
 // useSystemNoticeUnread was renamed useAnnouncementUnread on main; the body
 // below already calls the new name.
 import { useAnnouncementUnread } from "./useAnnouncementUnread";
+import { useMailWaiting } from "../hooks/useAmendmentApprovals";
 import { useToast } from "../hooks/useToast";
 import { validatePasswordStrength } from "../lib/passwordStrength";
 import {
@@ -222,6 +223,8 @@ export function MobileProfile({ onLogout, orgItems, onOpenOrg }: {
   // Announcements row; the SAME hook badges the Profile bottom tab (MobileApp)
   // so the two agree and share one poll (owner B2 global badge).
   const annUnread = useAnnouncementUnread();
+  // Mail Center threads waiting for the person's reply (Houzs parity: the Mail Center row carries it).
+  const mailWaiting = useMailWaiting();
 
   // Salesperson MTD scoreboard (Orders MTD / Sales MTD) — the caller's OWN
   // sales orders this Malaysia-calendar month, from the SCM backend.
@@ -398,7 +401,7 @@ export function MobileProfile({ onLogout, orgItems, onOpenOrg }: {
             <div className="card" style={{ overflow: "hidden" }}>
               {(orgItems ?? []).map((it, i) => (
                 <Item key={it.to} icon={orgIconOf(it.to)} label={it.label} onClick={() => onOpenOrg(it.to, it.label)} first={i === 0}
-                  badge={it.to === "/announcements" ? annUnread : undefined} />
+                  badge={it.to === "/announcements" ? annUnread : it.to === "/mail-center" ? mailWaiting : undefined} />
               ))}
             </div>
           </>
