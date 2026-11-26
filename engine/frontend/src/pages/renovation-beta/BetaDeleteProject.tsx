@@ -48,7 +48,7 @@ export function DeleteProjectButton({ project, onError }: {
   }
 
   return (
-    <button type="button" onClick={() => void remove()} disabled={busy} style={{ ...btnStyle("danger"), opacity: busy ? 0.6 : 1 }}>
+    <button type="button" onClick={() => void remove()} disabled={busy} style={btnStyle("danger")}>
       <Trash2 size={16} aria-hidden="true" />
       {busy ? "Deleting…" : "Delete project"}
     </button>

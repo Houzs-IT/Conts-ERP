@@ -52,7 +52,7 @@ button[aria-label^="Notifications"]:focus-visible {
   box-shadow: 0 0 0 2px var(--color-gold, #C8A46A) !important;
 }
 /* The Dream Crafter glass: gold is under 3:1 on the light card, so an ink ring there and the design's blue on dark. */
-[data-sidebar][data-look="dcLight"] :is(button, a):not(.menu-sheet button):focus-visible { box-shadow: 0 0 0 2px #111216 !important; }
+[data-sidebar][data-look="dcLight"] :is(button, a):not(.menu-sheet button):focus-visible { box-shadow: 0 0 0 2px #2F6BFF !important; }
 [data-sidebar][data-look="dcDark"] :is(button, a):not(.menu-sheet button):focus-visible { box-shadow: 0 0 0 2px #9FC0FF !important; }
 
 /* The phone menu draws its own press wash, so the grey tap flash would double it. */

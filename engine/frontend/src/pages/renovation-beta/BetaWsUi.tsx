@@ -26,7 +26,7 @@ export const WS = {
   amber: TONES.amber.ink,
   amberDot: TONES.amber.dot,
   /* A solid amber under white text, so it stays the same on both skins. */
-  amberBtn: "#A35C06",
+  amberBtn: BETA.amberFill,
   /* What was blue (information, deliveries, "waiting for the check") is now the neutral dark grey. */
   blue: TONES.grey.ink,
   blueDot: TONES.grey.dot,
@@ -48,8 +48,7 @@ const CSS = `
 .bws *{box-sizing:border-box}
 .bws h1,.bws h2,.bws h3,.bws p,.bws ol,.bws ul,.bws dl,.bws dd{margin:0}
 .bws a{color:${BETA.accent}}
-.bws a:focus-visible,.bws button:focus-visible,.bws input:focus-visible,.bws select:focus-visible,.bws textarea:focus-visible,.bws label:has(input.sr:focus-visible),.bws [role=dialog]:focus-visible{outline:3px solid ${BETA.focus};outline-offset:2px}
-.bws button:disabled{opacity:.55;cursor:not-allowed}
+.bws label:has(input.sr:focus-visible),.bws [role=dialog]:focus-visible{outline:3px solid ${BETA.focus};outline-offset:2px}
 .bws .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .bws .ws-input{min-height:40px;width:100%;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
 .bws .ws-input-sm{min-height:38px;width:100%;min-width:0;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
@@ -101,8 +100,8 @@ const CSS = `
 @keyframes bwsspin{to{--ang:360deg}}
 .bws .tab{transition:color .18s}
 .bws button:not(.tab):not(.link):not(.mo):not(:disabled){transition:transform .18s cubic-bezier(.2,.8,.2,1),filter .18s}
-.bws button:not(.tab):not(.link):not(.mo):not(:disabled):hover{transform:translateY(-1px);filter:brightness(1.05)}
-.bws button:not(.tab):not(.link):not(.mo):not(:disabled):active{transform:translateY(0) scale(.97);filter:none}
+.bws button:not(.tab):not(.link):not(.mo):not(:disabled):hover{transform:translateY(-1px)}
+.bws button:not(.tab):not(.link):not(.mo):not(:disabled):active{transform:translateY(0) scale(.97)}
 .bws .ring{position:absolute;inset:0;border-radius:50%;border:2px solid ${BETA.stepNow};animation:bwsring 2.2s ease-out infinite;pointer-events:none}
 @keyframes bwsring{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.9);opacity:0}}
 }
@@ -195,7 +194,7 @@ export function WsEmpty({ children }: { children: ReactNode }): ReactElement {
 
 /** The mockup's small tag, for example RECORD. */
 export function WsTag({ children }: { children: ReactNode }): ReactElement {
-  return <span style={{ padding: "1px 6px", borderRadius: 4, background: BETA.avatar, color: "#FFFFFF", fontSize: 10, fontWeight: 700, letterSpacing: ".04em" }}>{children}</span>;
+  return <span style={{ padding: "1px 6px", borderRadius: 4, background: BETA.avatar, color: BETA.onFill, fontSize: 10, fontWeight: 700, letterSpacing: ".04em" }}>{children}</span>;
 }
 
 /* ---------- Buttons ---------- */
@@ -213,7 +212,7 @@ export function btnStyle(kind: WsBtnKind, size: WsBtnSize = "md"): CSSProperties
   /* "dark" and "teal" were the filled main buttons; the designs draw every main action as the blue pill. */
   if (kind === "dark" || kind === "teal") return { ...base, ...PILL_MAIN };
   if (kind === "confirm") return { ...base, ...PILL_CONFIRM };
-  if (kind === "amber") return { ...base, border: 0, borderRadius: 999, background: WS.amberBtn, color: "#FFFFFF" };
+  if (kind === "amber") return { ...base, border: 0, borderRadius: 999, background: WS.amberBtn, color: BETA.onFill };
   if (kind === "danger") return { ...base, ...PILL_GLASS, border: `1px solid ${TONES.red.line}`, color: WS.red };
   return { ...base, ...PILL_GLASS };
 }
@@ -297,7 +296,7 @@ export function WsDialog({ title, sub, onClose, children, footer, wide = false }
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        style={{ maxWidth: wide ? 720 : 520, margin: "0 auto", background: BETA.surface, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
+        style={{ maxWidth: wide ? 720 : 520, margin: "0 auto", background: BETA.raised, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
           <div>
@@ -320,11 +319,11 @@ export function WsDialog({ title, sub, onClose, children, footer, wide = false }
 
 export function WsCheck({ size = 14, stroke = 3 }: { size?: number; stroke?: number }): ReactElement {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={stroke} aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={BETA.onFill} strokeWidth={stroke} aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
   );
 }
 
-export function WsAvatar({ text, size = 30, bg = BETA.avatar, color = "#FFFFFF" }: { text: string; size?: number; bg?: string; color?: string }): ReactElement {
+export function WsAvatar({ text, size = 30, bg = BETA.avatar, color = BETA.onFill }: { text: string; size?: number; bg?: string; color?: string }): ReactElement {
   return (
     <span aria-hidden="true" style={{ flex: "none", width: size, height: size, borderRadius: size / 2, background: bg, color, fontSize: size > 28 ? 11 : 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
       {text}

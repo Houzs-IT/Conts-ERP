@@ -139,7 +139,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
                     href={whatsappLink(phone, `Hi ${designer}, about ${p.name}.`)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+                    style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: BETA.onFill, fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
                   >
                     <MessageCircle size={14} aria-hidden="true" />WhatsApp<span className="sr"> {designer}</span>
                   </a>

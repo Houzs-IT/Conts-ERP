@@ -36,16 +36,36 @@ const PAGE_NIGHT = PAGE_GRID + "," + WASH_NIGHT + ",radial-gradient(45% 40% at 1
   + "radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),"
   + "linear-gradient(160deg,#151823 0%,#0D0F16 100%)";
 
+const MUTED_TEXT: Pair = ["#5A5A5A", "#ADB4C5"];
+
 const BASE_TOKENS = {
-  /* Page, text and lines. */
+  /* Page, text and lines. On night each layer is one step lighter: page #151823, card #1C2030, raised #232736. */
   bg: ["#ECEEF3", "#151823"],
   page: [PAGE_VISION, PAGE_NIGHT],
   surface: ["#FFFFFF", "#1C2030"],
+  /* What floats above a card: a dialog, a menu, a popover. */
+  raised: ["#FFFFFF", "#232736"],
+  shadowCard: ["0 1px 2px rgba(17,18,22,.04)", "0 1px 2px rgba(0,0,0,.3)"],
+  shadowCardHover: ["0 2px 8px rgba(17,18,22,.08)", "0 2px 8px rgba(0,0,0,.4)"],
+  shadowPop: ["0 8px 24px rgba(17,18,22,.14)", "0 8px 24px rgba(0,0,0,.5)"],
+  /* A dark wash over a photo or video, under white text; the same on both skins because the picture is. */
+  overlay: ["rgba(17,18,22,.78)", "rgba(17,18,22,.78)"],
+  overlaySoft: ["rgba(17,18,22,.55)", "rgba(17,18,22,.55)"],
+  /* Text on a solid fill (blue, green, amber, the avatar): white on both skins. */
+  onFill: ["#FFFFFF", "#FFFFFF"],
+  amberFill: ["#A35C06", "#A35C06"],
+  /* Hover and press as a filter, not a background: buttons set their background inline, which a stylesheet cannot
+     override. Night needs a stronger step because a dark glass pill barely changes at 1.04. */
+  hoverFilter: ["brightness(1.04)", "brightness(1.2)"],
+  pressFilter: ["brightness(.94)", "brightness(.9)"],
   field: ["rgba(255,255,255,.8)", "rgba(255,255,255,.06)"],
   ink: ["#111216", "#EEF1F8"],
-  muted: ["#5E5E5E", "#ADB4C5"],
+  /* Three text tiers: ink, text2, muted. Each keeps 4.5:1 on the darkest tint it can sit on, pressed rows included;
+     a fourth grey could not both pass and look different, so faint is the same colour as muted. The main app's
+     dcGlass (src/theme.ts) and conts/embed.css carry the same values (docs/audits/dream-crafter-palette-2026-11-25.md). */
+  muted: MUTED_TEXT,
   text2: ["#4A4A4A", "#B9C0D0"],
-  faint: ["#6B6B6B", "#A7AEBF"],
+  faint: MUTED_TEXT,
   line: ["rgba(10,10,10,.1)", "rgba(150,175,255,.18)"],
   lineSoft: ["rgba(10,10,10,.07)", "rgba(150,175,255,.11)"],
   border: ["rgba(10,10,10,.5)", "rgba(150,175,255,.6)"],
@@ -94,9 +114,11 @@ const BASE_TOKENS = {
     "inset 0 1px 1px rgba(255,255,255,.22),0 0 0 1px rgba(170,140,255,.35),0 0 18px -4px rgba(150,110,255,.45),0 10px 20px -10px rgba(0,0,0,.6)",
   ],
   btnEdge: ["rgba(255,255,255,.7)", "rgba(150,175,255,.24)"],
-  /* The glass pill sits on a white card, so a white edge made it vanish: it gets a slate edge in the light skin. */
-  btnGlassEdge: ["rgba(55,70,125,.65)", "rgba(150,175,255,.24)"],
-  /* The project stepper: the track, a step not reached yet, the step in progress and a step done. */
+  /* The glass pill sits on a white card, so a white edge made it vanish: it gets a slate edge in the light skin. On
+     night it takes the control edge (border), 3:1 on the card, so it reads as a button and not as a tint. */
+  btnGlassEdge: ["rgba(55,70,125,.65)", "rgba(150,175,255,.6)"],
+  /* The project stepper: the track, a step not reached yet, the step in progress and a step done. The track is
+     decoration (each step's dot has a 3:1 edge and a number), so it stays pale. */
   stepTrack: ["#D5D9E3", "#3A4055"],
   stepNext: ["linear-gradient(180deg,rgba(255,255,255,.9),rgba(240,244,250,.55))", "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.04))"],
   stepNextShadow: [
@@ -122,7 +144,7 @@ const TONE_TOKENS = {
   accent: { ink: ["#0F5F58", "#7BE8D8"], soft: ["#DCF0ED", "rgba(40,200,180,.16)"], strong: ["#C8E8E3", "rgba(40,200,180,.26)"], dot: ["#1A7A72", "#2CC9B4"], line: ["#A9D2CC", "rgba(40,200,180,.4)"] },
   amber: { ink: ["#7A4F00", "#F7CD73"], soft: ["#F8EED9", "rgba(245,190,80,.16)"], strong: ["#F3E2BC", "rgba(245,190,80,.26)"], dot: ["#B07A1A", "#F2B84B"], line: ["#EBD3A0", "rgba(245,190,80,.4)"] },
   red: { ink: ["#962D25", "#FF9B90"], soft: ["#F6E3E0", "rgba(255,110,100,.16)"], strong: ["#F1D0CB", "rgba(255,110,100,.26)"], dot: ["#A3322A", "#FF6E64"], line: ["#E3AEA9", "rgba(255,110,100,.4)"] },
-  grey: { ink: ["#4A4A4A", "#B9C0D0"], soft: ["#F0F0F0", "rgba(255,255,255,.07)"], strong: ["#E3E3E3", "rgba(255,255,255,.12)"], dot: ["#8E8E8E", "#7E869A"], line: ["#C9CED8", "rgba(150,175,255,.28)"] },
+  grey: { ink: ["#4A4A4A", "#B9C0D0"], soft: ["#F0F0F0", "rgba(255,255,255,.07)"], strong: ["#E3E3E3", "rgba(255,255,255,.12)"], dot: ["#7A7A7A", "#7E869A"], line: ["#C9CED8", "rgba(150,175,255,.28)"] },
   blue: { ink: ["#303030", "#DDE2EE"], soft: ["#E6EDFF", "rgba(80,130,255,.18)"], strong: ["#D3E0FF", "rgba(80,130,255,.28)"], dot: ["#111216", "#EEF1F8"], line: ["#B9CCFF", "rgba(80,130,255,.4)"] },
 } as const satisfies Record<string, Record<string, Pair>>;
 
@@ -185,6 +207,10 @@ html[data-beta-skin="night"]{${rows(1)}}
 html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page);background-attachment:fixed}
 html.beta-page[data-beta-skin="night"]{color-scheme:dark}
 html.beta-page option{background:var(--beta-surface);color:var(--beta-ink)}
+html.beta-page :is(a,button,input,select,textarea,summary,[role=button],[tabindex]:not([tabindex="-1"])):focus-visible{outline:3px solid var(--beta-focus);outline-offset:2px}
+html.beta-page :is(button,[role=button]):not(:disabled,[aria-disabled=true]):hover{filter:var(--beta-hoverFilter)}
+html.beta-page :is(button,[role=button]):not(:disabled,[aria-disabled=true]):active{filter:var(--beta-pressFilter)}
+html.beta-page :is(button,input,select,textarea):disabled,html.beta-page [aria-disabled=true]{opacity:.45;cursor:not-allowed}
 @media (pointer:coarse){html.beta-page :is(input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=color]),select,textarea){font-size:16px!important}}
 html.beta-page[data-beta-skin="night"] .skeleton{background:linear-gradient(90deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.11) 50%,rgba(255,255,255,.05) 100%);background-size:800px 100%}
 @media (prefers-reduced-motion:no-preference){.stag>*{animation:bwsin .34s cubic-bezier(.2,.8,.2,1) both}@keyframes bwsin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.stag>*:nth-child(1){animation-delay:0ms}.stag>*:nth-child(2){animation-delay:45ms}.stag>*:nth-child(3){animation-delay:90ms}.stag>*:nth-child(4){animation-delay:135ms}.stag>*:nth-child(5){animation-delay:180ms}.stag>*:nth-child(6){animation-delay:225ms}.stag>*:nth-child(7){animation-delay:270ms}.stag>*:nth-child(8){animation-delay:315ms}.stag>*:nth-child(9){animation-delay:360ms}.stag>*:nth-child(10){animation-delay:405ms}.stag>*:nth-child(11){animation-delay:450ms}.stag>*:nth-child(12){animation-delay:495ms}}`;

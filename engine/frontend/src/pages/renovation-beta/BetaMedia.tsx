@@ -74,14 +74,14 @@ export function durationText(s: number | null | undefined): string | null {
 }
 
 const labelChip: CSSProperties = {
-  position: "absolute", left: 6, top: 6, padding: "1px 7px", borderRadius: 8, background: "rgba(23,32,31,.78)", color: "#FFFFFF",
+  position: "absolute", left: 6, top: 6, padding: "1px 7px", borderRadius: 8, background: BETA.overlay, color: BETA.onFill,
   fontSize: 11, fontWeight: 700, letterSpacing: ".02em", pointerEvents: "none",
   maxWidth: "calc(100% - 12px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
 };
 
 function labelTone(label: string): string {
   if (/^after/i.test(label)) return BETA.accentFill;
-  return "rgba(23,32,31,.78)";
+  return BETA.overlay;
 }
 
 /** One tile filling its box: a photo, a video's play tile, or a plain tile for anything else or a file that failed. */
@@ -101,7 +101,7 @@ export function MediaTile({ item, onClick, overlay, showLabel = true }: { item: 
         <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 20, background: "rgba(255,255,255,.92)", color: VIDEO_BG }}>
           <Play size={18} fill="currentColor" />
         </span>
-        {d && <span style={{ position: "absolute", right: 6, bottom: 6, padding: "1px 6px", borderRadius: 6, background: "rgba(0,0,0,.6)", color: "#FFFFFF", fontSize: 11, fontWeight: 600 }}>{d}</span>}
+        {d && <span style={{ position: "absolute", right: 6, bottom: 6, padding: "1px 6px", borderRadius: 6, background: BETA.overlay, color: BETA.onFill, fontSize: 11, fontWeight: 600 }}>{d}</span>}
       </span>
     );
   } else {
@@ -120,7 +120,7 @@ export function MediaTile({ item, onClick, overlay, showLabel = true }: { item: 
       {inner}
       {showLabel && item.label && <span style={{ ...labelChip, background: labelTone(item.label) }}>{item.label}</span>}
       {overlay && (
-        <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(23,32,31,.55)", color: "#FFFFFF", fontSize: 22, fontWeight: 700 }}>{overlay}</span>
+        <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: BETA.overlaySoft, color: BETA.onFill, fontSize: 22, fontWeight: 700 }}>{overlay}</span>
       )}
     </>
   );
@@ -337,7 +337,7 @@ export function PickedTile({ item, onRemove }: { item: MediaItem; onRemove?: () 
         : <span style={{ display: "flex", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", color: "#FFFFFF" }}><Play size={20} fill="currentColor" aria-hidden="true" /><span className="sr">Video {item.name}</span></span>}
       {onRemove && (
         <button type="button" onClick={onRemove} aria-label={`Remove ${item.name}`}
-          style={{ position: "absolute", right: 4, top: 4, width: 26, height: 26, borderRadius: 13, border: 0, background: "rgba(23,32,31,.8)", color: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          style={{ position: "absolute", right: 4, top: 4, width: 26, height: 26, borderRadius: 13, border: 0, background: BETA.overlay, color: BETA.onFill, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <X size={14} />
         </button>
       )}

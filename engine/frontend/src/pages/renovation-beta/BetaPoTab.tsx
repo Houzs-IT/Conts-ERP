@@ -378,7 +378,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <div aria-hidden="true" style={{
           position: "fixed", left: ghostAt.x + 14, top: ghostAt.y - 14, zIndex: 1000, pointerEvents: "none",
           background: BETA.surface, border: `1px solid ${BETA.accent}`, borderRadius: 8, padding: "6px 10px",
-          boxShadow: "0 6px 18px rgba(0,0,0,.18)", fontSize: 13, fontWeight: 600, color: BETA.accentInk, maxWidth: 320,
+          boxShadow: BETA.shadowPop, fontSize: 13, fontWeight: 600, color: BETA.accentInk, maxWidth: 320,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 6,
         }}>
           <GripVertical size={14} aria-hidden="true" />{dragItem.label}
