@@ -11,6 +11,7 @@ test('a property maps to the fill, edge or ink role, and others to none', () => 
   assert.equal(roleOf('border-bottom'), 'edge');
   assert.equal(roleOf('borderLeftColor'), 'edge');
   assert.equal(roleOf('color'), 'ink');
+  assert.equal(roleOf('scrollbar-color'), 'edge');
   assert.equal(roleOf('box-shadow'), null);
 });
 
@@ -18,6 +19,11 @@ test('a css card swaps its fill, edge and ink for tokens', () => {
   const result = transformCss('.card { background: #fff; border: 1px solid #d6d9d2; color: #11140f; }');
   assert.equal(result.text, '.card { background: rgb(var(--eng-surface)); border: 1px solid rgb(var(--eng-border)); color: rgb(var(--eng-ink)); }');
   assert.equal(result.swaps, 3);
+});
+
+test('a chosen pill (near-black fill, pale text) flips as a pair through the chosen-pill variables', () => {
+  const source = "const pill = <button style={{ border: '1px solid #11140f', background: '#11140f', color: '#f4f6f3' }} />;";
+  assert.equal(transformTsx(source).text, "const pill = <button style={{ border: '1px solid var(--badge-pill-chosen-line, #11140f)', background: 'var(--badge-pill-chosen-bg, #11140f)', color: 'var(--badge-pill-chosen-fg, #f4f6f3)' }} />;");
 });
 
 test('white text and a petrol fill stay as they are, since night would split the pair', () => {

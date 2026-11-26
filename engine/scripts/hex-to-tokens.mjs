@@ -22,18 +22,21 @@ const TOKEN_BY_ROLE = {
   fill: {
     ffffff: 'rgb(var(--eng-surface))', f4f6f3: 'rgb(var(--eng-surface-2))', e3e6e0: 'rgb(var(--eng-surface-dim))',
     eef0ec: 'rgb(var(--eng-bg))', e1efed: 'rgb(var(--eng-primary-soft))',
+    '11140f': 'var(--badge-pill-chosen-bg, #11140f)',
   },
   edge: {
     d6d9d2: 'rgb(var(--eng-border))', e3e6e0: 'rgb(var(--eng-border-subtle))', c2c6bd: 'rgb(var(--eng-border-strong))',
     '0c3f39': 'rgb(var(--eng-primary-ink))', '16695f': 'var(--c-orange)',
+    '11140f': 'var(--badge-pill-chosen-line, #11140f)',
   },
   ink: {
     '11140f': 'rgb(var(--eng-ink))', '414539': 'rgb(var(--eng-ink-secondary))', '767b6e': 'var(--fg-muted)',
     '9aa093': 'var(--fg-soft)', '0c3f39': 'rgb(var(--eng-primary-ink))', '16695f': 'var(--c-orange)',
     b8331f: 'var(--c-festive-b)', '2f5d4f': 'var(--c-secondary-a)',
+    f4f6f3: 'var(--badge-pill-chosen-fg, #f4f6f3)',
   },
 };
-const EDGE_PROPERTY = /^(border(-(top|right|bottom|left))?(-color)?|outline(-color)?)$/;
+const EDGE_PROPERTY = /^(border(-(top|right|bottom|left))?(-color)?|outline(-color)?|scrollbar-color)$/;
 const HEX_IN_VALUE = /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-zA-Z_-])/g;
 const LIGHT_LUMINANCE = 0.5;
 const DARK_LUMINANCE = 0.2;
@@ -63,6 +66,11 @@ export function assertTokensMatchLight() {
     if (channels) {
       const triple = new RegExp(`${channels[1]}:\\s*(\\d+) (\\d+) (\\d+);`).exec(engineRoot);
       return triple ? triple.slice(1).map((channel) => Number(channel).toString(16).padStart(2, '0')).join('') : null;
+    }
+    const withFallback = /^var\((--[a-z0-9-]+), #([0-9a-fA-F]{6})\)$/.exec(token);
+    if (withFallback) {
+      const isDefinedInLight = new RegExp(`${withFallback[1]}:`).test(engineRoot + designTokens);
+      return isDefinedInLight ? null : normaliseHex(withFallback[2]);
     }
     const name = /^var\((--[a-z0-9-]+)\)$/.exec(token)?.[1];
     return name ? normaliseHex(new RegExp(`${name}:\\s*#([0-9a-fA-F]{6})`).exec(designTokens)?.[1] ?? '') : null;

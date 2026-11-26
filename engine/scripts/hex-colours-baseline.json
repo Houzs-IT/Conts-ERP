@@ -1,5 +1,5 @@
 {
-  "total": 4349,
+  "total": 4255,
   "files": {
     "src/auth/AuthScreens.tsx": 3,
     "src/components/AmbientSnow.tsx": 2,
@@ -245,8 +245,8 @@
     "src/pages/scm-v2/StockClose.tsx": 5,
     "src/pages/scm-v2/StockTakeDetail.tsx": 6,
     "src/pages/scm-v2/StockTransferNew.tsx": 7,
-    "src/pages/scm-v2/SupplierDetail.module.css": 55,
-    "src/pages/scm-v2/SupplierDetail.tsx": 60,
+    "src/pages/scm-v2/SupplierDetail.module.css": 12,
+    "src/pages/scm-v2/SupplierDetail.tsx": 9,
     "src/pages/scm-v2/SupplierPriceRefresh.tsx": 7,
     "src/pages/scm-v2/Suppliers.module.css": 3,
     "src/pages/scm-v2/Trips.tsx": 1,
