@@ -60,7 +60,7 @@ describe('billing outside cleaning jobs', () => {
     expect(invoice.invoiceNo).toMatch(/SI-\d{4}-\d{3}$/);
     expect(invoice.lines.map((l: any) => [l.taskIds, l.amountSen])).toEqual([[['t-1'], 35_000], [['t-2'], 13_000]]);
     expect(invoice.lump).toBe(false);
-    expect((sb.tables.sales_invoices as Row[])[0]).toMatchObject({ debtor_code: '300-C002', ref: 'CLEANING', created_by: YJ.userId });
+    expect((sb.tables.sales_invoices as Row[])[0]).toMatchObject({ debtor_code: '300-C002', ref: 'CLEANING', created_by: '00000000-0000-4000-8000-000000000001' });
     expect(lines(sb).sort((a, b) => a.code.localeCompare(b.code))).toEqual([{ code: '300-0000', dr: 48_000, cr: 0 }, { code: '570-0000', dr: 0, cr: 48_000 }]);
   });
 
