@@ -267,6 +267,11 @@ export const PROMPTS = [
     description: 'Find a reservation by its reference or a guest, unit or owner by name, and summarise it.',
     arguments: [{ name: 'query', description: 'a reservation reference, guest name or phone, unit or owner', required: true }],
   },
+  {
+    name: 'daily-brief', title: 'What do I need to look at today?',
+    description: 'Your tasks, approvals, deliveries, purchase orders and repairs that are overdue or due soon, and what else is waiting for you.',
+    arguments: [],
+  },
 ];
 
 /** The message a prompt expands to (prompts/get). Unknown name -> null. */
@@ -281,6 +286,9 @@ export function promptText(name: string, a: Record<string, unknown>): string | n
   }
   if (name === 'find_reservation') {
     return `Find "${v('query')}" with search, open the best match with fetch, and summarise it: dates, unit, guest, channel, status and amounts. Give the ERP link.`;
+  }
+  if (name === 'daily-brief') {
+    return 'What do I need to look at today? Use daily_brief. Start with what is overdue, then what is due soon, then the rest. For each section give the count and the items with their links. If something is not available to my account, say so in one line. Short.';
   }
   return null;
 }

@@ -19,6 +19,12 @@
  * Quick answers (business_summary, reservations_summary, today_summary; functions/_lib/mcpQuick.ts) answer the commonest
  * questions in one call of a few hundred characters, from the same endpoints the Dashboard and Reservations list read,
  * through the same readValue as erp_get. search + fetch are the pair ChatGPT requires.
+ *
+ * Round 3 (owner, 26 Nov 2026; mcpMoreTools.ts): occupancy_summary, arrears_summary, owner_statement_summary,
+ * attendance_today, daily_brief (+ the daily-brief prompt) and export_excel (.xlsx through the get_pdf signed link).
+ * Rate limit per person on tools/call only: 30 a minute, 600 a day, counted from mcp_calls (limitVerdict); over it the
+ * AI app gets a normal tool result with isError, never a 500. The admin leak check reads through readEndpoint, never
+ * callTool, so it is not counted or limited.
  */
 import { type Env } from './db';
 import { MCP_INNER_HEADER, mcpInnerSecret } from './mcpInner';
@@ -28,7 +34,9 @@ import { dispatchGet } from './mcpDispatch';
 import { apiRoutes } from './apiRoutes.generated';
 import { originOf } from './mcpDiscovery';
 import { ACTION_TOOLS, runActionTool } from './mcpActionTools';
-import { actionsEnabled, mcpActionsReady } from './mcpStore';
+import { actionsEnabled, mcpActionsReady, recentCallCounts } from './mcpStore';
+import { MORE_TOOLS, runMoreTool } from './mcpMoreTools';
+import { RATE_LIMITED_STATUS, limitVerdict, todayStays } from './mcpMore';
 import {
   FETCH_SPECS, PROMPTS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
   searchResults, summariseReservations, summariseBusiness, summariseToday, validRange,
@@ -39,7 +47,7 @@ export { originOf };
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 /** erp_get's cap. Was 60k; quick answers and `fields` make most replies far smaller. */
 export const MAX_RESULT_CHARS = 30_000;
-const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.2.0' };
+const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.3.0' };
 
 /** The GET routes as list_modules and list_endpoints show them. */
 export const mcpRouteInfo = (): RouteInfo[] => apiRoutes().map(r => ({ method: r.method, path: r.path }));
@@ -54,8 +62,11 @@ Document chains: document_flow {number_or_id} (a reservation's invoice, receipts
 ANSWER FAST: use a quick answer first. It is one call and already summarised:
 - Occupancy, reservation income, average nightly price, earnings per available night, income per unit, owner payout estimate, split by channel, against last month: business_summary {month: "YYYY-MM"} (default this month).
 - Reservations for a period (how many, nights, guest total, fees, expected payout, still owed, by channel and status, direct guests still owing, host payouts outstanding): reservations_summary {from, to} (default this month).
-- Today (check-ins, checkouts, cleaning pending, open repairs, unread guest messages, what needs someone now): today_summary.
+- Today (check-ins and checkouts with guest names, cleaning pending, open repairs, unread guest messages, what needs someone now): today_summary.
 - A reservation by reference, or a guest, unit, building, owner, job or bill by name or phone: search {query}, then fetch {id} for the full record.
+- "What do I need to look at today?": daily_brief.
+- Occupancy by building and unit: occupancy_summary {month}. Money owed to us (guests, customers): arrears_summary. Owner statements for a month: owner_statement_summary {month}. What we owe suppliers and contractors: payables_summary. Who is on leave or not in today (HR only): attendance_today.
+- A list as an Excel file: export_excel {list, filters, from, to, fields}; give the person the link it returns.
 Only when no quick answer fits: list_modules, then list_endpoints for a module, then erp_get. With erp_get pass "fields" (only the keys you need) and query parameters (from / to dates, page / pageSize, q or search, status) to keep replies small.
 Quick answers give money in RM. In erp_get replies money is in sen (RM x 100) where a field ends in Sen or is an amount. Dates are YYYY-MM-DD, Malaysia time.
 If a call says "not available to your role" or names a missing access, tell the person their account does not have access to that data.`;
@@ -81,7 +92,7 @@ const TOOLS = [
   },
   {
     name: 'today_summary', title: 'Today (quick answer)',
-    description: "Today's check-ins, checkouts, cleaning pending, open maintenance jobs and unread guest messages, and the Dashboard's list of what needs someone now, in ONE call.",
+    description: "Today's check-ins and checkouts (counts and who: guest, unit, channel, link), cleaning pending, open maintenance jobs and unread guest messages, and the Dashboard's list of what needs someone now, in ONE call.",
     inputSchema: NO_ARGS, annotations: RO,
   },
   { name: 'whoami', title: 'Who am I connected as', description: 'The ERP account this connection uses.', inputSchema: NO_ARGS, annotations: RO },
@@ -107,6 +118,7 @@ const TOOLS = [
     },
     annotations: RO,
   },
+  ...MORE_TOOLS,
   ...ACTION_TOOLS,
   {
     name: 'search', title: 'Search the ERP',
@@ -121,6 +133,9 @@ const TOOLS = [
     annotations: RO,
   },
 ];
+
+/** Tool names and titles, for the admin page's list. */
+export const MCP_TOOL_NAMES = TOOLS.map(t => ({ name: t.name, title: t.title }));
 
 export interface ReadResult { result: ToolResult; status: number; note: string; target: string; body: unknown; removed: string[] }
 
@@ -183,20 +198,33 @@ function quickResult(summary: () => unknown, needed: ReadValue[]): { result: Too
   return { result: text(JSON.stringify(summary())), status: 200, note: '' };
 }
 
+/** Tool calls already made in this request (a JSON-RPC batch), per identity object (one per request). */
+const calledInRequest = new WeakMap<McpIdentity, number>();
+
 async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, id: McpIdentity, token: string, name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const t0 = Date.now();
   let status = 200, note = '', target = '';
   let result: ToolResult;
   const read = (path: string, q?: Record<string, unknown>) => readValue(request, env, waitUntil, token, path, q);
   try {
-    const acted = await runActionTool(name, args, { request, env, waitUntil, id, token, origin: originOf(request), read });
-    if (acted) {
+    const ctx = { request, env, waitUntil, id, token, origin: originOf(request), read };
+    // Counts read at the door with the token (one query), plus the calls this same request already made (a batch);
+    // without them, one count query. A failed count lets the call through: the limit never breaks a lookup.
+    const base = id.recent ?? await recentCallCounts(env, id.user.id).catch(() => ({ minute: 0, day: 0 }));
+    const over = limitVerdict({ minute: base.minute + (calledInRequest.get(id) ?? 0), day: base.day + (calledInRequest.get(id) ?? 0) });
+    calledInRequest.set(id, (calledInRequest.get(id) ?? 0) + 1);
+    const acted = over ? null : (await runMoreTool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
+    if (over) {
+      result = text(over, true);
+      status = RATE_LIMITED_STATUS;
+      note = over.startsWith('Daily') ? 'daily limit' : 'rate limited';
+    } else if (acted) {
       ({ result, status, note, target } = acted);
     } else if (name === 'whoami') {
       const actions = (await mcpActionsReady(env)) && (await actionsEnabled(env));
       result = text(JSON.stringify({ name: id.user.fullName, email: id.user.email, readOnly: !actions, actions: actions ? 'meetings and email, each confirmed by you first' : 'off' }));
     } else if (name === 'list_modules') {
-      result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Try a quick answer first (business_summary, reservations_summary, today_summary, search). Else call list_endpoints with a prefix, then erp_get with "fields". A module your account cannot open answers "not available to your role".' }));
+      result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Try a quick answer first (business_summary, reservations_summary, today_summary, occupancy_summary, arrears_summary, owner_statement_summary, attendance_today, payables_summary, daily_brief, search). Else call list_endpoints with a prefix, then erp_get with "fields". A module your account cannot open answers "not available to your role".' }));
     } else if (name === 'list_endpoints') {
       const prefix = String(args.prefix ?? '');
       target = prefix.slice(0, 300);
@@ -228,8 +256,16 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
       }
     } else if (name === 'today_summary') {
       target = 'today';
-      const [t, ex] = await Promise.all([read('/api/dashboard/today'), read('/api/dashboard/exceptions')]);
-      ({ result, status, note } = quickResult(() => summariseToday(t.ok ? t.value : null, ex.ok ? ex.value : null), [t]));
+      // The counts, what needs someone, and who arrives and leaves today (the Reservations list's to-do cards), together.
+      const [t, ex, inn, out] = await Promise.all([
+        read('/api/dashboard/today'), read('/api/dashboard/exceptions'),
+        read('/api/reservations', { todo: 'arriving', size: 25 }), read('/api/reservations', { todo: 'departing', size: 25 }),
+      ]);
+      ({ result, status, note } = quickResult(() => ({
+        ...summariseToday(t.ok ? t.value : null, ex.ok ? ex.value : null),
+        ...(inn.ok ? { checkInsToday: todayStays(originOf(request), inn.value) } : {}),
+        ...(out.ok ? { checkOutsToday: todayStays(originOf(request), out.value) } : {}),
+      }), [t]));
     } else if (name === 'search') {
       const q = String(args.query ?? args.q ?? '').trim().slice(0, 60);
       target = `search:${q}`;

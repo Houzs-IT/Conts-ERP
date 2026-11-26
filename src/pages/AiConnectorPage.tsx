@@ -16,6 +16,8 @@ type Person = { userId: string; name: string; position: string };
 type Overview = {
   connectorUrl: string;
   actions?: { ready: boolean; enabled: boolean };
+  limits?: { perMinute: number; perDay: number };
+  tools?: { name: string; title: string }[];
   stats: { connectedPeople: number; callsToday: number; refusedToday: number; waiting: number };
   requests: (Person & { id: string; reason: string; createdAt: string | null })[];
   connected: (Person & { tokenId: string; app: string; connectedAt: string | null; lastUsedAt: string | null })[];
@@ -248,6 +250,17 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
           </div>
         )}
       </Section>
+
+      {ov.limits && (
+        <Section title="Limits" sub="Fixed for everyone; the admin leak check is not counted.">
+          <p className="m-0 text-copy text-ink">
+            Each person can make up to {ov.limits.perMinute} lookups a minute and {ov.limits.perDay} a day. Over that, their AI app is told to wait a minute, or that the daily limit is reached, until it frees up.
+          </p>
+          {ov.tools && ov.tools.length > 0 && (
+            <p className="m-0 text-meta text-muted-ink">What a connected AI app can use: {ov.tools.map(t => t.title).join(' · ')}.</p>
+          )}
+        </Section>
+      )}
 
       <LeakCheck people={ov.allowed} />
 
