@@ -22,5 +22,6 @@ test('every language words the reno review status and the reno hand-in note', as
     const text = STRINGS[lang];
     assert.ok(text.receipts.status.RENO_REVIEW, `${lang} status`);
     assert.ok(text.claimPay.renoSent, `${lang} renoSent`);
+    assert.ok(text.receipts.requestStatus.RENO_REVIEW, `${lang} request status`);
   }
 });

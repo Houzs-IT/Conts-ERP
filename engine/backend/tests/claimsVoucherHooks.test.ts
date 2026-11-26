@@ -75,6 +75,7 @@ describe('a request', () => {
     expect(requestStatus(10000, 4000, 'SUBMITTED')).toBe('PART_PAID');
     expect(requestStatus(10000, 10000, 'PART_PAID')).toBe('PAID');
     expect(requestStatus(10000, 4000, 'CLOSED')).toBe('CLOSED');
+    expect(requestStatus(10000, 0, 'RENO_REVIEW')).toBe('RENO_REVIEW');
     expect([...requestReservation([{ projectId: 7, amountSen: 10000 }, { projectId: null, amountSen: 500 }], [{ projectId: 7, amountSen: 4000 }])]).toEqual([[7, 6000]]);
     expect([...requestReservation([{ projectId: 7, amountSen: 4000 }], [{ projectId: 7, amountSen: 4000 }])]).toEqual([]);
   });
