@@ -1,5 +1,5 @@
 {
-  "total": 4255,
+  "total": 4254,
   "files": {
     "src/auth/AuthScreens.tsx": 3,
     "src/components/AmbientSnow.tsx": 2,
@@ -212,7 +212,7 @@
     "src/pages/scm-v2/ProductModels.tsx": 53,
     "src/pages/scm-v2/ProductPriceTimeline.tsx": 13,
     "src/pages/scm-v2/Products.module.css": 86,
-    "src/pages/scm-v2/Products.tsx": 144,
+    "src/pages/scm-v2/Products.tsx": 143,
     "src/pages/scm-v2/products/SkuEditRow.tsx": 6,
     "src/pages/scm-v2/products/SkuImportPreview.tsx": 4,
     "src/pages/scm-v2/PurchaseInvoiceNew.tsx": 3,

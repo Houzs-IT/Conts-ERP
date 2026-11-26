@@ -280,15 +280,19 @@ html.conts-embedded[data-beta-skin="night"] {
 }
 
 /* Night fields sit a step below the card with a 3.6:1 edge, as on the main app's Dream Crafter pages, so they read as
-   "type here"; read-only and disabled ones keep the raised fill, so the two never look alike. */
+   "type here"; read-only and disabled ones keep the raised fill, so the two never look alike. Their text takes the night inks
+   too, since a field class written with a dark ink would otherwise put dark text on the dark fill. */
 html.conts-embedded[data-beta-skin="night"] :is(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color]), select, textarea) {
   background-color: #151823;
   border-color: #6576AC;
+  color: #EEF1F8;
 }
 html.conts-embedded[data-beta-skin="night"] :is(input, select, textarea):is([readonly], :disabled) {
   background-color: #232736;
   border-color: #323A55;
+  color: #B9C0D0;
 }
+html.conts-embedded[data-beta-skin="night"] :is(input, textarea)::placeholder { color: #ADB4C5; }
 /* The engine's own field classes (.fieldInput, DateField's box) read these, so the box a DateField draws around its
    text matches the sunken input inside it instead of framing a dark strip in a lighter box. */
 html.conts-embedded[data-beta-skin="night"] {

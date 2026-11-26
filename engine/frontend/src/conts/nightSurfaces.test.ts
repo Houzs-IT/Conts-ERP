@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const SRC = resolve(__dirname, "..");
@@ -92,6 +93,41 @@ describe("night surfaces the engine paints with fixed light colours", () => {
     const lowInks = ["--ink", "--ink2", "--mut", "--brand", "--green", "--amber", "--red"]
       .filter((name) => contrastOnCard(nightOf(name) ?? "#000000") < 4.5);
     expect(lowInks).toEqual([]);
+  });
+
+  it("night fields take light text, a muted read-only text and a muted placeholder", () => {
+    const fieldRule = /:is\(input:not\([^{]+\{([^}]*)\}/.exec(embedCss)?.[1] ?? "";
+    const lockedRule = /:is\(input, select, textarea\):is\(\[readonly\], :disabled\) \{([^}]*)\}/.exec(embedCss)?.[1] ?? "";
+    const textColourIn = (rule: string): string | undefined => /(?<![-\w])color:\s*(#[0-9A-F]{6})/i.exec(rule)?.[1];
+    expect(textColourIn(fieldRule)).toBe("#EEF1F8");
+    expect(textColourIn(lockedRule)).toBe("#B9C0D0");
+    expect(embedCss).toMatch(/:is\(input, textarea\)::placeholder \{ color: #ADB4C5; \}/);
+  });
+
+  it("no field outside the light-only phone app sets an inline fixed light fill or dark text, which night would not reach", () => {
+    const listTsx = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) return name === "mobile" ? [] : listTsx(path);
+      return /\.tsx$/.test(name) && !/\.test\./.test(name) ? [path] : [];
+    });
+    const offenders: string[] = [];
+    for (const file of listTsx(SRC)) {
+      const text = readFileSync(file, "utf8");
+      if (!/<(input|select|textarea)\b/.test(text)) continue;
+      const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const visit = (node: ts.Node): void => {
+        if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && ["input", "select", "textarea"].includes(node.tagName.getText())) {
+          const style = node.attributes.properties.find((attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText() === "style");
+          const styleText = style ? style.getText() : "";
+          const fixedFill = /background(Color)?:\s*[^,}\n]*?(?<!, )'(#fff|#ffffff|white|#f4f6f3|#fef3c7)'/.test(styleText);
+          const fixedInk = /\bcolor:\s*'#11140f'/.test(styleText);
+          if (fixedFill || fixedInk) offenders.push(`${relative(SRC, file)}:${sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1}`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sourceFile);
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("statement and ledger errors use the night error ink and the account range fields get an edge", () => {
