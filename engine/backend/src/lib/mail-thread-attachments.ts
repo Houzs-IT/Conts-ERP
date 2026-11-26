@@ -44,6 +44,7 @@ async function loadThreadAttachmentSummaries(
     )
     .bind(...threadIds, THREAD_ATTACHMENT_PREVIEW_LIMIT)
     .all<RankedAttachmentRow>();
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- kept as Houzs has it: a driver that returns no rows array must read as no files
   for (const row of result.results ?? []) {
     const summary = summaries.get(row.thread_id) ?? {
       hasAttachment: true,
