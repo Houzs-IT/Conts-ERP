@@ -89,6 +89,8 @@ export default function MobileTabBar({ path, navigate, dreamCrafter = false }: {
 
 /** Everyone has My account, so the Settings hub is always offered. */
 const SETTINGS_ROW: NavItem = { key: 'settingsHub', label: 'Settings', icon: 'settings', path: '/settings' };
+/** The System entries that keep their own row on a phone, on either side; the rest open from the Settings hub. */
+const PHONE_SYSTEM_ROWS = ['itSupport', 'meetings', 'itSupportSupply', 'meetingsSupply', 'categoryAccess'];
 
 /** `keys`: the sub-tabs a tabbed entry's row stands for, so the row is lit on any of them. */
 type MenuRow = { key: string; label: string; icon: string; path: string; count: number; keys?: string[] };
@@ -119,7 +121,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
     .filter(g => g.items.length > 0)
     // The Settings hub (/settings) holds the account and every system page on a phone (MobileSettingsHub); it is a row
     // here, since the tab bar has room only for the four main screens and Menu (owner, 12 Nov 2026).
-    .map(g => g.workspace === 'rental' && g.label === 'SYSTEM' ? { ...g, label: 'SETTINGS AND SUPPORT', items: [SETTINGS_ROW, ...g.items.filter(it => it.key === 'itSupport' || it.key === 'meetings')] } : g),
+    .map(g => g.label === 'SYSTEM' ? { ...g, label: 'SETTINGS AND SUPPORT', items: [SETTINGS_ROW, ...g.items.filter(it => PHONE_SYSTEM_ROWS.includes(it.key))] } : g),
   [user, engine.data?.enabled, counts?.approvalsOn]);
   // Highlights the row a record or sub-page belongs to, the same rule as the desk sidebar.
   const current = useMemo(() => activeKey(all, path), [all, path]);

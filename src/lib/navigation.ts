@@ -118,6 +118,23 @@ const FINANCE_PART_ICON: Record<string, string> = {
   Collections: 'hand-coins', Bank: 'landmark', Reports: 'chart-line', Setup: 'settings',
 };
 
+/* Company-wide System screens sit in both sidebars at the same address, so opening one keeps the side the person is on
+   (workspaceOf answers null for them). */
+const SYSTEM_ADMIN_ITEMS: NavItem[] = [
+  { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
+  { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
+  // My account and Notifications are every person's own, so they carry an area no role is ever denied.
+  { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', tabs: true, children: [
+    ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
+    { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
+    { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
+  ] },
+  { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
+];
+// Claude / ChatGPT reading the ERP with the person's own login (owner, 25 Nov 2026). Every desk person: staff ask for
+// access here; management approves, sees every lookup and disconnects (functions/api/ai-connector checks who).
+const AI_CONNECTOR_ITEM: NavItem = { key: 'aiConnector', label: 'AI Connector', icon: 'bot', path: '/system/ai-connector' };
+
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
@@ -205,15 +222,7 @@ export const NAV: NavGroup[] = [
     { key: 'mailboxes', label: 'Mailboxes', icon: 'at-sign', path: '/mail/mailboxes', area: 'mail', full: true },
   ] },
   { label: 'SYSTEM', workspace: 'rental', items: [
-    { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
-    { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
-    // My account and Notifications are every person's own, so they carry an area no role is ever denied.
-    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', tabs: true, children: [
-      ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
-      { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
-      { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
-    ] },
-    { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
+    ...SYSTEM_ADMIN_ITEMS,
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
@@ -221,9 +230,7 @@ export const NAV: NavGroup[] = [
     // books, so no permission area; adding and changing rooms needs Manage meeting rooms (area meetingRooms). Its count comes
     // from lib/meetingsUnread.ts.
     { key: 'meetings', label: 'Meetings', icon: 'calendar-clock', path: '/system/meetings', badge: 'meetings' },
-    // Claude / ChatGPT reading the ERP with the person's own login (owner, 25 Nov 2026). Every desk person: staff ask for
-    // access here; management approves, sees every lookup and disconnects (functions/api/ai-connector checks who).
-    { key: 'aiConnector', label: 'AI Connector', icon: 'bot', path: '/system/ai-connector' },
+    AI_CONNECTOR_ITEM,
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
@@ -318,9 +325,11 @@ export const NAV: NavGroup[] = [
   // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
   // Category access sets, per person, which product categories the renovation beta screens show (management only, so Full on Users and roles).
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
+    ...SYSTEM_ADMIN_ITEMS,
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
     { key: 'meetingsSupply', label: 'Meetings', icon: 'calendar-clock', path: '/supply/meetings' },
+    AI_CONNECTOR_ITEM,
   ] },
 ];
 
@@ -442,11 +451,13 @@ const SUPPLY_OFF_MENU: Record<string, [group: string, label: string, area: strin
 /** Which workspace an address belongs to; addresses outside the menu (records, profile) stay where they are. */
 export function workspaceOf(path: string): Workspace | null {
   if (SUPPLY_OFF_MENU[path]) return 'supply';
+  const sides = new Set<Workspace>();
   for (const g of NAV) for (const it of g.items) {
-    if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) return g.workspace;
-    if (it.children?.some(c => c.path === path || (it.tabs && path.startsWith(c.path + '/')))) return g.workspace;
+    if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) sides.add(g.workspace);
+    if (it.children?.some(c => c.path === path || (it.tabs && path.startsWith(c.path + '/')))) sides.add(g.workspace);
   }
-  return null;
+  const [only] = sides;
+  return sides.size === 1 ? only : null;
 }
 
 /** The sub-tabs to draw above a page: its menu item's tabs this person can open (the menu's own rule), when there are
