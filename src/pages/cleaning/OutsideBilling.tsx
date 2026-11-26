@@ -13,8 +13,9 @@ import { cx } from '../../lib/design-tokens';
 import { rm, monthLabel, plural } from '../../lib/format';
 import { OpsModal, FormRow, INPUT, mytDay, dayLabel } from '../../components/ops/OpsUi';
 
-/* Outside billing (chew, 26 Nov 2026): the cleaning team bills an outside client for its cleaning jobs, one job or a
-   month of them on one invoice, and records what the client pays. The invoice is booked at once (Dr 300-C002 CLEANING
+/* Outside billing (chew, 26-27 Nov 2026): the cleaning team bills outside cleaning jobs, any it picks together on one
+   invoice to the bill-to it types (a total typed over makes one lump-sum line, a package) or each job on its own, and
+   records what the client pays. The invoice is booked at once (Dr 300-C002 CLEANING
    CUSTOMER / Cr 570-0000 cleaning income); a payment waits for finance to confirm it in the bank, which makes the
    receipt official (functions/_lib/cleaningBilling.ts, engine conts/cleaning-billing.ts). */
 
@@ -22,7 +23,7 @@ interface Job { id: string; day: string; kind: string; title: string; state: str
 interface Payment { id: string; paidAt: string; method: string; amountSen: number; note: string | null; hasSlip: boolean; receiptNo: string | null; receiptStatus: string | null; confirmed: boolean }
 interface Invoice {
   id: string; invoiceNo: string; invoiceDate: string; customerName: string; phone: string | null; address: string | null; totalSen: number;
-  recordedSen: number; confirmedSen: number; outstandingSen: number; status: string; lines: { taskId: string | null; day: string | null; description: string; amountSen: number }[]; payments: Payment[];
+  recordedSen: number; confirmedSen: number; outstandingSen: number; status: string; lump: boolean; lines: { taskIds: string[]; day: string | null; description: string; amountSen: number }[]; payments: Payment[];
 }
 const KIND: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 const METHOD: Record<string, string> = { cash: 'Cash', transfer: 'Bank transfer' };
@@ -36,7 +37,8 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
   const [month, setMonth] = useState(mytDay(0).slice(0, 7));
   const { data, loading, error, reload } = useApi<{ month: string; jobs: Job[]; invoices: Invoice[] }>(`/housekeeping/cleaning-invoices?month=${month}`);
   const [picks, setPicks] = useState<Set<string>>(new Set());
-  const [billing, setBilling] = useState(false);
+  const [billing, setBilling] = useState<'combine' | 'each' | null>(null);
+  const [retotal, setRetotal] = useState<Invoice | null>(null);
   const [paying, setPaying] = useState<Invoice | null>(null);
   const jobs = data?.jobs ?? [];
   const unbilled = jobs.filter(j => !j.invoiceId);
@@ -48,7 +50,6 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
     return [...m.values()];
   }, [unbilled]);
   const picked = unbilled.filter(j => picks.has(j.id));
-  const pickedClients = new Set(picked.map(clientKey));
   const toggle = (ids: string[], on: boolean) => setPicks(p => { const n = new Set(p); ids.forEach(id => (on ? n.add(id) : n.delete(id))); return n; });
   const open = invoices.reduce((n, i) => n + i.outstandingSen, 0);
 
@@ -61,10 +62,10 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
         <div className="flex items-center gap-2 flex-wrap">
           <b className="text-copy flex-1">Not billed yet {unbilled.length ? `(${unbilled.length})` : ''}</b>
           {picked.length > 0 && <span className="text-meta text-muted-ink">{plural(picked.length, 'job')} · {rm(picked.reduce((n, j) => n + (j.amount ?? 0), 0))}</span>}
-          <Button size="sm" variant="primary" onClick={() => setBilling(true)} disabled={picked.length === 0 || pickedClients.size !== 1}
-            disabledReason={picked.length === 0 ? 'Tick the jobs to bill.' : 'One invoice is for one client: tick jobs of the same client.'}>Bill {picked.length > 1 ? `${picked.length} jobs` : 'job'}</Button>
+          <Button size="sm" variant="secondary" onClick={() => setBilling('each')} disabled={picked.length === 0} disabledReason="Tick the jobs to bill.">Bill each job</Button>
+          <Button size="sm" variant="primary" onClick={() => setBilling('combine')} disabled={picked.length === 0} disabledReason="Tick the jobs to bill.">Bill together</Button>
         </div>
-        <span className="text-meta text-muted-ink">Tick one job, or all of a client's jobs for the month, and bill them on one invoice.</span>
+        <span className="text-meta text-muted-ink">Tick any jobs. Bill together puts them on one invoice (type a different total for a package); Bill each job makes one invoice per job.</span>
         {loading && !data ? <Skeleton height={120} /> : groups.length === 0 ? <span className="text-meta text-muted-ink">Every outside cleaning job is billed.</span> : groups.map(g => {
           const ids = g.map(j => j.id);
           const all = ids.every(id => picks.has(id));
@@ -72,17 +73,17 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
           return (
             <div key={ids[0]} className="flex flex-col border-t border-solid border-line-soft pt-2">
               <label className="flex items-center gap-2 text-copy font-semibold py-1 cursor-pointer">
-                <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = !all && ids.some(id => picks.has(id)); }} onChange={e => toggle(ids, e.target.checked)} disabled={!name} />
-                {name || <span className="text-warning font-normal">No client name: add it on the job before billing</span>}
+                <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = !all && ids.some(id => picks.has(id)); }} onChange={e => toggle(ids, e.target.checked)} />
+                {name || <span className="text-muted-ink font-normal">No client name</span>}
                 <span className="text-meta text-muted-ink font-normal">{plural(g.length, 'job')} · {rm(g.reduce((n, j) => n + (j.amount ?? 0), 0))}</span>
               </label>
               {g.map(j => (
                 <label key={j.id} className="flex items-center gap-2 pl-6 py-1 text-copy cursor-pointer">
-                  <input type="checkbox" checked={picks.has(j.id)} onChange={e => toggle([j.id], e.target.checked)} disabled={!name || !j.amount} />
+                  <input type="checkbox" checked={picks.has(j.id)} onChange={e => toggle([j.id], e.target.checked)} />
                   <span className="w-[110px] flex-none text-muted-ink">{dayLabel(j.day)}</span>
                   <span className="flex-1 min-w-0 truncate">{KIND[j.kind] ?? j.title} · {j.address}</span>
                   {j.state === 'resolved' ? <StatusBadge tone="success" size="sm">Done</StatusBadge> : <StatusBadge tone="neutral" size="sm">Not done yet</StatusBadge>}
-                  <span className="w-[96px] text-right tabular-nums">{j.amount ? rm(j.amount) : <span className="text-warning">No amount</span>}</span>
+                  <span className="w-[96px] text-right tabular-nums">{j.amount ? rm(j.amount) : <span className="text-muted-ink">RM 0.00</span>}</span>
                 </label>
               ))}
             </div>
@@ -106,7 +107,8 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
             <div className="flex items-center gap-2 flex-wrap">
               <b className="text-copy">{inv.invoiceNo}</b>
               <span className="text-copy">{inv.customerName}</span>
-              <span className="text-meta text-muted-ink">{dayLabel(inv.invoiceDate)} · {plural(inv.lines.length, 'job')}</span>
+              <span className="text-meta text-muted-ink">{dayLabel(inv.invoiceDate)} · {plural(inv.lines.reduce((n, l) => n + l.taskIds.length, 0), 'job')}</span>
+              {inv.lump && <StatusBadge tone="neutral" size="sm">Lump sum</StatusBadge>}
               {inv.status === 'CANCELLED' ? <StatusBadge tone="danger" size="sm">Cancelled</StatusBadge>
                 : inv.outstandingSen === 0 ? <StatusBadge tone={inv.confirmedSen >= inv.totalSen ? 'success' : 'warning'} size="sm">{inv.confirmedSen >= inv.totalSen ? 'Paid' : 'Paid, waiting for finance'}</StatusBadge>
                 : inv.recordedSen > 0 ? <StatusBadge tone="warning" size="sm">Part paid</StatusBadge> : <StatusBadge tone="neutral" size="sm">Not paid</StatusBadge>}
@@ -115,6 +117,7 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
             </div>
             <div className="flex gap-2 flex-wrap">
               <Button size="sm" variant="secondary" onClick={() => openPrint(`/housekeeping/cleaning-invoices/${inv.id}/print`)}>Print invoice</Button>
+              {inv.lump && inv.status !== 'CANCELLED' && <Button size="sm" variant="secondary" onClick={() => setRetotal(inv)}>Change total</Button>}
               <Button size="sm" variant="primary" onClick={() => setPaying(inv)} disabled={inv.status === 'CANCELLED' || inv.outstandingSen === 0}
                 disabledReason={inv.status === 'CANCELLED' ? 'This invoice is cancelled.' : 'Paid in full.'}>Collect payment</Button>
             </div>
@@ -137,35 +140,102 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
         ))}
       </section>
 
-      {billing && <BillModal jobs={picked} onClose={() => setBilling(false)} onDone={no => { setBilling(false); setPicks(new Set()); toast({ tone: 'success', title: `Invoice ${no} issued.`, body: 'Print it from Invoices for the client.' }); reload(); }} />}
+      {billing === 'combine' && <BillModal jobs={picked} onClose={() => setBilling(null)} onDone={no => { setBilling(null); setPicks(new Set()); toast({ tone: 'success', title: `Invoice ${no} issued.`, body: 'Print it from Invoices for the client.' }); reload(); }} />}
+      {billing === 'each' && <BillEachModal jobs={picked} onClose={() => setBilling(null)} onDone={(title, body) => { setBilling(null); setPicks(new Set()); toast({ tone: body ? 'warning' : 'success', title, body }); reload(); }} />}
+      {retotal && <TotalModal invoice={retotal} onClose={() => setRetotal(null)} onDone={() => { setRetotal(null); toast({ tone: 'success', title: `${retotal.invoiceNo} total changed.`, body: 'Print it again for the client.' }); reload(); }} />}
       {paying && <PaymentModal invoice={paying} onClose={() => setPaying(null)} onDone={() => { setPaying(null); toast({ tone: 'success', title: 'Payment recorded.', body: 'It waits for finance to confirm the money in the bank.' }); reload(); }} />}
     </div>
   );
 }
 
 function BillModal({ jobs, onClose, onDone }: { jobs: Job[]; onClose: () => void; onDone: (invoiceNo: string) => void }) {
+  const sorted = jobs.slice().sort((a, b) => a.day.localeCompare(b.day));
+  const first = sorted.find(j => j.client?.trim()) ?? sorted[0];
+  const sum = jobs.reduce((n, j) => n + (j.amount ?? 0), 0);
+  const [billTo, setBillTo] = useState(first?.client?.trim() ?? '');
+  const [phone, setPhone] = useState(sorted.find(j => j.phone)?.phone ?? '');
+  const [address, setAddress] = useState(first?.address ?? '');
   const [date, setDate] = useState(mytDay(0));
+  const [total, setTotal] = useState<number | null>(sum || null);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const total = jobs.reduce((n, j) => n + (j.amount ?? 0), 0);
+  const [err, setErr] = useState<Record<string, string | undefined>>({});
+  const lump = total !== sum || jobs.some(j => !j.amount);
   async function save() {
-    setBusy(true); setErr(null);
+    const bad = { billTo: billTo.trim() ? undefined : 'Enter who the invoice is to.', total: total && total > 0 ? undefined : 'Enter the invoice total.' };
+    if (bad.billTo || bad.total) { setErr(bad); return; }
+    setBusy(true); setErr({});
     try {
-      const r = await api.post<{ invoice: { invoiceNo: string } }>('/housekeeping/cleaning-invoices', { taskIds: jobs.map(j => j.id), invoiceDate: date });
+      const r = await api.post<{ invoice: { invoiceNo: string } }>('/housekeeping/cleaning-invoices', {
+        mode: 'combine', taskIds: jobs.map(j => j.id), invoiceDate: date, customerName: billTo.trim(), phone: phone.trim() || undefined, address: address.trim() || undefined, totalSen: total,
+      });
       onDone(r.invoice.invoiceNo);
-    } catch (e) { setErr(errorMessage(e, 'The invoice was not made. Try again.')); setBusy(false); }
+    } catch (e) { setErr({ form: errorMessage(e, 'The invoice was not made. Try again.') }); setBusy(false); }
   }
   return (
-    <OpsModal title="Bill the client" eyebrow="Outside billing" size="md" onClose={onClose} busy={busy}
-      sub={`${jobs[0]?.client ?? ''}: ${plural(jobs.length, 'job')}, ${rm(total)}. The invoice is issued and booked at once, and cannot be changed here afterwards.`}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Issue invoice {rm(total)}</Button></>}>
-      <FormRow label="Invoice date"><DateField aria-label="Invoice date" className={INPUT} value={date} onChange={v => v && setDate(v)} /></FormRow>
+    <OpsModal title="Bill together" eyebrow="Outside billing" size="md" onClose={onClose} busy={busy}
+      sub={`${plural(jobs.length, 'job')} on one invoice. It is issued and booked at once.`}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Issue invoice {total ? rm(total) : ''}</Button></>}>
+      <FormRow label="Bill to" error={err.billTo}><input className={INPUT} value={billTo} onChange={e => { setBillTo(e.target.value); setErr(x => ({ ...x, billTo: undefined })); }} maxLength={120} /></FormRow>
+      <div className="grid grid-cols-2 gap-3">
+        <FormRow label="Phone (optional)"><input className={INPUT} value={phone} onChange={e => setPhone(e.target.value)} maxLength={40} inputMode="tel" /></FormRow>
+        <FormRow label="Invoice date"><DateField aria-label="Invoice date" className={INPUT} value={date} onChange={v => v && setDate(v)} /></FormRow>
+      </div>
+      <FormRow label="Address (optional)"><input className={INPUT} value={address} onChange={e => setAddress(e.target.value)} maxLength={300} /></FormRow>
       <div className="flex flex-col gap-1 text-copy">
-        {jobs.slice().sort((a, b) => a.day.localeCompare(b.day)).map(j => (
+        {sorted.map(j => (
           <div key={j.id} className="flex gap-2"><span className="w-[110px] text-muted-ink">{dayLabel(j.day)}</span><span className="flex-1 min-w-0 truncate">{KIND[j.kind] ?? j.title} · {j.address}</span><span className="tabular-nums">{rm(j.amount ?? 0)}</span></div>
         ))}
       </div>
+      <FormRow label="Invoice total, RM" error={err.total} hint={lump ? 'One lump-sum line with every job\'s day, at this total.' : 'One line per job, at its amount. Type a different total to bill it as one lump sum (a package).'}>
+        <MoneyInput className={INPUT} valueSen={total} onChangeSen={v => { setTotal(v); setErr(x => ({ ...x, total: undefined })); }} aria-label="Invoice total in RM" />
+      </FormRow>
+      {err.form && <span className="text-meta text-danger" role="alert">{err.form}</span>}
+    </OpsModal>
+  );
+}
+
+function BillEachModal({ jobs, onClose, onDone }: { jobs: Job[]; onClose: () => void; onDone: (title: string, body?: string) => void }) {
+  const [date, setDate] = useState(mytDay(0));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.post<{ invoices: unknown[]; failed: { taskId: string; message: string }[] }>('/housekeeping/cleaning-invoices', { mode: 'each', taskIds: jobs.map(j => j.id), invoiceDate: date });
+      onDone(`${plural(r.invoices.length, 'invoice')} issued.`, r.failed.length ? `${plural(r.failed.length, 'job')} not billed: ${r.failed[0].message}` : undefined);
+    } catch (e) { setErr(errorMessage(e, 'Nothing was billed. Try again.')); setBusy(false); }
+  }
+  return (
+    <OpsModal title="Bill each job" eyebrow="Outside billing" size="md" onClose={onClose} busy={busy}
+      sub={`${plural(jobs.length, 'invoice')}, one per job, each to the job's own client at its amount.`}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Issue {plural(jobs.length, 'invoice')}</Button></>}>
+      <FormRow label="Invoice date"><DateField aria-label="Invoice date" className={INPUT} value={date} onChange={v => v && setDate(v)} /></FormRow>
+      <div className="flex flex-col gap-1 text-copy">
+        {jobs.slice().sort((a, b) => a.day.localeCompare(b.day)).map(j => (
+          <div key={j.id} className="flex gap-2"><span className="w-[110px] text-muted-ink">{dayLabel(j.day)}</span><span className="flex-1 min-w-0 truncate">{j.client?.trim() || <span className="text-warning">No client name</span>} · {j.address}</span><span className="tabular-nums">{j.amount ? rm(j.amount) : <span className="text-warning">RM 0.00</span>}</span></div>
+        ))}
+      </div>
       {err && <span className="text-meta text-danger" role="alert">{err}</span>}
+    </OpsModal>
+  );
+}
+
+function TotalModal({ invoice, onClose, onDone }: { invoice: Invoice; onClose: () => void; onDone: () => void }) {
+  const [total, setTotal] = useState<number | null>(invoice.totalSen);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function save() {
+    if (!total || total <= 0) { setErr('Enter the new total.'); return; }
+    if (total < invoice.recordedSen) { setErr(`At least ${rm(invoice.recordedSen)}, what the client has paid.`); return; }
+    setBusy(true); setErr(null);
+    try { await api.post(`/housekeeping/cleaning-invoices/${invoice.id}/total`, { totalSen: total }); onDone(); }
+    catch (e) { setErr(errorMessage(e, 'Not changed. Try again.')); setBusy(false); }
+  }
+  return (
+    <OpsModal title="Change total" eyebrow={invoice.invoiceNo} size="md" onClose={onClose} busy={busy}
+      sub={`${invoice.customerName}: now ${rm(invoice.totalSen)}. The books follow the new total; print the invoice again for the client.`}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Save total</Button></>}>
+      <FormRow label="Invoice total, RM" error={err}><MoneyInput className={INPUT} valueSen={total} onChangeSen={v => { setTotal(v); setErr(null); }} aria-label="Invoice total in RM" /></FormRow>
     </OpsModal>
   );
 }

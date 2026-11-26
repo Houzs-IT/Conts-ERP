@@ -4,15 +4,20 @@
 //
 // The books follow AutoCount's way for these clients (its I-2609-044 / OR-004339): one customer for every outside
 // cleaning client, 300-C002 CLEANING CUSTOMER, the client's own name on each invoice; the income is the CLEANING item
-// group's sales account (570-0000 CLEANING SERVICES INCOME, migration 0392).
+// group's sales account (570-0000 CLEANING SERVICES INCOME, migration 0393).
 //   • An invoice is a sales invoice issued at once: it posts Dr 300-C002 / Cr 570-0000 (scm/lib/post-si-revenue). One
-//     invoice holds one job or a month of a client's jobs, one line per job.
+//     invoice holds the jobs the office picks (chew, 27 Nov 2026: free to combine), one line per job, or one lump-sum
+//     line for them all (a package: the jobs carry RM 0 and the office types the total).
+//   • The invoice follows its jobs (chew, 27 Nov 2026: "开了单能改金额和删除"): a job added, re-priced or taken off
+//     rewrites its lines; the books are voided and posted again at the new total (resyncSiRevenue). It never goes
+//     below what the client has paid. With no job left it is cancelled and its entry reversed.
 //   • A payment is the invoice's payment with its draft receipt (scm/lib/si-payment-row); it posts nothing until finance
 //     confirms the money on Official receipts, which posts Dr the bank / Cr 300-C002 and makes the receipt formal
 //     (acc/receipt-confirm), exactly as a renovation payment.
 // Office staff only (Property OS lets in whoever may add cleaning jobs):
-//   POST /cleaning-invoices                  { key, customerName, phone?, address?, invoiceDate?, lines: [{ taskId, day, description, amountSen }] }
+//   POST /cleaning-invoices                  { key, customerName, phone?, address?, invoiceDate?, lump?, lines: [{ taskIds, day, description, amountSen }] }
 //                                            -> { invoice }; 201 new, 200 when this key's invoice exists
+//   POST /cleaning-invoices/:id/revise       { lump?, lines } the invoice's lines as they are now; no line cancels it
 //   GET  /cleaning-invoices?ids=a,b          -> { invoices } with their payments and receipts
 //   POST /cleaning-invoices/:id/payments     { paidAt, method: cash|transfer, amountSen, note?, slip? } -> { invoice }
 //   GET  /cleaning-invoices/:id/payments/:paymentId/slip   the slip
@@ -21,7 +26,7 @@ import { companyDocPrefix, requireActiveCompanyId } from '../scm/lib/companyScop
 import { insertWithDocNoRetry } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { buildItemRow, nextSiNumber, recomputeTotals } from '../scm/lib/si-from-do';
-import { postSiRevenue } from '../scm/lib/post-si-revenue';
+import { postSiRevenue, resyncSiRevenue, reverseSiRevenue } from '../scm/lib/post-si-revenue';
 import { insertSiPaymentRow } from '../scm/lib/si-payment-row';
 import { recomputeSiPaid } from '../scm/lib/si-order-deposit';
 import { postUnpostedSiPayments } from '../acc/payments';
@@ -37,6 +42,8 @@ export const CLEANING_GROUP = 'CLEANING';
 /** sales_invoices.ref of an invoice made here: what tells a cleaning invoice from any other. */
 export const CLEANING_REF = 'CLEANING';
 const MAX_LINES = 200;
+/** item_code of a lump-sum line: one figure for several jobs. */
+export const LUMP_CODE = 'CLEANING-LUMP';
 const DAY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const KEY = /^[A-Za-z0-9:_-]{8,80}$/;
 const METHODS = new Set(['cash', 'transfer']);
@@ -47,29 +54,44 @@ const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try 
 const officeOnly = (c: Ctx) => ((c.get('staff') as Staff).field ? c.json({ error: 'forbidden', message: 'Cleaning invoices are made by the office.' }, 403) : null);
 const text = (v: unknown, max: number): string => String(v ?? '').trim().slice(0, max);
 
-export type CleaningLine = { taskId: string; day: string; description: string; amountSen: number };
+export type CleaningLine = { taskIds: string[]; day: string; description: string; amountSen: number };
 
-/** The lines as sent, or why they cannot be billed. */
-export function cleaningLines(raw: unknown): { ok: true; lines: CleaningLine[] } | { ok: false; message: string } {
+/** The lines as sent, or why they cannot be billed. A line names its job (taskId) or, a lump sum, its jobs (taskIds). */
+export function cleaningLines(raw: unknown, lump = false): { ok: true; lines: CleaningLine[] } | { ok: false; message: string } {
   if (!Array.isArray(raw) || raw.length === 0) return { ok: false, message: 'Pick the cleaning jobs to bill.' };
   if (raw.length > MAX_LINES) return { ok: false, message: `At most ${MAX_LINES} jobs on one invoice.` };
+  if (lump && raw.length !== 1) return { ok: false, message: 'A lump sum is one line.' };
   const seen = new Set<string>();
   const lines: CleaningLine[] = [];
   for (const r of raw as Array<Record<string, unknown> | null>) {
-    const taskId = text(r?.taskId, 80);
+    const ids = Array.isArray(r?.taskIds) ? (r.taskIds as unknown[]).map(x => text(x, 80)).filter(Boolean) : [text(r?.taskId, 80)].filter(Boolean);
     const day = text(r?.day, 10);
-    const description = text(r?.description, 200);
+    const description = text(r?.description, 1000);
     const amountSen = Number(r?.amountSen);
-    if (!taskId) return { ok: false, message: 'A job is missing.' };
-    if (seen.has(taskId)) return { ok: false, message: 'A job is on the invoice twice.' };
-    seen.add(taskId);
+    if (ids.length === 0) return { ok: false, message: 'A job is missing.' };
+    if (ids.length > MAX_LINES) return { ok: false, message: `At most ${MAX_LINES} jobs on one invoice.` };
+    for (const id of ids) { if (seen.has(id)) return { ok: false, message: 'A job is on the invoice twice.' }; seen.add(id); }
     if (!DAY.test(day)) return { ok: false, message: 'A job has no day.' };
     if (!description) return { ok: false, message: 'A job has no description.' };
-    if (!Number.isSafeInteger(amountSen) || amountSen <= 0) return { ok: false, message: `${description}: the amount must be more than RM 0.00.` };
-    lines.push({ taskId, day, description, amountSen });
+    if (!Number.isSafeInteger(amountSen) || amountSen <= 0) return { ok: false, message: `${description.slice(0, 80)}: the amount must be more than RM 0.00.` };
+    lines.push({ taskIds: ids, day, description, amountSen });
   }
   return { ok: true, lines };
 }
+
+const itemRows = (invoiceId: string, companyId: number, lines: CleaningLine[], lump: boolean) => lines.map((l, i) => ({
+  ...buildItemRow(invoiceId, {
+    itemCode: lump ? LUMP_CODE : CLEANING_GROUP, itemGroup: CLEANING_GROUP, description: l.description, qty: 1, unitPriceSen: l.amountSen,
+    uom: lump ? 'LOT' : 'JOB', lineDeliveryDate: l.day, notes: `tasks:${l.taskIds.join(',')}`,
+  }, i + 1),
+  company_id: companyId,
+}));
+const taskIdsOf = (notes: string | null): string[] => {
+  const n = String(notes ?? '');
+  if (n.startsWith('tasks:')) return n.slice(6).split(',').filter(Boolean);
+  if (n.startsWith('task:')) return [n.slice(5)].filter(Boolean);
+  return [];
+};
 
 /** Finance's set-up a cleaning invoice needs: the customer 300-C002 and the CLEANING group's income account. */
 async function setUpRefusal(sb: Db, companyId: number): Promise<string | null> {
@@ -94,7 +116,7 @@ export async function cleaningInvoices(sb: Db, companyId: number, ids: string[])
   if (rows.length === 0) return { ok: true, invoices: [] };
   const found = rows.map(r => r.id);
   const [items, pays] = await Promise.all([
-    sb.from('sales_invoice_items').select('sales_invoice_id, description, line_total_sen, line_delivery_date, notes, line_no').in('sales_invoice_id', found),
+    sb.from('sales_invoice_items').select('sales_invoice_id, item_code, description, line_total_sen, line_delivery_date, notes, line_no').in('sales_invoice_id', found),
     sb.from('sales_invoice_payments').select('id, sales_invoice_id, paid_at, method, amount_sen, note, slip_key, created_at').in('sales_invoice_id', found),
   ]);
   if (items.error || pays.error) return { ok: false, error: (items.error ?? pays.error).message };
@@ -107,9 +129,10 @@ export async function cleaningInvoices(sb: Db, companyId: number, ids: string[])
   return {
     ok: true,
     invoices: rows.map(r => {
-      const lines = ((items.data ?? []) as Array<{ sales_invoice_id: string; description: string | null; line_total_sen: number; line_delivery_date: string | null; notes: string | null; line_no: number | null }>)
-        .filter(i => i.sales_invoice_id === r.id).sort((a, b) => Number(a.line_no ?? 0) - Number(b.line_no ?? 0))
-        .map(i => ({ taskId: String(i.notes ?? '').replace(/^task:/, '') || null, day: i.line_delivery_date, description: i.description ?? '', amountSen: Number(i.line_total_sen) }));
+      const own = ((items.data ?? []) as Array<{ sales_invoice_id: string; item_code: string | null; description: string | null; line_total_sen: number; line_delivery_date: string | null; notes: string | null; line_no: number | null }>)
+        .filter(i => i.sales_invoice_id === r.id).sort((a, b) => Number(a.line_no ?? 0) - Number(b.line_no ?? 0));
+      const lines = own.map(i => ({ taskIds: taskIdsOf(i.notes), day: i.line_delivery_date, description: i.description ?? '', amountSen: Number(i.line_total_sen) }));
+      const lump = own.some(i => i.item_code === LUMP_CODE);
       const payments = payRows.filter(p => p.sales_invoice_id === r.id).sort((a, b) => a.created_at.localeCompare(b.created_at)).map(p => {
         const rc = receiptOf.get(p.id);
         return {
@@ -122,7 +145,7 @@ export async function cleaningInvoices(sb: Db, companyId: number, ids: string[])
       return {
         id: r.id, invoiceNo: r.invoice_number, invoiceDate: r.invoice_date, customerName: r.debtor_name, phone: r.phone, address: r.address1,
         totalSen: Number(r.total_sen), recordedSen, confirmedSen, outstandingSen: Math.max(0, Number(r.total_sen) - recordedSen),
-        status: r.status, lines, payments,
+        status: r.status, lump, lines, payments,
       };
     }),
   };
@@ -150,7 +173,8 @@ export const createCleaningInvoiceHandler = async (c: Ctx): Promise<Response> =>
   const invoiceDate = b.invoiceDate == null || b.invoiceDate === '' ? todayMyt() : text(b.invoiceDate, 10);
   if (!DAY.test(invoiceDate)) return c.json({ error: 'validation', message: 'The invoice date is not a date.' }, 422);
   if (invoiceDate > todayMyt()) return c.json({ error: 'validation', message: 'The invoice date cannot be after today.' }, 422);
-  const parsed = cleaningLines(b.lines);
+  const lump = b.lump === true;
+  const parsed = cleaningLines(b.lines, lump);
   if (!parsed.ok) return c.json({ error: 'validation', message: parsed.message }, 422);
 
   /* The same jobs sent again (a retry, a double tap) answer with the invoice already made. */
@@ -172,10 +196,7 @@ export const createCleaningInvoiceHandler = async (c: Ctx): Promise<Response> =>
     }).select('id, invoice_number').single(),
   );
   if (error || !head) return c.json({ error: 'save_failed', message: error?.message ?? 'insert returned nothing' }, 500);
-  const rows = parsed.lines.map((l, i) => ({
-    ...buildItemRow(head.id, { itemCode: CLEANING_GROUP, itemGroup: CLEANING_GROUP, description: l.description, qty: 1, unitPriceSen: l.amountSen, uom: 'JOB', lineDeliveryDate: l.day, notes: `task:${l.taskId}` }, i + 1),
-    company_id: co.companyId,
-  }));
+  const rows = itemRows(head.id, co.companyId, parsed.lines, lump);
   const ins = await sb.from('sales_invoice_items').insert(rows);
   if (ins.error) {
     await sb.from('sales_invoices').delete().eq('id', head.id);
@@ -198,6 +219,52 @@ export const listCleaningInvoicesHandler = async (c: Ctx): Promise<Response> => 
   const r = await cleaningInvoices(c.get('supabase'), co.companyId, ids);
   if (!r.ok) return c.json({ error: 'load_failed', message: r.error }, 500);
   return c.json({ invoices: r.invoices });
+};
+
+/** The invoice's lines as they are now: a job added, re-priced or taken off on Property OS. The books follow at the new
+ *  total; never below what the client has paid. No line left cancels the invoice and reverses its entry, which needs no
+ *  payment on it. */
+export const reviseCleaningInvoiceHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const refused = officeOnly(c);
+  if (refused) return refused;
+  const sb = c.get('supabase');
+  const id = String(c.req.param('id'));
+  const b = await bodyOf(c);
+  if (!b) return c.json({ error: 'invalid_json' }, 400);
+  const { data: inv, error } = await sb.from('sales_invoices').select('id, invoice_number, status').eq('company_id', co.companyId).eq('ref', CLEANING_REF).eq('id', id).maybeSingle();
+  if (error) return c.json({ error: 'load_failed', message: error.message }, 500);
+  if (!inv) return c.json({ error: 'not_found', message: 'That cleaning invoice is not there.' }, 404);
+  if (inv.status === 'CANCELLED') return c.json({ error: 'cancelled', message: `${inv.invoice_number} is cancelled.` }, 409);
+  const view = await cleaningInvoices(sb, co.companyId, [id]);
+  if (!view.ok) return c.json({ error: 'load_failed', message: view.error }, 500);
+  const recorded = Number((view.invoices[0] as { recordedSen?: number } | undefined)?.recordedSen ?? 0);
+
+  const raw = Array.isArray(b.lines) ? b.lines : [];
+  if (raw.length === 0) {
+    if (recorded > 0) return c.json({ error: 'has_payments', message: `${inv.invoice_number} has payments recorded, so it cannot be left with no job.` }, 409);
+    const up = await sb.from('sales_invoices').update({ status: 'CANCELLED', updated_at: new Date().toISOString() }).eq('id', id).neq('status', 'CANCELLED');
+    if (up.error) return c.json({ error: 'save_failed', message: up.error.message }, 500);
+    const rev = await reverseSiRevenue(sb, inv.invoice_number);
+    if (!rev.ok) console.error('[cleaning-invoice] reversal failed:', inv.invoice_number, rev.status, rev.reason); // eslint-disable-line no-console
+    return oneInvoice(c, sb, co.companyId, id);
+  }
+  const lump = b.lump === true;
+  const parsed = cleaningLines(raw, lump);
+  if (!parsed.ok) return c.json({ error: 'validation', message: parsed.message }, 422);
+  const total = parsed.lines.reduce((n, l) => n + l.amountSen, 0);
+  if (total < recorded) return c.json({ error: 'below_paid', message: `${inv.invoice_number} has RM ${(recorded / 100).toFixed(2)} paid, so it cannot come to less than that.` }, 409);
+
+  const gone = await sb.from('sales_invoice_items').delete().eq('sales_invoice_id', id);
+  if (gone.error) return c.json({ error: 'save_failed', message: gone.error.message }, 500);
+  const ins = await sb.from('sales_invoice_items').insert(itemRows(id, co.companyId, parsed.lines, lump));
+  if (ins.error) return c.json({ error: 'save_failed', message: ins.error.message }, 500);
+  await recomputeTotals(sb, id);
+  await recomputeSiPaid(sb, id);
+  const posted = await resyncSiRevenue(sb, inv.invoice_number);
+  if (!posted.ok) console.error('[cleaning-invoice] books not resynced:', inv.invoice_number, posted.status, posted.reason); // eslint-disable-line no-console
+  return oneInvoice(c, sb, co.companyId, id);
 };
 
 export const recordCleaningPaymentHandler = async (c: Ctx): Promise<Response> => {
@@ -273,5 +340,6 @@ export function cleaningBillingRoutes(r: { get: (p: string, h: (c: Ctx) => Promi
   r.post('/cleaning-invoices', createCleaningInvoiceHandler);
   r.get('/cleaning-invoices', listCleaningInvoicesHandler);
   r.post('/cleaning-invoices/:id/payments', recordCleaningPaymentHandler);
+  r.post('/cleaning-invoices/:id/revise', reviseCleaningInvoiceHandler);
   r.get('/cleaning-invoices/:id/payments/:paymentId/slip', cleaningSlipHandler);
 }

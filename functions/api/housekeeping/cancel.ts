@@ -21,6 +21,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const reason = typeof body?.reason === 'string' ? body.reason.trim().slice(0, 500) : '';
   if (!reason) return fail('VALIDATION', 'Give a reason for deleting.', 422, { reason: 'Say why these jobs are deleted.' });
 
-  const { cancelled, skipped } = await cancelCleaningJobs(env, session, taskIds, reason);
+  const { cancelled, skipped } = await cancelCleaningJobs(env, session, taskIds, reason, session);
   return json({ ok: true, deleted: cancelled, skipped });
 };

@@ -58,7 +58,8 @@ describe('billing outside cleaning jobs', () => {
     const { invoice } = await r.json() as any;
     expect(invoice).toMatchObject({ customerName: 'MS WONG', totalSen: 48_000, outstandingSen: 48_000, status: 'SENT' });
     expect(invoice.invoiceNo).toMatch(/SI-\d{4}-\d{3}$/);
-    expect(invoice.lines.map((l: any) => [l.taskId, l.amountSen])).toEqual([['t-1', 35_000], ['t-2', 13_000]]);
+    expect(invoice.lines.map((l: any) => [l.taskIds, l.amountSen])).toEqual([[['t-1'], 35_000], [['t-2'], 13_000]]);
+    expect(invoice.lump).toBe(false);
     expect((sb.tables.sales_invoices as Row[])[0]).toMatchObject({ debtor_code: '300-C002', ref: 'CLEANING', created_by: YJ.userId });
     expect(lines(sb).sort((a, b) => a.code.localeCompare(b.code))).toEqual([{ code: '300-0000', dr: 48_000, cr: 0 }, { code: '570-0000', dr: 0, cr: 48_000 }]);
   });
@@ -115,5 +116,47 @@ describe('recording what the client paid', () => {
     const ok = await call(a, 'POST', `/cleaning-invoices/${id}/payments`, { paidAt: today, method: 'transfer', amountSen: 48_000, slip: { name: 's.png', mime: 'image/png', dataBase64: btoa('png') } });
     expect(ok.status).toBe(201);
     expect(((await ok.json()) as any).invoice.payments[0]).toMatchObject({ hasSlip: true, amountSen: 48_000 });
+  });
+});
+
+describe('a package and an invoice that follows its jobs (chew, 27 Nov 2026)', () => {
+  const made = async (body: Record<string, unknown> = BILL) => {
+    const sb = world();
+    const a = appFor(sb, YJ);
+    const { invoice } = await (await call(a, 'POST', '/cleaning-invoices', body)).json() as any;
+    return { sb, a, invoice };
+  };
+  const ar = (sb: ReturnType<typeof world>) => (sb.tables.journal_entry_lines as Row[]).filter((l) => l.account_code === '300-0000')
+    .reduce((n, l) => n + Number(l.debit_sen) - Number(l.credit_sen), 0);
+
+  test('a lump sum is one line for every job, booked at its total', async () => {
+    const { sb, invoice } = await made({ ...BILL, key: 'cln-lump-000000001', lump: true,
+      lines: [{ taskIds: ['t-1', 't-2', 't-3'], day: today, description: 'Cleaning services, 3 jobs', amountSen: 120_000 }] });
+    expect(invoice).toMatchObject({ lump: true, totalSen: 120_000 });
+    expect(invoice.lines).toEqual([expect.objectContaining({ taskIds: ['t-1', 't-2', 't-3'], amountSen: 120_000 })]);
+    expect(ar(sb)).toBe(120_000);
+  });
+
+  test('a job added raises the invoice and the books follow, same number', async () => {
+    const { sb, a, invoice } = await made();
+    const r = await call(a, 'POST', `/cleaning-invoices/${invoice.id}/revise`, { lines: [...BILL.lines, { taskId: 't-3', day: today, description: 'Basic clean', amountSen: 13_000 }] });
+    expect(r.status).toBe(200);
+    const after = ((await r.json()) as any).invoice;
+    expect(after).toMatchObject({ invoiceNo: invoice.invoiceNo, totalSen: 61_000 });
+    expect(ar(sb)).toBe(61_000);
+  });
+
+  test('never below what is paid; with no job left it is cancelled, unless it has payments', async () => {
+    const { sb, a, invoice } = await made();
+    await call(a, 'POST', `/cleaning-invoices/${invoice.id}/payments`, { paidAt: today, method: 'cash', amountSen: 40_000 });
+    const low = await call(a, 'POST', `/cleaning-invoices/${invoice.id}/revise`, { lines: [BILL.lines[0]] });
+    expect(low.status).toBe(409);
+    expect((await call(a, 'POST', `/cleaning-invoices/${invoice.id}/revise`, { lines: [] })).status).toBe(409);
+
+    const other = await made({ ...BILL, key: 'cln-other-0000002' });
+    const gone = await call(other.a, 'POST', `/cleaning-invoices/${other.invoice.id}/revise`, { lines: [] });
+    expect(((await gone.json()) as any).invoice.status).toBe('CANCELLED');
+    expect(ar(other.sb)).toBe(0);
+    expect(ar(sb)).toBe(48_000);
   });
 });
