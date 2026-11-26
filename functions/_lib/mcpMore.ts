@@ -347,6 +347,8 @@ export interface ExportList {
   columns: string[];
   /** Keys holding money in sen besides those ending in "Sen". */
   money?: string[];
+  /** Column titles in the ERP's own words (docs/VOCABULARY.md) where the row key differs. */
+  headers?: Record<string, string>;
   /** Dates: [from key, to key] the list understands, when it takes a range. */
   range?: [string, string];
 }
@@ -357,6 +359,7 @@ export const EXPORT_LISTS: Record<string, ExportList> = {
     filters: ['view', 'todo', 'ch', 'building', 'st', 'q', 'ref', 'guest', 'unit', 'sort'], range: ['from', 'to'],
     columns: ['externalRef', 'guestName', 'propertyName', 'unitNumber', 'channel', 'state', 'checkIn', 'checkOut', 'nights', 'grossBookingValue', 'channelFee', 'expectedPayout', 'received', 'outstanding'],
     money: ['grossBookingValue', 'channelFee', 'collectedRevenue', 'expectedPayout', 'received', 'outstanding', 'roomRevenue', 'cleaningFee', 'extraFees', 'sst', 'tourismTax', 'otaTax', 'deposit'],
+    headers: { externalRef: 'Reference', propertyName: 'Building', unitNumber: 'Unit', state: 'Status', grossBookingValue: 'Guest total', channelFee: 'Service fee', expectedPayout: 'Host payout', collectedRevenue: 'Earnings' },
   },
   guests: {
     path: '/api/guests', title: 'Guests', paging: { kind: 'size', max: 1000, exportFlag: true }, filters: ['filter', 'q', 'country', 'sort'],
@@ -379,6 +382,7 @@ export const EXPORT_LISTS: Record<string, ExportList> = {
     path: '/api/statements', title: 'Owner statements', paging: { kind: 'pageSize', max: 500 }, filters: ['period', 'state', 'q'],
     columns: ['period', 'ownerName', 'unitsLabel', 'state', 'grossBookingValue', 'managementFee', 'expensesTotal', 'netPayout', 'sentAt'],
     money: ['grossBookingValue', 'managementFee', 'expensesTotal', 'netPayout'],
+    headers: { ownerName: 'Owner', unitsLabel: 'Units', state: 'Status', grossBookingValue: 'Guest total', managementFee: 'Operator share', expensesTotal: 'Expenses', netPayout: 'Net payout to owner' },
   },
   expenses: {
     path: '/api/finance/expenses', title: 'Expenses', paging: { kind: 'pageSize', max: 1000, exportFlag: true }, fixed: { view: 'list' },
@@ -455,7 +459,8 @@ export function exportColumns(l: ExportList, rows: Obj[], fields: string[]): Col
   const money = new Set(l.money ?? []);
   return (keys.length ? keys : [...seen].slice(0, 60)).map(key => {
     const m = /Sen$/.test(key) || money.has(key);
-    return { key, header: headerOf(key, m), money: m };
+    const named = l.headers?.[key];
+    return { key, header: named ? `${named}${m ? ' (RM)' : ''}` : headerOf(key, m), money: m };
   });
 }
 
@@ -483,6 +488,11 @@ export function limitVerdict(c: { minute: number; day: number }, perMinute = RAT
   return null;
 }
 
-/** The count query (one index range scan on mcp_calls (user_id, created_at), migration 0378). */
+/** One count as a scalar subquery for the door's token query (mcpStore resolveAccessToken withCounts), used twice
+ *  (last minute, last day); each is one index range scan on mcp_calls (user_id, created_at). One `?`: the window start. */
+export const RATE_COUNT_SQL = (userCol: string) =>
+  `SELECT COUNT(*) FROM mcp_calls k WHERE k.user_id = ${userCol} AND k.created_at > ? AND k.status IS DISTINCT FROM ${RATE_LIMITED_STATUS}`;
+
+/** The same counts on their own (one index range scan on mcp_calls (user_id, created_at), migration 0378). */
 export const RATE_SQL = `SELECT COUNT(*) FILTER (WHERE created_at > ?) AS minute, COUNT(*) AS day
   FROM mcp_calls WHERE user_id = ? AND created_at > ? AND status IS DISTINCT FROM ${RATE_LIMITED_STATUS}`;

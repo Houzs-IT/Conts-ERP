@@ -198,6 +198,9 @@ function quickResult(summary: () => unknown, needed: ReadValue[]): { result: Too
   return { result: text(JSON.stringify(summary())), status: 200, note: '' };
 }
 
+/** Tool calls already made in this request (a JSON-RPC batch), per identity object (one per request). */
+const calledInRequest = new WeakMap<McpIdentity, number>();
+
 async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, id: McpIdentity, token: string, name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const t0 = Date.now();
   let status = 200, note = '', target = '';
@@ -205,8 +208,11 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
   const read = (path: string, q?: Record<string, unknown>) => readValue(request, env, waitUntil, token, path, q);
   try {
     const ctx = { request, env, waitUntil, id, token, origin: originOf(request), read };
-    // A failed count lets the call through: the limit must never be the reason a lookup breaks.
-    const over = limitVerdict(await recentCallCounts(env, id.user.id).catch(() => ({ minute: 0, day: 0 })));
+    // Counts read at the door with the token (one query), plus the calls this same request already made (a batch);
+    // without them, one count query. A failed count lets the call through: the limit never breaks a lookup.
+    const base = id.recent ?? await recentCallCounts(env, id.user.id).catch(() => ({ minute: 0, day: 0 }));
+    const over = limitVerdict({ minute: base.minute + (calledInRequest.get(id) ?? 0), day: base.day + (calledInRequest.get(id) ?? 0) });
+    calledInRequest.set(id, (calledInRequest.get(id) ?? 0) + 1);
     const acted = over ? null : (await runMoreTool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
     if (over) {
       result = text(over, true);

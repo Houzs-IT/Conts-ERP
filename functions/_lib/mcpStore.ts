@@ -13,7 +13,7 @@
 import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import { ACTIONS_SETTING_KEY, ACTION_TTL_MS, PENDING_SQL, type ActionKind } from './mcpActions';
-import { RATE_SQL } from './mcpMore';
+import { RATE_COUNT_SQL, RATE_SQL } from './mcpMore';
 
 export const MCP_TOKEN_PREFIX = 'ctmcp_';
 export const MCP_REFRESH_PREFIX = 'ctmcpr_';
@@ -147,23 +147,34 @@ export async function refreshTokens(env: Env, refreshToken: string, clientId: st
 
 /** The person behind an access token, when the token is live and the person may still use the connector: active,
  *  a desk account, and an admin or approved. One query. Null for anything else, including a database without 0378. */
-export interface McpIdentity { tokenId: string; clientId: string; user: { id: string; email: string; fullName: string; role: string } }
-export async function resolveAccessToken(env: Env, token: string): Promise<McpIdentity | null> {
+export interface McpIdentity {
+  tokenId: string; clientId: string; user: { id: string; email: string; fullName: string; role: string };
+  /** With `withCounts`: the person's tool calls in the last minute / 24 hours, read in the same query (rate limit). */
+  recent?: { minute: number; day: number };
+}
+export async function resolveAccessToken(env: Env, token: string, withCounts = false): Promise<McpIdentity | null> {
   if (!token.startsWith(MCP_TOKEN_PREFIX) || token.length > 200) return null;
   try {
     if (!(await mcpReady(env))) return null;
-    const r = await one<{ id: string; client_id: string; last_used_at: string | null; user_id: string; email: string; full_name: string; role: string; is_active: number; approved: boolean }>(env,
+    const now = Date.now();
+    // The rate limit's counts ride along in the door's one query (round 3, speed): no second round trip per call.
+    const counts = withCounts ? `, (${RATE_COUNT_SQL('u.id')}) AS minute, (${RATE_COUNT_SQL('u.id')}) AS day` : '';
+    const r = await one<{ id: string; client_id: string; last_used_at: string | null; user_id: string; email: string; full_name: string; role: string; is_active: number; approved: boolean; minute?: number; day?: number }>(env,
       `SELECT t.id, t.client_id, t.last_used_at, u.id AS user_id, u.email, u.full_name, u.role, u.is_active,
-              EXISTS (SELECT 1 FROM mcp_access a WHERE a.user_id = u.id) AS approved
+              EXISTS (SELECT 1 FROM mcp_access a WHERE a.user_id = u.id) AS approved${counts}
          FROM mcp_tokens t JOIN users u ON u.id = t.user_id
-        WHERE t.access_hash = ? AND t.revoked_at IS NULL AND t.access_expires_at > ?`, await sha256Hex(token), nowIso());
+        WHERE t.access_hash = ? AND t.revoked_at IS NULL AND t.access_expires_at > ?`,
+    ...(withCounts ? [new Date(now - 60_000).toISOString(), new Date(now - 24 * 3600_000).toISOString()] : []), await sha256Hex(token), nowIso());
     if (!r || Number(r.is_active) !== 1 || !isDeskRole(r.role)) return null;
     if (!isMcpAdmin(r) && !r.approved) return null;
     // When it was last used, for the admin page: written at most once a minute per token.
     if (!r.last_used_at || Date.now() - Date.parse(r.last_used_at) > 60_000) {
       await run(env, 'UPDATE mcp_tokens SET last_used_at = ? WHERE id = ?', nowIso(), r.id).catch(() => { /* cosmetic */ });
     }
-    return { tokenId: r.id, clientId: r.client_id, user: { id: r.user_id, email: r.email, fullName: r.full_name, role: r.role } };
+    return {
+      tokenId: r.id, clientId: r.client_id, user: { id: r.user_id, email: r.email, fullName: r.full_name, role: r.role },
+      ...(withCounts ? { recent: { minute: Number(r.minute ?? 0), day: Number(r.day ?? 0) } } : {}),
+    };
   } catch (e) {
     console.error('AI Connector token check failed', e);
     return null;

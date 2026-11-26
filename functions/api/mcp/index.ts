@@ -14,7 +14,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     return json({ jsonrpc: '2.0', id: null, error: { code: -32002, message: 'The AI Connector is not set up on this system yet.' } }, 503);
   }
   const token = /^Bearer\s+(\S+)$/i.exec(request.headers.get('authorization') ?? '')?.[1] ?? '';
-  const id = token ? await resolveAccessToken(env, token) : null;
+  // withCounts: the rate limit's counts come back in the same query (mcpServer.ts callTool).
+  const id = token ? await resolveAccessToken(env, token, true) : null;
   if (!id) {
     return json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized' } }, 401, {
       'www-authenticate': `Bearer realm="conts-erp", resource_metadata="${originOf(request)}/.well-known/oauth-protected-resource/api/mcp"${token ? ', error="invalid_token"' : ''}`,

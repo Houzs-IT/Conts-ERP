@@ -216,6 +216,8 @@ test('export_excel: allowlist, query, paging, columns, cells', () => {
   const rows = [{ externalRef: 'D-1', guestName: 'Ali', checkIn: '2026-11-01', nested: { a: 1 }, outstanding: 15050 }];
   assert.deepEqual(M.exportColumns(r, rows, []).map(c => c.key), ['externalRef', 'guestName', 'checkIn', 'outstanding']);
   assert.deepEqual(M.exportColumns(r, rows, ['guestName', 'nope']).map(c => c.key), ['guestName']);
+  assert.deepEqual(M.exportColumns(r, rows, []).map(c => c.header), ['Reference', 'Guest name', 'Check in', 'Outstanding (RM)']);
+  assert.equal(M.exportColumns(r, [{ grossBookingValue: 1 }], [])[0].header, 'Guest total (RM)');
   const so = M.exportColumns(M.EXPORT_LISTS.sales_orders, [{ docNo: 'SO-1', totalSen: 100 }], []);
   assert.deepEqual(so.map(c => [c.header, c.money]), [['Doc no', false], ['Total (RM)', true]]);
   assert.equal(M.exportColumns(M.EXPORT_LISTS.suppliers, [{ code: 'S1', name: 'A', tags: ['x'] }], []).length, 2);
@@ -307,5 +309,8 @@ test('rate limit count on a real Postgres (PGlite) with the 0378 table and index
   const q = M.RATE_SQL.replace(/\?/g, (() => { let i = 0; return () => `$${++i}`; })());
   const r = (await pg.query(q, [at(60_000), 'u1', at(24 * 3600_000)])).rows[0];
   assert.deepEqual({ minute: Number(r.minute), day: Number(r.day) }, { minute: 3, day: 5 });
+  // The door's version: both counts as scalar subqueries in one statement (mcpStore resolveAccessToken withCounts).
+  const door = (await pg.query(`SELECT (${M.RATE_COUNT_SQL("'u1'").replace('?', '$1')}) AS minute, (${M.RATE_COUNT_SQL("'u1'").replace('?', '$2')}) AS day`, [at(60_000), at(24 * 3600_000)])).rows[0];
+  assert.deepEqual({ minute: Number(door.minute), day: Number(door.day) }, { minute: 3, day: 5 });
   await pg.close();
 });

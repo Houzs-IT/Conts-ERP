@@ -317,6 +317,16 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
     requests — wait a minute" / "Daily limit reached"), never a 500; a failed count lets the call through. The admin leak
     check never enters `callTool` (it uses `readEndpoint`), so it is not limited. The admin page shows the limits and
     the tool list read-only (overview `limits`, `tools`).
+  - Speed: the rate limit's two counts ride in the door's token query (`resolveAccessToken(env, token, true)`, scalar
+    subqueries on the 0378 index) plus a per-request counter for batches, so the limit adds no DB round trip per call
+    (the separate `recentCallCounts` query is only the fallback). Every tool's reads run in one `Promise.all`; no tool
+    reads per row (no N+1); export reads page 1 for the total, then the rest 4 at a time. The identity check is already
+    once per request (`rememberVerified`). Local bench (PGlite + `wrangler pages dev`, demo data, management, median of
+    7, ms): business 68 / 67, reservations 153 / 82, today 267 / 141, search 154 / 86, occupancy 115 / 97, arrears
+    76 / 87, statements 52 / 54, attendance 63 / 143, payables 46 / 170, daily_brief 97 / 169, export 84 / 166 (before /
+    after moving the counts into the door query). PGlite serialises every query, so parallel reads do not overlap and
+    run-to-run noise is +-100 ms: the numbers show every tool answers in well under 300 ms locally, not a reliable
+    before/after. Production timings are in `mcp_calls.ms` once people use it (not yet measured).
   - Not done: rent arrears (tenant rent on Agent-to-let records has no paid / unpaid record; the answer says so).
 - **FAQ (owner, 26 Nov 2026): each answered in ONE tool call.**
 
