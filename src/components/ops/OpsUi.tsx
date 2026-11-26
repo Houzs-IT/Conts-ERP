@@ -55,7 +55,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, c
 }) {
   return (
     <div role="tablist" aria-label={label}
-      className={cx('inline-flex items-center p-[3px] gap-[2px] rounded-control bg-muted max-w-full overflow-x-auto [scrollbar-width:none] flex-none', className)}>
+      className={cx('inline-flex items-center box-border p-[3px] gap-[2px] rounded-control bg-muted max-w-full overflow-x-auto [scrollbar-width:none] flex-none', className)}>
       {options.map(o => {
         const on = o.value === value;
         return (
