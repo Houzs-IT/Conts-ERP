@@ -442,7 +442,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   const typeById = new Map(types.map((t) => [Number(t.id), t]));
   for (const project of projects) {
     const projectSos = sosByProject.get(project.id) ?? [];
-    const so = projectSos[0] ?? null;
+    const so: SoRow | null = projectSos.length > 0 ? projectSos[0] : null;
     const projectDocs = new Set(projectSos.map((s) => s.doc_no));
     const signedSo = sos
       .filter((s) => Number(s.project_id) === project.id && String(s.status).toUpperCase() !== "DRAFT")
