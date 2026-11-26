@@ -78,12 +78,17 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
                 <span className="text-meta text-muted-ink font-normal">{plural(g.length, 'job')} · {rm(g.reduce((n, j) => n + (j.amount ?? 0), 0))}</span>
               </label>
               {g.map(j => (
-                <label key={j.id} className="flex items-center gap-2 pl-6 py-1 text-copy cursor-pointer">
-                  <input type="checkbox" checked={picks.has(j.id)} onChange={e => toggle([j.id], e.target.checked)} />
-                  <span className="w-[110px] flex-none text-muted-ink">{dayLabel(j.day)}</span>
-                  <span className="flex-1 min-w-0 truncate">{KIND[j.kind] ?? j.title} · {j.address}</span>
-                  {j.state === 'resolved' ? <StatusBadge tone="success" size="sm">Done</StatusBadge> : <StatusBadge tone="neutral" size="sm">Not done yet</StatusBadge>}
-                  <span className="w-[96px] text-right tabular-nums">{j.amount ? rm(j.amount) : <span className="text-muted-ink">RM 0.00</span>}</span>
+                <label key={j.id} className="flex items-start md:items-center gap-2 pl-6 py-1 text-copy cursor-pointer max-md:min-h-11">
+                  <input type="checkbox" className="mt-1 md:mt-0" checked={picks.has(j.id)} onChange={e => toggle([j.id], e.target.checked)} />
+                  {/* On a phone the day sits over the place, and the status over the amount, so the address keeps its room. */}
+                  <span className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center md:gap-2">
+                    <span className="md:w-[110px] flex-none text-muted-ink">{dayLabel(j.day)}</span>
+                    <span className="flex-1 min-w-0 truncate">{KIND[j.kind] ?? j.title} · {j.address}</span>
+                  </span>
+                  <span className="flex flex-col items-end md:flex-row md:items-center gap-1 md:gap-2 flex-none">
+                    {j.state === 'resolved' ? <StatusBadge tone="success" size="sm">Done</StatusBadge> : <StatusBadge tone="neutral" size="sm">Not done yet</StatusBadge>}
+                    <span className="md:w-[96px] text-right tabular-nums">{j.amount ? rm(j.amount) : <span className="text-muted-ink">RM 0.00</span>}</span>
+                  </span>
                 </label>
               ))}
             </div>
@@ -124,8 +129,8 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
             {inv.payments.length > 0 && (
               <div className="flex flex-col gap-1">
                 {inv.payments.map(p => (
-                  <div key={p.id} className="flex items-center gap-2 flex-wrap text-meta pl-1">
-                    <span className="w-[110px] text-muted-ink">{dayLabel(p.paidAt)}</span>
+                  <div key={p.id} className="flex items-center gap-x-2 gap-y-1 flex-wrap text-meta pl-1">
+                    <span className="md:w-[110px] text-muted-ink">{dayLabel(p.paidAt)}</span>
                     <span>{METHOD[p.method] ?? p.method} {rm(p.amountSen)}</span>
                     {p.receiptStatus === 'CANCELLED' ? <StatusBadge tone="danger" size="sm">Cancelled</StatusBadge>
                       : p.confirmed ? <StatusBadge tone="success" size="sm">{p.receiptNo ?? 'Confirmed'}</StatusBadge>
