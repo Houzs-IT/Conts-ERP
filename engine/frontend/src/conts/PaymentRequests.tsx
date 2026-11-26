@@ -378,6 +378,7 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
           {field(r.q.fromBills ? "Due" : "Wanted by", r.q.wantedOn)}
           {field("Amount", <Money sen={r.q.amountSen} />)}
           {field("Note", r.q.note)}
+          {r.q.renoReviewedBy && field("Reviewed by", r.q.renoReviewedBy)}
           {r.q.apInvoice && field("AP invoice", r.q.apInvoice.invoiceNumber)}
           {r.q.vouchers.length > 0 && field("Vouchers", r.q.vouchers.map((v) => (
             <Link key={v.id} className="block underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber} ({v.status.toLowerCase()})</Link>

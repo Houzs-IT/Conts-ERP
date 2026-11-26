@@ -35,7 +35,6 @@ import { ClaimBankFields, useSavedBank } from '../components/ops/ClaimBankFields
 import { usePortalText } from '../lib/portalI18n';
 import { LinesEditor, blankLine, toLines, type LineDraft } from './claims/ClaimLines';
 import { ClaimSection, FORM_FOOTER, GridRow, TWO_COLUMN_GRID, RowHelp } from './claims/FormLayout';
-import { ReviewFooter } from './claims/ReviewFooter';
 import { SupplierPicker, type Supplier } from './claims/SupplierPicker';
 
 /**
@@ -48,6 +47,7 @@ import { SupplierPicker, type Supplier } from './claims/SupplierPicker';
  */
 type Tab = 'handin' | 'mine' | 'float' | 'review';
 type Kind = 'claim' | 'direct';
+const RENO_FIRST_NOTE = 'It goes to the renovation reviewer first, then to finance.';
 const lastMonths = (n: number): SelectOption[] => {
   const [y, m] = thisMonthMyt().split('-').map(Number);
   return Array.from({ length: n }, (_, i) => {
@@ -66,7 +66,6 @@ export default function MyClaimsPage() {
   const [mineMonth, setMineMonth] = useState(thisMonthMyt());
   /* A withdrawn or rejected request being changed to send again (chew, 13 Nov 2026): the Hand in form, filled in. */
   const [editing, setEditing] = useState<PaymentRequest | null>(null);
-  const [reviewing, setReviewing] = useState<Receipt | null>(null);
   const startHandIn = (kind: Kind) => { setEditing(null); setHandInKind(kind); setTab('handin'); };
   const startEdit = (q: PaymentRequest) => { setEditing(q); setTab('handin'); };
   const showMine = (month: string) => { setEditing(null); setMineMonth(month); setTab('mine'); };
@@ -80,28 +79,24 @@ export default function MyClaimsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader title="My claims" sub="Claim back what you paid, or ask finance to pay a supplier." />
       {me.error && <StaleBanner message={me.error} onRetry={me.reload} />}
-      <Segmented label="My claims" options={tabs} value={tab} onChange={t => { if (t !== 'handin') setEditing(null); setReviewing(null); setTab(t); }} className="self-start" />
+      <Segmented label="My claims" options={tabs} value={tab} onChange={t => { if (t !== 'handin') setEditing(null); setTab(t); }} className="self-start" />
       {tab === 'handin' && me.data && <HandInForm key={editing?.id ?? 'new'} me={me.data} initialKind={editing ? 'direct' : handInKind} editing={editing}
         onDone={showMine} onCancelEdit={() => { setEditing(null); setTab('mine'); }} />}
       {tab === 'mine' && <Mine month={mineMonth} onMonthChange={setMineMonth} onHandIn={startHandIn} onEdit={startEdit} />}
       {tab === 'float' && <KeptFloat />}
-      {tab === 'review' && canReview && (reviewing && me.data
-        ? <HandInForm key={reviewing.id} me={me.data} initialKind="claim" onDone={showMine} reviewing={{ receipt: reviewing, onBack: () => setReviewing(null), onDone: () => setReviewing(null) }} />
-        : <RenoReview onOpen={setReviewing} />)}
+      {tab === 'review' && canReview && <RenoReview />}
     </div>
   );
 }
 
 /** One form: Claim to me (I paid; pay me back) or Direct pay (finance pays a supplier). What both share stays when switching.
  *  With `editing`, a withdrawn or rejected request filled in as it was, to change and send again under its own number
- *  (chew, 13 Nov 2026); its papers stay unless removed, and new ones can be added. With `reviewing`, the renovation
- *  reviewer's copy of a handed-in receipt, to correct and send on to finance (Claim to me, fixed). */
-function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, reviewing }: {
+ *  (chew, 13 Nov 2026); its papers stay unless removed, and new ones can be added. */
+function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   me: Me; initialKind: Kind; onDone: (mineMonth: string) => void; editing?: PaymentRequest | null; onCancelEdit?: () => void;
-  reviewing?: { receipt: Receipt; onBack: () => void; onDone: () => void };
 }) {
   const toast = useToast();
-  const seed = editing ?? reviewing?.receipt ?? null;
+  const seed = editing;
   const [kind, setKind] = useState<Kind>(initialKind);
   const [amountSen, setAmountSen] = useState<number | null>(seed?.amountSen ?? null);
   const [note, setNote] = useState(seed?.note ?? '');
@@ -122,19 +117,16 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /* Paid back by transfer: the person confirms or changes the account on the claim, as the phone's Direct Claim to Me
-     does (chew, 23 Nov 2026); it starts from their saved details and a change stays on this claim. A reviewer sees the
-     account the claim was handed in with, never their own saved one. */
+     does (chew, 23 Nov 2026); it starts from their saved details and a change stays on this claim. */
   const t = usePortalText();
-  const paidFromFloat = reviewing ? !!reviewing.receipt.floatId : me.route === 'float';
+  const paidFromFloat = me.route === 'float';
   const transfer = kind === 'claim' && !paidFromFloat;
-  const [bank, setBank] = useSavedBank(transfer && !reviewing);
-  const handedInBank = reviewing?.receipt.bank;
-  useEffect(() => { if (handedInBank) setBank(handedInBank); }, [handedInBank, setBank]);
+  const [bank, setBank] = useSavedBank(transfer);
   const [wrongBank, setWrongBank] = useState<keyof ClaimBank | null>(null);
   /* Claim to me */
   const [reading, setReading] = useState(false);
-  const [spendDate, setSpendDate] = useState(reviewing?.receipt.spendDate ?? todayMyt());
-  const [vendorName, setVendorName] = useState(reviewing?.receipt.vendorName ?? '');
+  const [spendDate, setSpendDate] = useState(todayMyt());
+  const [vendorName, setVendorName] = useState('');
   /* Direct pay */
   /* No payment-or-deposit choice (chew, 17 Nov 2026): the bill or quotation total is paid whole, unless a deposit is
      filled in, as a percent of it or an amount; then the request is that deposit. */
@@ -169,7 +161,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   /* A receipt read still running when the kind is switched (or the files are picked again) must not land: each read
      carries the number it started with, and only the latest one, still on Claim to me, fills anything. */
   const readNo = useRef(0);
-  const dateTyped = useRef(!!reviewing);
+  const dateTyped = useRef(false);
   const switchKind = (k: Kind) => { if (k !== kind) { readNo.current++; setReading(false); setKind(k); setFiles([]); setProblem(null); } };
   /* The form as it is NOW, for a bill read that comes back after the person changed it (a PO or supplier picked,
      a payee typed while reading): pick()'s own variables are the values from when the files were chosen. */
@@ -223,7 +215,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   async function send() {
     setProblem(null);
     if (!amountSen || amountSen <= 0) return setProblem(kind === 'claim' ? 'Enter the amount on the receipt.' : 'Enter the bill or quotation total.');
-    if (kind === 'claim' && files.length + (reviewing ? kept.length : 0) === 0) return setProblem('Add a photo of the receipt.');
+    if (kind === 'claim' && files.length === 0) return setProblem('Add a photo of the receipt.');
     if (kind === 'direct') {
       if (type === 'DEPOSIT' && billTotalSen != null && depositAmtSen! >= billTotalSen) return setProblem('A deposit is less than the bill: clear the deposit to pay the whole bill.');
       if (!supplier && !poId && (type === 'DEPOSIT' || !payeeName.trim())) return setProblem(type === 'DEPOSIT' ? 'A deposit is paid to a supplier on the list.' : 'Choose the supplier, a PO, or type who is paid.');
@@ -231,35 +223,26 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
     }
     const built = toLines(lines, amountSen);
     if (!built.ok) return setProblem(built.message);
-    const isBankBlank = !bank.bankName && !bank.accountNo && !bank.accountName;
-    const badBank = transfer && !(reviewing && isBankBlank) ? bankProblem(bank) : null;
+    const badBank = transfer ? bankProblem(bank) : null;
     if (badBank) { setWrongBank(badBank); return setProblem('Check the bank account you are paid back to.'); }
     setBusy(true);
     try {
-      if (reviewing) {
-        await postWithFiles<{ receiptNo: string }>(`/claims/reno-review/${reviewing.receipt.id}/send`,
-          { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines,
-            bank: transfer && !isBankBlank ? bank : undefined, keepFileIds: kept.map(f => f.id) }, files);
-        toast({ tone: 'success', title: `Receipt ${reviewing.receipt.receiptNo} sent to finance` });
-        reviewing.onDone();
-        return;
-      }
       if (kind === 'claim') {
-        const made = await postWithFiles<{ receiptNo: string; route: 'float' | 'finance'; renoReview: boolean }>('/claims/receipts',
+        const made = await postWithFiles<{ receiptNo: string; route: 'float' | 'finance' }>('/claims/receipts',
           { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines,
             ...(transfer ? { payBack: 'finance', bank } : {}) }, files);
-        toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.renoReview ? 'It goes to the renovation reviewer first, then to finance.' : made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
+        toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
         const body = {
           type, supplierId: supplier?.id, purchaseOrderId: poId || undefined, payeeName: !poId && !supplier ? payeeName.trim() || undefined : undefined,
           amountSen, wantedOn: wantedOn || undefined, note: depositNote() || undefined, lines: built.lines,
         };
         if (editing) {
-          await postWithFiles<{ requestNo: string }>(`/claims/requests/${editing.id}/resubmit`, { ...body, keepFileIds: kept.map(f => f.id) }, files);
-          toast({ tone: 'success', title: `Request ${editing.requestNo} sent to finance again` });
+          const again = await postWithFiles<{ renoReview: boolean }>(`/claims/requests/${editing.id}/resubmit`, { ...body, keepFileIds: kept.map(f => f.id) }, files);
+          toast({ tone: 'success', title: `Request ${editing.requestNo} sent to finance again`, body: again.renoReview ? RENO_FIRST_NOTE : undefined });
         } else {
-          const made = await postWithFiles<{ requestNo: string }>('/claims/requests', body, files);
-          toast({ tone: 'success', title: `Request ${made.requestNo} sent to finance` });
+          const made = await postWithFiles<{ requestNo: string; renoReview: boolean }>('/claims/requests', body, files);
+          toast({ tone: 'success', title: `Request ${made.requestNo} sent to finance`, body: made.renoReview ? RENO_FIRST_NOTE : undefined });
         }
       }
       onDone(kind === 'claim' ? spendDate.slice(0, 7) : thisMonthMyt());
@@ -267,7 +250,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   }
 
   const claim = kind === 'claim';
-  const keptHref = (fileId: string) => (reviewing ? renoReviewFileHref(reviewing.receipt.id, fileId) : requestFileHref(editing?.id ?? '', fileId));
+  const keptHref = (fileId: string) => requestFileHref(editing?.id ?? '', fileId);
   const papersRow = (label: string, hint: string) => (
     <>
       <FileDropRow label={kept.length ? 'Add more papers (optional)' : label} hint={hint} accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
@@ -280,13 +263,13 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
     <Card className="p-4 flex flex-col gap-3 lg:sticky lg:top-0">
       <span className="ds-eyebrow">Summary</span>
       <KeyFacts cols={2} items={[
-        { label: reviewing ? 'Reviewing' : 'Hand in as', value: reviewing ? reviewing.receipt.receiptNo : claim ? 'Claim to me' : 'Direct pay' },
+        { label: 'Hand in as', value: claim ? 'Claim to me' : 'Direct pay' },
         { label: 'Lines', value: String(lines.length) },
         { label: 'Amount', value: amountSen ? rm(amountSen) : 'Not entered' },
         { label: claim ? 'Paid back by' : 'Paid by', value: claim ? (paidFromFloat ? 'Petty cash' : 'Finance, by transfer') : 'Finance, by transfer' },
       ]} />
       <p className="m-0 text-meta text-muted-ink">
-        {claim ? (paidFromFloat ? `${reviewing ? 'The department keeps' : 'Your department keeps'} petty cash, so it pays back once the receipt is checked.` : `${reviewing ? 'The department has' : 'Your department has'} no petty cash: finance pays back by bank transfer.`)
+        {claim ? (paidFromFloat ? 'Your department keeps petty cash, so it pays back once the receipt is checked.' : 'Your department has no petty cash: finance pays back by bank transfer.')
           : 'Finance pays the supplier after checking the bill and the payee. Finance chooses the account while checking.'}
       </p>
     </Card>
@@ -294,11 +277,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
       <Card className="claim-form-compact p-4 sm:p-5 flex flex-col gap-4">
-        {reviewing ? (
-          <ClaimSection title={`Reviewing ${reviewing.receipt.receiptNo}, handed in by ${reviewing.receipt.submitterName}`}>
-            <div><Button size="sm" variant="tertiary" onClick={reviewing.onBack}>Back to the list</Button></div>
-          </ClaimSection>
-        ) : editing ? (
+        {editing ? (
           <ClaimSection title={`Changing ${editing.requestNo}`} hint={editing.status === 'REJECTED' ? `Rejected${editing.decidedBy ? ` by ${editing.decidedBy}` : ''}` : 'Withdrawn'}>
             {editing.reason && <Problem text={editing.reason} />}
             <RowHelp>Change what is wrong and send it again. It keeps its number, and finance sees it again.</RowHelp>
@@ -363,7 +342,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
           <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} recoverOn={kind === 'direct' ? 'paid' : 'checked'} />
         </ClaimSection>
         {transfer && (
-          <ClaimSection title="Paid back to" hint={reviewing ? 'The account the claim was handed in with' : 'Your saved account; change it for this claim if needed'}>
+          <ClaimSection title="Paid back to" hint="Your saved account; change it for this claim if needed">
             <GridRow className="sm:[&>span]:col-span-3">
               <ClaimBankFields bank={bank} wrong={wrongBank} t={t}
                 onChange={(k, v) => { setBank(b => ({ ...b, [k]: v })); if (wrongBank === k) setWrongBank(null); }} />
@@ -374,20 +353,16 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
           <Field label="Anything finance should know (optional)" value={note} onChange={e => setNote(e.target.value)} maxLength={500} />
         </ClaimSection>
         {problem && <div role="alert" className={cx('px-3 py-2 rounded-control text-copy', TONE.critical.bg, TONE.critical.text)}>{problem}</div>}
-        {reviewing ? (
-          <ReviewFooter receipt={reviewing.receipt} isBusy={busy} isReading={reading} onSend={() => void send()} onDone={reviewing.onDone} />
-        ) : (
-          <div className={FORM_FOOTER}>
-            <Button variant="primary" loading={busy} disabled={reading} disabledReason="Reading the papers first." onClick={() => void send()}>{claim ? 'Hand in' : editing ? 'Send to finance again' : 'Send to finance'}</Button>
-          </div>
-        )}
+        <div className={FORM_FOOTER}>
+          <Button variant="primary" loading={busy} disabled={reading} disabledReason="Reading the papers first." onClick={() => void send()}>{claim ? 'Hand in' : editing ? 'Send to finance again' : 'Send to finance'}</Button>
+        </div>
       </Card>
       <div className="max-lg:order-first max-lg:hidden">{summary}</div>
     </div>
   );
 }
 
-function Files({ r, hrefOf = receiptFileHref }: { r: Receipt; hrefOf?: (receiptId: string, fileId: string) => string }) {
+function Files({ r, hrefOf = receiptFileHref }: { r: { id: string; files: ClaimFile[] }; hrefOf?: (receiptId: string, fileId: string) => string }) {
   const [viewing, setViewing] = useState<MediaItem | null>(null);
   if (!r.files.length) return <>—</>;
   return (
@@ -402,7 +377,7 @@ function Files({ r, hrefOf = receiptFileHref }: { r: Receipt; hrefOf?: (receiptI
 }
 
 /* One paid through an AP invoice is changed on the invoice by finance, not withdrawn (chew, 15 Nov 2026). */
-const canWithdraw = (q: PaymentRequest) => q.status === 'SUBMITTED' && q.vouchers.length === 0 && !onBill(q);
+const canWithdraw = (q: PaymentRequest) => (q.status === 'SUBMITTED' || q.status === 'RENO_REVIEW') && q.vouchers.length === 0 && !onBill(q);
 
 const receiptStatus = (receipt: Receipt) => ({ label: RECEIPT_STATUS[receipt.status], tone: RECEIPT_TONE[receipt.status] });
 const requestStatus = (request: PaymentRequest) => ({ label: REQUEST_STATUS[request.status], tone: REQUEST_TONE[request.status] });
@@ -515,6 +490,7 @@ function RequestDetail({ request, onClose, onWithdraw, onEdit, onBalance }: { re
         { label: 'Type', value: request.type === 'DEPOSIT' ? 'A deposit' : 'A payment' },
         { label: 'Asked on', value: date(request.createdAt) },
         { label: 'Pay by', value: request.wantedOn ? date(request.wantedOn) : 'Not set' },
+        ...(request.renoReviewedBy ? [{ label: 'Reviewed by', value: request.renoReviewedBy }] : []),
         ...(vouchers ? [{ label: 'Payment voucher', value: vouchers }] : []),
         ...(bill ? [{ label: 'AP invoice', value: bill }] : []),
         ...(request.parentRequestNo ? [{ label: 'Balance of', value: request.parentRequestNo }] : []),
@@ -533,6 +509,7 @@ function RequestDetail({ request, onClose, onWithdraw, onEdit, onBalance }: { re
       )}
       {request.note && <NoteBlock text={request.note} />}
       <Papers files={request.files} hrefOf={fileId => requestFileHref(request.id, fileId)} />
+      {request.status === 'RENO_REVIEW' && <p className="m-0 text-meta text-muted-ink">Waiting for the renovation reviewer before finance sees it.</p>}
       {canWithdraw(request) && <p className="m-0 text-meta text-muted-ink">Finance has not started paying it, so you can still withdraw it.</p>}
       {canResubmit(request) && <p className="m-0 text-meta text-muted-ink">Change what is wrong and send it again. It keeps its number.</p>}
       {fixOnUtilityBills(request) && <p className="m-0 text-meta text-muted-ink">Made from utility bills: fix the bills on Utility bills, then use Send again there.</p>}
@@ -678,17 +655,67 @@ function KeptFloat() {
   );
 }
 
-function RenoReview({ onOpen }: { onOpen: (receipt: Receipt) => void }) {
-  const queue = useApi<{ receipts: Receipt[] }>('/claims/reno-review');
-  const cols: Column<Receipt>[] = [
-    { key: 'date', label: 'Date', type: 'date', value: r => r.spendDate, phone: 'meta' },
-    { key: 'by', label: 'Handed in by', value: r => r.submitterName, phone: 'title' },
-    { key: 'shop', label: 'Shop', value: r => r.vendorName ?? '', sub: r => r.lines.map(l => l.description).filter(Boolean).join('; ') },
-    { key: 'amount', label: 'Amount', type: 'money', value: r => r.amountSen },
-    { key: 'files', label: 'Receipt', value: r => r.files.length, render: r => <Files r={r} hrefOf={renoReviewFileHref} /> },
+function ReviewRequestModal({ request, onClose, onDone }: { request: PaymentRequest; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [isBusy, setIsBusy] = useState(false);
+  const [isSendingBack, setIsSendingBack] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const sendToFinance = async () => {
+    setIsBusy(true); setProblem(null);
+    try {
+      await api.post(`/claims/reno-review/${request.id}/send`, {});
+      toast({ tone: 'success', title: `Request ${request.requestNo} sent to finance` });
+      onDone();
+    } catch (e) { setProblem(errorMessage(e)); } finally { setIsBusy(false); }
+  };
+  return (
+    <Modal title={`Request ${request.requestNo}`} eyebrow="To review" size="md" onClose={onClose} busy={isBusy}
+      footer={<>
+        <Button variant="tertiary" className="mr-auto" disabled={isBusy} onClick={() => setIsSendingBack(true)}>Send back</Button>
+        <Button variant="primary" loading={isBusy} onClick={() => void sendToFinance()}>Send to finance</Button>
+      </>}>
+      <KeyFacts cols={2} items={[
+        { label: 'Amount', value: rm(request.amountSen) },
+        { label: 'Paid to', value: <WrappedFact text={request.payeeName} /> },
+        { label: 'Type', value: request.type === 'DEPOSIT' ? 'A deposit' : 'A payment' },
+        { label: 'Asked by', value: <WrappedFact text={request.requesterName ?? 'Not known'} /> },
+        { label: 'Asked on', value: date(request.createdAt) },
+        { label: 'Pay by', value: request.wantedOn ? date(request.wantedOn) : 'Not set' },
+      ]} />
+      <DetailLines lines={request.lines} totalSen={request.amountSen} />
+      {request.note && <NoteBlock text={request.note} />}
+      <Papers files={request.files} hrefOf={fileId => renoReviewFileHref(request.id, fileId)} />
+      {problem && <Problem text={problem} />}
+      <ConfirmDialog onClose={() => setIsSendingBack(false)} spec={isSendingBack ? {
+        title: `Send ${request.requestNo} back`, body: 'The person who asked sees your reason and can change it and send it again.', confirmLabel: 'Send back', danger: true,
+        reason: { label: 'Why is it sent back?', maxLength: 500 },
+        onConfirm: async reason => {
+          try {
+            await api.post(`/claims/reno-review/${request.id}/reject`, { reason: reason.trim() });
+            toast({ tone: 'success', title: `Request ${request.requestNo} sent back` });
+            onDone();
+          } catch (e) { toast({ tone: 'critical', title: 'Not sent back', body: errorMessage(e) }); }
+        },
+      } : null} />
+    </Modal>
+  );
+}
+
+function RenoReview() {
+  const queue = useApi<{ requests: PaymentRequest[] }>('/claims/reno-review');
+  const [opened, setOpened] = useState<PaymentRequest | null>(null);
+  const cols: Column<PaymentRequest>[] = [
+    { key: 'on', label: 'Asked on', type: 'date', value: q => q.createdAt, phone: 'meta' },
+    { key: 'by', label: 'Asked by', value: q => q.requesterName ?? '', phone: 'title' },
+    { key: 'pay', label: 'Paid to', value: q => q.payeeName, sub: q => q.lines.map(l => l.description).filter(Boolean).join('; ') },
+    { key: 'amount', label: 'Amount', type: 'money', value: q => q.amountSen },
+    { key: 'files', label: 'Papers', value: q => q.files.length, render: q => <Files r={q} hrefOf={renoReviewFileHref} /> },
   ];
   return (
-    <DataTable id="my-claims-reno-review" toolbar={<TableTitle title="Waiting for your review" count={queue.data?.receipts.length} />} columns={cols} rows={queue.data?.receipts ?? null} rowKey={r => r.id}
-      loading={queue.loading} error={queue.error} onRetry={queue.reload} onRowClick={onOpen} empty={{ title: 'Nothing to review', body: 'Renovation claims handed in to the reviewer show here.' }} />
+    <>
+      <DataTable id="my-claims-reno-review" toolbar={<TableTitle title="Waiting for your review" count={queue.data?.requests.length} />} columns={cols} rows={queue.data?.requests ?? null} rowKey={q => q.id}
+        loading={queue.loading} error={queue.error} onRetry={queue.reload} onRowClick={setOpened} empty={{ title: 'Nothing to review', body: 'Renovation Direct pay requests show here before finance.' }} />
+      {opened && <ReviewRequestModal request={opened} onClose={() => setOpened(null)} onDone={() => { setOpened(null); queue.reload(); }} />}
+    </>
   );
 }

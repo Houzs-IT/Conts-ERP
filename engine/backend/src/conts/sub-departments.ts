@@ -36,6 +36,14 @@ export async function loadSubDepartments(sb: Db, companyId: number): Promise<{ o
   return { ok: true, list };
 }
 
+/** Does any line sit on a sub-department flagged for Reno review? A list that cannot be read counts as none. */
+export async function needsRenoReview(sb: Db, companyId: number, lines: Array<{ sub_department_id?: string | null }>): Promise<boolean> {
+  const loaded = await loadSubDepartments(sb, companyId);
+  if (!loaded.ok) return false;
+  const flagged = new Set(loaded.list.filter((s) => s.renoReview).map((s) => s.id));
+  return lines.some((l) => l.sub_department_id != null && flagged.has(l.sub_department_id));
+}
+
 /** Is it the row a line naming no sub-department reads as (Rental (general), Renovation (Dream Crafter), Company)? */
 export const isDepartmentDefault = (s: Pick<SubDepartment, 'department' | 'fixedKey'>): boolean => s.fixedKey === DEFAULT_KEY[s.department];
 

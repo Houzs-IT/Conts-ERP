@@ -123,14 +123,6 @@ export function claimBank(x: unknown): { bankName: string; accountNo: string; ac
   return { bankName, accountNo, accountName };
 }
 
-/** Does any line sit on a sub-department flagged for Reno review (0379)? A list that cannot be read counts as none. */
-async function needsRenoReview(sb: any, companyId: number, lines: Array<{ sub_department_id?: string | null }>): Promise<boolean> {
-  const loaded = await loadSubDepartments(sb, companyId);
-  if (!loaded.ok) return false;
-  const flagged = new Set(loaded.list.filter((s) => s.renoReview).map((s) => s.id));
-  return lines.some((l) => l.sub_department_id != null && flagged.has(l.sub_department_id));
-}
-
 export const handInHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -157,7 +149,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
     const { data: seen } = await sb.from('staff_receipts').select('id, receipt_no, float_id, submitter_user_id, status').eq('id', askedId).maybeSingle();
     if (seen) {
       if (seen.submitter_user_id !== staff.userId) return c.json({ error: 'conflict', message: 'That receipt id is taken.' }, 409);
-      return c.json({ id: seen.id, receiptNo: seen.receipt_no, route: seen.float_id ? 'float' : 'finance', renoReview: seen.status === 'RENO_REVIEW' }, 200);
+      return c.json({ id: seen.id, receiptNo: seen.receipt_no, route: seen.float_id ? 'float' : 'finance' }, 200);
     }
   }
   const decoded = decodeFiles(b.files, 'a photo of the receipt');
@@ -184,7 +176,6 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   const floatId = direct ? null : replaces ? replaces.float_id : await myFloatId(sb, co.companyId, staff);
   /* SOP 1.1: each line starts on the float's department's sub-department (a job's on Maintenance), else the person's. */
   await defaultLineSubs(sb, co.companyId, built.lines, { staffDepartmentId: staff.departmentId, floatId });
-  const renoReview = direct && await needsRenoReview(sb, co.companyId, built.lines);
   const source = c.get('claimsSource') === 'forward' ? (staff.field ? 'field_app' : 'property_os') : 'engine';
 
   /* Files first, under the receipt's own id: a failed upload leaves no receipt behind. */
@@ -205,7 +196,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
     no => sb.from('staff_receipts').insert({
       id, company_id: co.companyId, receipt_no: no, submitter_user_id: staff.userId, float_id: floatId, spend_date: spendDate,
       amount_sen: amountSen, vendor_name: b.vendorName ? String(b.vendorName).slice(0, 200) : null, note: b.note ? String(b.note).slice(0, 500) : null,
-      status: renoReview ? 'RENO_REVIEW' : 'HANDED_IN', replaces_id: replaces?.id ?? null, source,
+      status: 'HANDED_IN', replaces_id: replaces?.id ?? null, source,
       ...(bank ? { payee_bank_name: bank.bankName, payee_account_no: bank.accountNo, payee_account_name: bank.accountName } : {}),
     }).select('id, receipt_no').single(),
   );
@@ -216,7 +207,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (fr.error) return fail(fr.error.message);
   const rv = await saveRecoveries(sb, id, recover.byUnit, staff.userId, 'receipt');
   if (rv) return fail(rv);
-  return c.json({ id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance', renoReview }, 201);
+  return c.json({ id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance' }, 201);
 };
 
 export const myReceiptsHandler = async (c: Ctx): Promise<Response> => {

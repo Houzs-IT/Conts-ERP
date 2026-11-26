@@ -174,16 +174,16 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
     try {
       if (way === 'supplier') {
         // A field worker names the supplier as on the bill; finance matches it to the list when it pays.
-        await postWithFiles('/claims/requests', {
+        const asked = await postWithFiles<{ renoReview: boolean }>('/claims/requests', {
           id: requestId, type: 'PAYMENT', payeeName: payeeName.trim(), amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: [line],
         }, files);
-        toast({ tone: 'success', title: tr.supplierSent });
+        toast({ tone: 'success', title: tr.supplierSent, body: asked.renoReview ? p.renoSent : undefined });
       } else {
-        const made = await postWithFiles<{ route: 'float' | 'finance'; renoReview?: boolean }>('/claims/receipts', {
+        const made = await postWithFiles<{ route: 'float' | 'finance' }>('/claims/receipts', {
           spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: [line],
           ...(way === 'finance' ? { payBack: 'finance', bank } : {}),
         }, files);
-        toast({ tone: 'success', title: tr.sent, body: made.renoReview ? p.renoSent : way === 'finance' ? p.directSent : made.route === 'float' ? tr.paidFromFloat : tr.paidByFinance });
+        toast({ tone: 'success', title: tr.sent, body: way === 'finance' ? p.directSent : made.route === 'float' ? tr.paidFromFloat : tr.paidByFinance });
       }
       onDone();
     } catch (e) { setProblem(errorMessage(e, tr.notSent)); } finally { setBusy(false); }
