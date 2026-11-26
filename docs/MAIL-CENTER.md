@@ -117,5 +117,6 @@ All additive and idempotent (`if not exists`); new tables owned by `scm_engine` 
 - Meeting emails are still sent by Property OS (`functions/_lib/meetingMail.ts`), not through the engine's `email_log`.
 - The Property OS menu shows no waiting-for-reply badge on Mail (its badges come from `/api/nav/badges`, which does not
   ask the engine); the count shows inside Mail Center. The same count is readable server to server at
-  `GET /api/supply-chain/mail-waiting` (Mail access only; signs on, reads `/api/mail-center/waiting-count`, signs out),
+  `GET /api/supply-chain/mail-waiting` (Mail access only; engine `POST /api/conts-mail-waiting` with an `aud:
+  'mail-waiting'` statement, read-only: no account, session or mailbox is made; `count: null` = not opened yet),
   which the AI Connector's daily brief uses. The menu does not call it (it would sign on to the engine every minute).

@@ -336,10 +336,14 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   - **C1 daily_brief + Mail Center.** Why it could not read it: Mail Center lives on the engine; opening it needs the
     POST sign-on (`/api/supply-chain/engine-session`), and the connector only makes GETs (the write fence allows that
     POST only inside `confirm_action`). Fix: new read endpoint `GET /api/supply-chain/mail-waiting` (same gate as the
-    Mail menu: no field / owner accounts, area `mail` not closed, the engine's own mailbox scope) signs the person on
-    server to server, reads engine `GET /api/mail-center/waiting-count` (the number Mail Center shows under My mailbox)
-    and signs the engine session out. Not set up (501) = the brief says Mail Center is not included. Like opening Mail
-    Center, a first sign-on makes the person's engine account and personal mailbox if they have none.
+    Mail menu: no field / owner accounts, area `mail` not closed) sends the engine a one-minute signed statement
+    (`aud: 'mail-waiting'`, `scmEngine.ts mailWaitingAssertion`) to the new engine route `POST /api/conts-mail-waiting`
+    (`engine/backend/src/conts/mail-waiting-route.ts`), which checks Mail again and counts with the same query as
+    `GET /api/mail-center/waiting-count`. **Read-only (main session, 27 Nov 2026): it never signs anyone on and never
+    makes an engine account, session or mailbox.** No engine account, or no mailbox of their own yet -> `count: null`,
+    "Mail Center not opened yet", and the brief says so. Not set up (501) = the brief says Mail Center is not included.
+    **Needs the engine deployed** (Actions > the engine production deploy); until then the endpoint answers 502
+    "the engine needs its update" and the brief lists Mail Center under couldNotRead.
   - `period` (every period tool): today | week (Mon-Sun) | month | last_month | quarter | year | custom (from + to), or
     `month` / `quarter` (YYYY-qN) / `year`; each compares with the period before (`resolvePeriod`).
   - Tools and reads: `unit_overview {unit|unitId}` = `/api/search?kind=unit` then `/api/units/detail` +

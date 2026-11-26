@@ -53,6 +53,17 @@ async function searchAssertion(env: Env, session: Session, levels: Record<string
   return `${body}.${b64url(await crypto.subtle.sign('HMAC', key, enc.encode(body)))}`;
 }
 
+/** A one-minute statement for the engine's Mail Center waiting count (engine/backend/src/conts/mail-waiting-route.ts),
+ *  marked `aud: 'mail-waiting'` so it opens nothing else, carrying the person's levels (the engine checks Mail). The
+ *  engine only reads with it: no account, session or mailbox is ever made (AI Connector round 4, 27 Nov 2026). */
+export async function mailWaitingAssertion(env: Env, session: Session, levels: Record<string, string>): Promise<string> {
+  const enc = new TextEncoder();
+  const access = Object.fromEntries(ENGINE_AREAS.map(k => [k, levels[k] ?? 'none']));
+  const body = b64url(enc.encode(JSON.stringify({ aud: 'mail-waiting', email: session.email, access, exp: Date.now() + 45_000 })));
+  const key = await crypto.subtle.importKey('raw', enc.encode(env.SCM_ENGINE_SSO_SECRET!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return `${body}.${b64url(await crypto.subtle.sign('HMAC', key, enc.encode(body)))}`;
+}
+
 /** The engine areas the person may search at all. */
 export const engineSearchOpen = (levels: Record<string, string>) => ENGINE_AREAS.some(k => k !== 'ledger' && k !== 'mail' && (levels[k] ?? 'none') !== 'none');
 

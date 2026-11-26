@@ -10,6 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
+import { readFileSync } from 'node:fs';
 
 register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) {
   try { return await next(s, c); } catch (e) { if (s.startsWith('.') && !/\\.[a-z]+$/.test(s)) return next(s + '.ts', c); throw e; }
@@ -128,12 +129,17 @@ test('leases, vacancy, unit, gaps, owner payouts, cancellations, reviews, channe
   assert.deepEqual([mx.channels[0].bookingsSharePct, mx.channels[0].adrRm, mx.channels[0].avgLengthOfStayNights, mx.channels[0].bookingsChangePct], [75, 100, 3, 50]);
 });
 
-test('daily brief: Mail Center waiting count as its own section; not readable -> said plainly', () => {
+test('daily brief: Mail Center waiting count as its own section; not opened yet / not readable -> said plainly', () => {
   const base = { today: TODAY, origin: O, name: 'A', badges: null, tasks: null, approvals: null, salesOrders: null, purchaseOrders: null, maintenance: null, noAccess: [] };
   const b = M.buildBrief({ ...base, mail: { count: 4 } });
   const s = b.sections.find(x => x.section.startsWith('Mail Center'));
   assert.equal(s.count, 4); assert.equal(s.top[0].link, `${O}/mail`);
   assert.equal(b.notCovered, undefined);
+  // No engine account or mailbox yet: the endpoint answers count null (it never signs anyone on); the brief says so.
+  const notOpened = M.buildBrief({ ...base, mail: { count: null, opened: false, note: 'Mail Center not opened yet: open Mail in the ERP once to set up your mailbox.' } });
+  assert.equal(notOpened.sections.some(x => x.section.startsWith('Mail Center')), false);
+  assert.match(notOpened.mailCenter, /not opened yet/);
+  assert.equal(notOpened.notCovered, undefined);
   const none = M.buildBrief({ ...base, mail: null, noAccess: ['Mail Center'] });
   assert.match(none.notCovered, /Mail Center is not included/);
 });
@@ -282,4 +288,11 @@ test('period errors are plain, not a crash', async () => {
   assert.match(old.result.content[0].text, /this year to date/);
   const nope = await T.runConts4Tool('company_report', { company: 'Acme' }, c);
   assert.equal(nope.status, 400);
+});
+
+test('mail-waiting never signs anyone on (read-only, main session 27 Nov 2026)', () => {
+  const src = readFileSync(new URL('../../functions/api/supply-chain/mail-waiting.ts', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(src, /conts-sso|scmEngineAssertion|engine-session|auth\/logout/, 'no sign-on, session or logout');
+  assert.match(src, /\/api\/conts-mail-waiting/);
+  assert.match(src, /mailWaitingAssertion/);
 });

@@ -317,7 +317,9 @@ export function buildBrief(i: BriefInput) {
     })));
   }
   // Mail Center (the engine): open threads whose last word is the customer's, assigned to me or in my own mailbox.
-  if (i.mail) {
+  // count null = Mail Center not opened yet (no engine account or no mailbox of their own): said in the answer below.
+  const mailNotOpened = !!i.mail && obj(i.mail).count === null;
+  if (i.mail && !mailNotOpened) {
     const n = num(obj(i.mail).count);
     add('Mail Center: emails waiting for your reply', [{ title: `${n} email thread${n === 1 ? '' : 's'} waiting for your reply`, detail: 'Assigned to you, or unassigned in your own mailbox.', link: `${origin}/mail` }], n, `${origin}/mail`);
   }
@@ -336,6 +338,7 @@ export function buildBrief(i: BriefInput) {
     sections,
     ...(sections.length ? {} : { nothing: 'Nothing overdue or due in the next 3 days, and nothing waiting for you.' }),
     ...(i.noAccess.length ? { noAccess: `Your account does not have access to: ${i.noAccess.join(', ')}. Those are left out.` } : {}),
+    ...(mailNotOpened ? { mailCenter: str(obj(i.mail).note) || 'Mail Center not opened yet: open Mail in the ERP once to set up your mailbox.' } : {}),
     ...(i.mail ? {} : { notCovered: 'Mail Center is not included: it could not be read for your account (no Mail Center access, or Mail Center is not set up or did not answer). Open Mail Center in the ERP.' }),
   };
 }
