@@ -13,6 +13,7 @@ import { dayMonthYear } from "./renovationBetaModel";
 import { byArea, byCategory, clientPhotoUrl, type ClientItem, type ClientPublicAnswer } from "./renovationBetaVoPo";
 import { PlainPhotoStrip } from "./BetaClientPhotos";
 import { BetaLoading } from "./BetaLoading";
+import { correlatedFetch } from "../../lib/requestCorrelation";
 
 const API_BASE: string = (import.meta.env.VITE_API_URL as string) || (import.meta.env.PROD ? "" : "https://conts-scm-engine.invalid");
 
@@ -32,7 +33,7 @@ export function BetaClientLinkPage(): ReactElement {
   const [view, setView] = useState<"category" | "area">("category");
   useEffect(() => {
     let live = true;
-    fetch(`${API_BASE}/api/public/beta-client/${encodeURIComponent(token)}`)
+    correlatedFetch(`${API_BASE}/api/public/beta-client/${encodeURIComponent(token)}`)
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error((j as { message?: string }).message ?? "This link is not valid.");

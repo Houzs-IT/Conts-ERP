@@ -511,7 +511,7 @@ export async function renderDeliveryOrderInto(
     ? await collectPhotoImages(
         photoGroups,
         (key) => {
-          if (isAttachmentKey(key)) return attached.fetch(key);
+          if (isAttachmentKey(key)) return attached.readBlob(key);
           const ownerId = photoOwners.get(key);
           if (!ownerId) return Promise.reject(new Error('photo_owner_missing'));
           return fetchLinePhotoForPdf((k) => fetchDoItemPhotoBlob(doId, ownerId, k), key);

@@ -7,6 +7,7 @@ import { authedFetch, API_URL } from '../../vendor/scm/lib/authed-fetch';
 import { readAuthPass, readAuthToken } from '../../lib/authToken';
 import { companyHeader } from '../../lib/activeCompany';
 import { prepareImageForUpload } from '../../lib/imagePipeline';
+import { correlatedFetch } from '../../lib/requestCorrelation';
 
 export type DocType =
   | 'quotation' | 'sales_order' | 'variation_order' | 'purchase_order' | 'production_order' | 'delivery_order' | 'goods_received'
@@ -102,7 +103,7 @@ export async function listDocFiles(type: DocType, id: string): Promise<DocFilesR
 /** One file's bytes, with the session (the PDFs read photos through this). */
 export async function fetchDocFileBlob(type: DocType, id: string, fileId: string): Promise<Blob> {
   const pass = readAuthPass();
-  const res = await fetch(`${API_URL}${base(type, id)}/${encodeURIComponent(fileId)}`, {
+  const res = await correlatedFetch(`${API_URL}${base(type, id)}/${encodeURIComponent(fileId)}`, {
     headers: { authorization: `Bearer ${readAuthToken()}`, ...(pass ? { 'x-session-pass': pass } : {}), ...companyHeader() },
   });
   if (!res.ok) throw new Error(`attachment ${res.status}`);

@@ -355,8 +355,7 @@ describe('the bill pile hands one bill over as one AP invoice', () => {
 
   test("a request's papers are read as the form opens: number, date and descriptions from the bill (chew, 16 Nov 2026)", async () => {
     extractAsync.mockClear();
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(new Blob(['%PDF']))) as typeof fetch;
+    vi.stubGlobal('fetch', async () => new Response(new Blob(['%PDF'])));
     const revoke = URL.revokeObjectURL;
     URL.revokeObjectURL = () => {};
     const req = { id: 'Q3', requestNo: 'PRQ-2611-003', type: 'PAYMENT', supplierId: 'sup-h', payeeName: 'Houzs Venture', wantedOn: null, note: null,
@@ -368,7 +367,7 @@ describe('the bill pile hands one bill over as one AP invoice', () => {
     await waitFor(() => expect((within(d).getByLabelText('Supplier invoice ref') as HTMLInputElement).value).toBe('HVH-0912'));
     expect((within(d).getByLabelText('line 1 description') as HTMLInputElement).value).toBe('RENT SEPT');
     expect(within(d).getByText(/Read from the request's papers/)).toBeTruthy();
-    globalThis.fetch = realFetch;
+    vi.unstubAllGlobals();
     URL.revokeObjectURL = revoke;
   });
 

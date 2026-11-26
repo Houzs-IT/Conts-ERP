@@ -346,7 +346,7 @@ async function renderPurchaseOrderInto(
     ? await collectPhotoImages(
         photoGroups,
         (key) => {
-          if (isAttachmentKey(key)) return attached.fetch(key);
+          if (isAttachmentKey(key)) return attached.readBlob(key);
           const ownerId = photoOwners.get(key);
           if (!ownerId) return Promise.reject(new Error('photo_owner_missing'));
           return fetchLinePhotoForPdf((k) => fetchPoItemPhotoBlob(poId, ownerId, k), key);
