@@ -20,11 +20,11 @@ import {
 
 function dotColour(status: CaptureStatus): string {
   switch (status) {
-    case 'tracking': return 'var(--badge-tracking-live-dot, #15803d)';   // green — live
-    case 'requesting': return 'var(--badge-tracking-waiting-dot, #d97706)';  // amber — waiting on permission
+    case 'tracking': return 'var(--badge-tracking-live-dot, #15803d)';   // green: live
+    case 'requesting': return 'var(--badge-tracking-waiting-dot, #d97706)';  // amber: waiting on permission
     case 'denied':
     case 'unavailable':
-    case 'error': return 'var(--badge-tracking-off-dot, #b91c1c)';       // red — off
+    case 'error': return 'var(--badge-tracking-off-dot, #b91c1c)';       // red: off
     default: return 'var(--badge-tracking-idle-dot, #9ca3af)';
   }
 }
