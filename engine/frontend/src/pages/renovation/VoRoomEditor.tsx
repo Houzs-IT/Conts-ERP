@@ -59,7 +59,6 @@ export function VoRoomEditor({ sections, edits, onChange, disabled, contractErro
 
   return (
     <div className="space-y-3">
-      {/* White card on purpose: in the dark theme the engine keeps cards white and only re-colours text inside them, so text straight on the page background vanishes. */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2">
         <h2 className="flex-1 text-[13.5px] font-semibold text-ink">Contract by room</h2>
         <span className="text-[12.5px] text-ink-secondary">{summary}</span>

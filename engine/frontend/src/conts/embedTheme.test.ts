@@ -19,13 +19,21 @@ describe("Theme hand-off", () => {
     for (const page of pages) expect(BETA_SKIN_CSS).toContain(`--beta-page:${page}`);
   });
 
-  it("the night table (embed.css) takes the Beta night surface, so Beta's night ink stays readable on it", () => {
+  it("night re-points the engine's neutral colours and the design tokens in one block", () => {
     const css = readFileSync(resolve(__dirname, "embed.css"), "utf8");
     const row = /--dt-row:\s*([^;]+);/.exec(css)?.[1].trim();
     const night = BETA_SKIN_CSS.slice(BETA_SKIN_CSS.indexOf('html[data-beta-skin="night"]{'));
+    expect(css).toContain("--eng-surface: 28 32 48;");
+    expect(css).toContain("--c-cream: #1C2030;");
     expect(night).toContain(`--beta-surface:${row};`);
-    expect(css).toMatch(/\[data-beta-skin="night"\] \.dt-table:not\(\.bg-surface \.dt-table\) \.text-ink \{ color: #EEF1F8; \}/);
     expect(night).toContain("--beta-ink:#EEF1F8;");
+  });
+
+  it("no night rule is guarded by a white-card exclusion", () => {
+    const css = readFileSync(resolve(__dirname, "embed.css"), "utf8");
+    const nightRules = css.split(/\r?\n/).filter((line) => line.includes('data-beta-skin="night"'));
+    expect(nightRules.length).toBeGreaterThan(0);
+    for (const rule of nightRules) expect(rule).not.toContain(":not(.bg-surface");
   });
 
   it("the night Mail Center (embed.css) takes the Beta night surface and inks", () => {
@@ -41,7 +49,6 @@ describe("Theme hand-off", () => {
 
   it("the night Chart of accounts cards (embed.css) are dark and re-point the type colours", () => {
     const css = readFileSync(resolve(__dirname, "embed.css"), "utf8");
-    expect(css).toMatch(/\[data-beta-skin="night"\] \.coa-card \{\s*background: #1C2030;[^}]*--c-paper: #1C2030;[^}]*--coa-asset: #7FD1A8;/);
-    expect(css).toContain('[data-beta-skin="night"] .coa-card h2 { color: #EEF1F8; }');
+    expect(css).toMatch(/\[data-beta-skin="night"\] \.coa-card \{\s*background: #1C2030;[^}]*--coa-asset: #7FD1A8;/);
   });
 });
