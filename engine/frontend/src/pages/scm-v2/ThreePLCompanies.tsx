@@ -462,7 +462,7 @@ const FleetBlock = ({ title, rows, empty, loading, form }: {
   loading: boolean;
   form: ReactNode;
 }) => (
-  <div style={{ borderRadius: 8, border: '1px solid var(--border, rgba(0,0,0,0.1))', background: 'var(--bg, #fff)', overflow: 'hidden' }}>
+  <div style={{ borderRadius: 8, border: '1px solid var(--border, rgba(0,0,0,0.1))', background: 'var(--bg, rgb(var(--eng-surface)))', overflow: 'hidden' }}>
     <div style={{ padding: '8px 12px', fontSize: 'var(--fs-12)', fontWeight: 600, borderBottom: '1px solid var(--border, rgba(0,0,0,0.06))' }}>
       {title} <span style={{ fontWeight: 400, color: 'var(--fg-muted)' }}>({rows.length})</span>
     </div>
@@ -500,7 +500,7 @@ const Inp = ({ value, onChange, placeholder, width }: {
 );
 const selStyle: CSSProperties = {
   padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border, rgba(0,0,0,0.2))',
-  background: 'var(--bg, #fff)', color: 'var(--fg, inherit)', fontSize: 'var(--fs-13)',
+  background: 'var(--bg, rgb(var(--eng-surface)))', color: 'var(--fg, inherit)', fontSize: 'var(--fs-13)',
 };
 
 export default ThreePLCompanies;

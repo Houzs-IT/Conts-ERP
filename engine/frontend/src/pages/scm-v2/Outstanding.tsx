@@ -117,10 +117,10 @@ export const Outstanding = () => {
                  2990 ink-filled block. */
               style={{
                 padding: 'var(--space-3) var(--space-4)',
-                background: '#ffffff',
+                background: 'rgb(var(--eng-surface))',
                 color: 'var(--c-ink)',
-                border: `1px solid ${active ? '#16695f' : 'var(--c-line, rgba(34,31,32,0.12))'}`,
-                boxShadow: active ? 'inset 0 0 0 1px #16695f' : 'none',
+                border: `1px solid ${active ? 'var(--badge-pill-chosen-line, var(--c-orange))' : 'var(--c-line, rgba(34,31,32,0.12))'}`,
+                boxShadow: active ? 'inset 0 0 0 1px var(--badge-pill-chosen-line, #16695f)' : 'none',
                 borderRadius: 'var(--radius-md)',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -133,7 +133,7 @@ export const Outstanding = () => {
                 {s?.unavailable ? '—' : (s?.count ?? 0)}
               </div>
               {s?.unavailable ? (
-                <div style={{ fontSize: 'var(--fs-11)', opacity: 0.85, marginTop: 2, color: 'var(--c-err, #b4453a)' }}
+                <div style={{ fontSize: 'var(--fs-11)', opacity: 0.85, marginTop: 2, color: 'var(--badge-error-fg, var(--c-err, #b4453a))' }}
                      title={s.deposit_note ?? undefined}>
                   Could not read
                 </div>
@@ -158,10 +158,10 @@ export const Outstanding = () => {
           onClick={() => setActiveModule('po-lines')}
           style={{
             padding: 'var(--space-3) var(--space-4)',
-            background: '#ffffff',
+            background: 'rgb(var(--eng-surface))',
             color: 'var(--c-ink)',
-            border: `1px solid ${isPoLines ? '#16695f' : 'var(--c-line, rgba(34,31,32,0.12))'}`,
-            boxShadow: isPoLines ? 'inset 0 0 0 1px #16695f' : 'none',
+            border: `1px solid ${isPoLines ? 'var(--badge-pill-chosen-line, var(--c-orange))' : 'var(--c-line, rgba(34,31,32,0.12))'}`,
+            boxShadow: isPoLines ? 'inset 0 0 0 1px var(--badge-pill-chosen-line, #16695f)' : 'none',
             borderRadius: 'var(--radius-md)',
             cursor: 'pointer',
             textAlign: 'left',

@@ -98,7 +98,7 @@ function PodCell({ o }: { o: PlanningOrder }) {
     const chip = (
       <span style={{
         display: 'inline-block', padding: '1px 8px', borderRadius: 999,
-        border: '1px solid #2e7d32', color: '#2e7d32', fontSize: 'var(--fs-10)',
+        border: '1px solid var(--badge-pod-done-line, #2e7d32)', color: 'var(--badge-pod-done-fg, #2e7d32)', fontSize: 'var(--fs-10)',
         fontWeight: 600, whiteSpace: 'nowrap',
       }}>✓ POD</span>
     );
@@ -108,7 +108,7 @@ function PodCell({ o }: { o: PlanningOrder }) {
     return (
       <span style={{
         display: 'inline-block', padding: '1px 8px', borderRadius: 999,
-        border: '1px solid #b26a00', color: '#b26a00', fontSize: 'var(--fs-10)',
+        border: '1px solid var(--badge-pod-missing-line, #a35c06)', color: 'var(--badge-pod-missing-fg, #a35c06)', fontSize: 'var(--fs-10)',
         fontWeight: 600, whiteSpace: 'nowrap',
       }}>No POD</span>
     );
@@ -632,7 +632,7 @@ const PlanningExpandedLines = ({ docNo }: { docNo: string }) => {
   return (
     <div style={{
       padding: 'var(--space-2) var(--space-3) var(--space-2) 40px',
-      background: '#fff',
+      background: 'rgb(var(--eng-surface))',
     }}>
       <DataGridCompat<DrillItem>
         rows={items}

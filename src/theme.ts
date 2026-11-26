@@ -13,7 +13,7 @@ export const color = {
   dim: '#8F8A82', onDark: '#D9D4CB',
   page: 'var(--color-page, #EEF0EC)', card: 'var(--color-card, #FFFFFF)', muted: 'var(--color-muted, #F4F6F3)', sunken: 'var(--color-sunken, #E3E6E0)',
   border: 'var(--color-line, #D6D9D2)', borderMuted: 'var(--color-line-soft, #E3E6E0)', borderStrong: 'var(--color-line-strong, #C2C6BD)',
-  ink: 'var(--color-ink, #11140F)', inkSecondary: 'var(--color-ink-2, #3B4035)', textMuted: 'var(--color-muted-ink, #5C6155)', faint: 'var(--color-faint, #7D8378)',
+  ink: 'var(--color-ink, #11140F)', inkSecondary: 'var(--color-ink-2, #3B4035)', textMuted: 'var(--color-muted-ink, #5C6155)', faint: 'var(--color-faint, #686E63)',
 } as const;
 
 /** bg / fg / line. fg is AA on bg; line is for dots, borders, fills.

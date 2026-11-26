@@ -603,7 +603,7 @@ export const DeliveryOrderFromSo = () => {
             <span>{`Showing ${visibleRows.length} line${visibleRows.length === 1 ? '' : 's'}${hasNextPage ? ' · scroll down for more' : ''}`}</span>
           )}
           {pagedQ.isFetchNextPageError && (
-            <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next lines could not be loaded.</span>
+            <span style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>The next lines could not be loaded.</span>
           )}
           {hasNextPage && (
             <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage}>

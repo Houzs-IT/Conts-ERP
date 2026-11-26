@@ -83,6 +83,28 @@ describe("Dream Crafter palette contrast", () => {
     });
   }
 
+  it("a step not reached yet has an opaque fill, so the stepper track never shows through its number", () => {
+    for (const skin of ["vision", "night"] as const) {
+      const baseLayer = (tokensOf(skin).get("stepNext") ?? "").split(/,(?![^(]*\))/).pop()?.trim() ?? "";
+      expect(baseLayer, skin).toMatch(/^rgb\(\d+,\d+,\d+\)$/);
+    }
+  });
+
+  it("the night step edge stands out on its card at least as clearly as the light one does", () => {
+    const edgeRatio = (skin: Skin): number => {
+      const card = CARD_UNDER_GLASS[skin];
+      return contrastRatio(composite(parseColour(tokensOf(skin).get("stepNextEdge") ?? ""), card), card);
+    };
+    expect(edgeRatio("night")).toBeGreaterThanOrEqual(edgeRatio("vision"));
+  });
+
+  it("the stage row sets each stage name in the primary ink and its project count in the muted ink", () => {
+    const header = readFileSync(resolve(__dirname, "BetaWsHeader.tsx"), "utf8");
+    const stageRow = header.slice(header.indexOf("export function BetaStageFilter"));
+    expect(stageRow).toMatch(/fontWeight: on \? 700 : 500, color: BETA\.ink, whiteSpace: "nowrap" \}\}>\{t\.label\}/);
+    expect(stageRow).toMatch(/color: on \? BETA\.stepNow : BETA\.muted \}\}>\{t\.count\}/);
+  });
+
   it("each status ink keeps 4.5:1 on its own soft and strong pill, both skins", () => {
     for (const skin of ["vision", "night"] as const) {
       const tokens = tokensOf(skin);

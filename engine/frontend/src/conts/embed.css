@@ -57,8 +57,9 @@ html.conts-embedded[data-beta-skin="night"] {
   --c-cream: #1C2030; --c-paper: #232736; --c-beige: #2A2F42; --bg-subtle: #232736;
   --c-ink: #EEF1F8; --c-ink-soft: #ADB4C5; --text-soft: #ADB4C5; --fg-muted: #ADB4C5; --fg-soft: #ADB4C5; --fg-strong: #B9C0D0;
   --c-burnt: #EEF1F8; --c-orange: #7FD6C8; --c-secondary-a: #7FD1A8; --c-festive-b: #FF9B90;
+  --conts-pick-fill: #EEF1F8; --conts-pick-ink: #151823;
   --c-error: #FF9B90; --c-error-bg: rgba(255,110,100,.16); --c-warn: #F7CD73; --c-warn-bg: rgba(245,190,80,.16);
-  --c-success-bg: rgba(40,200,180,.16);
+  --c-success-bg: rgba(40,200,180,.16); --teal-soft: rgba(40,200,180,.16);
   --line: rgba(150,175,255,.18); --line-strong: rgba(150,175,255,.32); --border-weak: rgba(150,175,255,.11);
   --lane-proceed-fg: #A9C4FF; --lane-logistics-fg: #D2B8FF; --lane-ready-fg: #F7CD73; --lane-dispatched-fg: #7BE8D8;
   color-scheme: dark;
@@ -160,6 +161,7 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-brand-zanotti-fg: #D2B8FF;
   --badge-cancel-bg: rgba(255,110,100,.16);
   --badge-cancel-fg: #FF9B90;
+  --badge-error-fg: #FF9B90;
   --badge-category-appliance-bg: rgba(80,130,255,.18);
   --badge-category-appliance-fg: #A9C4FF;
   --badge-category-builtin-bg: rgba(224,196,143,.16);
@@ -168,6 +170,10 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-category-renovation-fg: #E0C48F;
   --badge-category-works-bg: rgba(224,196,143,.16);
   --badge-category-works-fg: #E0C48F;
+  --badge-filter-outstanding-bg: rgba(40,200,180,.16);
+  --badge-filter-outstanding-fg: #7BE8D8;
+  --badge-filter-outstanding-line: rgba(40,200,180,.4);
+  --badge-good-fg: #7FD1A8;
   --badge-mail-default-bg: rgba(224,196,143,.16);
   --badge-mail-default-fg: #E0C48F;
   --badge-minibadge-danger-bg: rgba(255,110,100,.16);
@@ -183,18 +189,38 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-package-mark-bg: rgba(255,120,190,.16);
   --badge-package-mark-fg: #FFB3D9;
   --badge-package-mark-line: rgba(255,120,190,.4);
+  --badge-pill-chosen-bg: #EEF1F8;
+  --badge-pill-chosen-fg: #151823;
+  --badge-pill-chosen-line: #EEF1F8;
+  --badge-pill-edge: #6576AC;
+  --badge-pill-fg: #B9C0D0;
+  --badge-pill-hover-edge: #6576AC;
+  --badge-pill-hover-fg: #EEF1F8;
+  --badge-pill-sg-chosen-bg: #7BE8D8;
+  --badge-pill-sg-fg: #7BE8D8;
   --badge-plan-file-bg: rgba(255,255,255,.08);
   --badge-plan-file-fg: #ADB4C5;
   --badge-plan-file-line: rgba(150,175,255,.24);
   --badge-plan-file-remove-fg: #FF9B90;
+  --badge-pod-done-fg: #7FD1A8;
+  --badge-pod-done-line: rgba(60,190,120,.4);
+  --badge-pod-missing-fg: #F7CD73;
+  --badge-pod-missing-line: rgba(245,190,80,.4);
   --badge-project-status-cancelled-bg: rgba(255,110,100,.16);
   --badge-project-status-cancelled-fg: #FF9B90;
   --badge-project-status-confirmed-bg: rgba(60,190,120,.16);
   --badge-project-status-confirmed-fg: #7FD1A8;
   --badge-project-status-pending-bg: rgba(245,190,80,.16);
   --badge-project-status-pending-fg: #F7CD73;
+  --badge-rack-stat-occupied-fg: #7BE8D8;
+  --badge-rack-stat-reserved-fg: #F7CD73;
   --badge-reno-status-done-fg: #7FD1A8;
   --badge-reno-status-overdue-fg: #FF9B90;
+  --badge-schedule-changed-fg: #F7CD73;
+  --badge-schedule-failed-fg: #FF9B90;
+  --badge-schedule-match-fg: #7FD1A8;
+  --badge-schedule-missing-fg: #FF9B90;
+  --badge-schedule-new-fg: #A9C4FF;
   --badge-so-line-active-fg: #E0C48F;
   --badge-so-line-done-fg: #7FD1A8;
   --badge-so-line-stopped-fg: #FF9B90;
@@ -231,6 +257,8 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-substituted-bg: rgba(245,190,80,.16);
   --badge-substituted-fg: #F7CD73;
   --badge-substituted-line: rgba(245,190,80,.4);
+  --badge-text-fg: #B9C0D0;
+  --badge-text-strong-fg: #EEF1F8;
   --badge-tracking-idle-dot: #ADB4C5;
   --badge-tracking-live-bg: rgba(60,190,120,.16);
   --badge-tracking-live-dot: #7FD1A8;
@@ -252,15 +280,38 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-type-project-fg: #7BE8D8;
   --badge-type-so-bg: rgba(255,255,255,.08);
   --badge-type-so-fg: #ADB4C5;
+  --badge-warn-fg: #F2A27A;
 }
 
-/* Night fields sit a step below the card with a 3.6:1 edge, as on the main app's Dream Crafter pages, so they read as
-   "type here"; read-only and disabled ones keep the raised fill, so the two never look alike. */
+/* Night form controls: the --input-* pairs (light values in index.css) turn as one, so a field's fill and its text never
+   come from different themes. Fields sit a step below the card with a 3.6:1 edge, as on the main app's Dream Crafter
+   pages, so they read as "type here"; read-only and disabled ones keep the raised fill, so the two never look alike. The
+   muted fill and the soft edge match the plain ones on night, since there every field takes the one sunken look.
+   --input-border-width is night only: a bare field (no class) keeps no edge in light. */
+html.conts-embedded[data-beta-skin="night"] {
+  --input-bg: #151823; --input-bg-muted: #151823; --input-bg-locked: #232736;
+  --input-fg: #EEF1F8; --input-fg-muted: #ADB4C5;
+  --input-border: #6576AC; --input-border-soft: #6576AC; --input-border-locked: #323A55; --input-border-width: 1px;
+}
 html.conts-embedded[data-beta-skin="night"] :is(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color]), select, textarea) {
-  background-color: #151823;
-  border-color: #6576AC;
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--input-fg);
 }
 html.conts-embedded[data-beta-skin="night"] :is(input, select, textarea):is([readonly], :disabled) {
-  background-color: #232736;
-  border-color: #323A55;
+  background-color: var(--input-bg-locked);
+  border-color: var(--input-border-locked);
+  color: var(--input-fg-muted);
+}
+html.conts-embedded[data-beta-skin="night"] :is(input, textarea)::placeholder { color: var(--input-fg-muted); }
+/* Night: the phone shell (.hz-m, mobile/mobile.css) on the two phone-designed screens Property OS opens on a phone
+   (embed.ts PHONE_DESIGNED). Its frame, cards, borders and inks are variables on .hz-m, so night re-points them here. */
+html.conts-embedded[data-beta-skin="night"] .hz-m {
+  --ink: #EEF1F8; --ink2: #B9C0D0; --mut: #ADB4C5; --mut2: #ADB4C5;
+  --brand: #7FD6C8; --brand-d: #EEF1F8; --brand-bg: rgba(40,200,180,.16); --gold: #E0C48F;
+  --green: #7FD1A8; --green-bg: rgba(60,190,120,.16); --amber: #F7CD73; --amber-bg: rgba(245,190,80,.16);
+  --red: #FF9B90; --red-bg: rgba(255,110,100,.16);
+  --line: rgba(150,175,255,.18); --line-card: rgba(150,175,255,.24); --line2: rgba(150,175,255,.11);
+  --bg: #151823; --card: #1C2030; --app-bg: #151823;
+  color-scheme: dark;
 }

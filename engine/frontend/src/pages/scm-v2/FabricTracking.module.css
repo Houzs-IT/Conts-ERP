@@ -35,7 +35,7 @@
   font-size: var(--fs-13);
   background: #f4f6f3;
   color: #11140f;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   padding: 2px 10px;
   border-radius: var(--radius-pill);
 }
@@ -50,7 +50,7 @@
   font-size: var(--fs-12);
   font-weight: 600;
   background: rgba(22, 105, 95, 0.10);
-  color: #0c3f39;
+  color: rgb(var(--eng-primary-ink));
   border: 1px solid rgba(22, 105, 95, 0.30);
   border-radius: var(--radius-pill);
   padding: 4px 10px;
@@ -102,7 +102,7 @@
   font-size: var(--fs-13);
   background: #ffffff;
   color: #11140f;
-  border: 1px dashed #d6d9d2;
+  border: 1px dashed rgb(var(--eng-border));
   padding: 2px 10px;
   border-radius: var(--radius-pill);
   cursor: pointer;
@@ -110,7 +110,7 @@
 
 .supplierCodeChip:hover {
   background: #f4f6f3;
-  border-color: #16695f;
+  border-color: var(--c-orange);
 }
 
 .supplierCodeEmpty {
@@ -121,7 +121,7 @@
   letter-spacing: 0.04em;
   background: transparent;
   color: #9aa093;
-  border: 1px dashed #d6d9d2;
+  border: 1px dashed rgb(var(--eng-border));
   padding: 2px 10px;
   border-radius: var(--radius-pill);
   cursor: pointer;
@@ -129,7 +129,7 @@
 
 .supplierCodeEmpty:hover {
   color: #0c3f39;
-  border-color: #16695f;
+  border-color: var(--c-orange);
   background: #e1efed;
 }
 
@@ -142,11 +142,11 @@
 .supplierCodeInput {
   font-family: var(--font-mono);
   font-size: var(--fs-13);
-  background: #f4f6f3;
-  border: 1px solid #16695f;
+  background: var(--input-bg-muted);
+  border: 1px solid var(--c-orange);
   border-radius: var(--radius-sm);
   padding: 3px 8px;
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
   width: 140px;
 }
@@ -155,7 +155,7 @@
 
 .iconBtn {
   background: transparent;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm);
   color: #767b6e;
   cursor: pointer;

@@ -86,7 +86,7 @@ export const StockCloseTab = () => {
               aria-label="Close month"
               value={chosenMonth}
               onChange={(e) => setMonth(e.target.value)}
-              style={{ padding: '5px 8px', border: '1px solid var(--c-line, rgba(34,31,32,0.2))', borderRadius: 'var(--radius-sm, 6px)', fontSize: 'var(--fs-13)', background: 'white' }}
+              style={{ padding: '5px 8px', border: '1px solid var(--c-line, rgba(34,31,32,0.2))', borderRadius: 'var(--radius-sm, 6px)', fontSize: 'var(--fs-13)', background: 'var(--input-bg)' }}
             />
             <button
               type="button"

@@ -140,7 +140,7 @@ export const GeneralLedger = () => {
       <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={soft}>From</span><DateField value={p.from} onChange={(v) => update({ from: v })} aria-label="Ledger from" />
         <span style={soft}>To</span><DateField value={p.to} onChange={(v) => update({ to: v })} aria-label="Ledger to" />
-        <span style={{ minWidth: 300, flex: 1 }}>
+        <span className="[&_input]:border-[length:var(--input-border-width,0px)]" style={{ minWidth: 300, flex: 1 }}>
           <SearchCombo options={options} value={adding} placeholder="Add an account — type a code or a name…" aria-label="Add an account"
             onChange={(code) => { setAdding(''); if (code && !picked.includes(code)) update({ accounts: [...picked, code], fromAccount: '', toAccount: '' }); }} />
         </span>
@@ -170,8 +170,8 @@ export const GeneralLedger = () => {
         {picked.length === 0 && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...soft }}>
             or a range
-            <span style={{ minWidth: 220 }}><SearchCombo options={options} value={p.fromAccount ?? ''} placeholder="from code" aria-label="From account" onChange={(code) => update({ fromAccount: code })} /></span>
-            <span style={{ minWidth: 220 }}><SearchCombo options={options} value={p.toAccount ?? ''} placeholder="to code" aria-label="To account" onChange={(code) => update({ toAccount: code })} /></span>
+            <span className="[&_input]:border-[length:var(--input-border-width,0px)]" style={{ minWidth: 220 }}><SearchCombo options={options} value={p.fromAccount ?? ''} placeholder="from code" aria-label="From account" onChange={(code) => update({ fromAccount: code })} /></span>
+            <span className="[&_input]:border-[length:var(--input-border-width,0px)]" style={{ minWidth: 220 }}><SearchCombo options={options} value={p.toAccount ?? ''} placeholder="to code" aria-label="To account" onChange={(code) => update({ toAccount: code })} /></span>
             {(p.fromAccount || p.toAccount) && <Button variant="ghost" size="sm" onClick={() => update({ fromAccount: '', toAccount: '' })}>Clear</Button>}
           </span>
         )}
@@ -180,9 +180,9 @@ export const GeneralLedger = () => {
         </span>
       </div>
 
-      {!rangeOk && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>From is later than To — adjust the dates.</div>}
+      {!rangeOk && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--badge-error-fg, #a33)' }}>From is later than To — adjust the dates.</div>}
       {rangeOk && q.isLoading && <div style={soft}>Working the ledger out…</div>}
-      {rangeOk && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>The ledger did not load — adjust the filters to retry.</div>}
+      {rangeOk && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--badge-error-fg, #a33)' }}>The ledger did not load — adjust the filters to retry.</div>}
       {r && r.blocks.length === 0 && <div style={soft}>Nothing moved on these accounts in the period, and nothing was brought forward.</div>}
       {r && r.blocks.length > 0 && (
         <div style={card}>

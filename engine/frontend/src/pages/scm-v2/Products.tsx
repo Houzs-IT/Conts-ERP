@@ -2015,7 +2015,7 @@ const SofaCompartmentsList = ({
                     width: 48,
                     height: 48,
                     background: hasImage ? '#fff' : '#EFEAE0',
-                    border: '1px solid #d6d9d2',
+                    border: '1px solid rgb(var(--eng-border))',
                     borderRadius: 'var(--radius-sm)',
                     display: 'flex',
                     alignItems: 'center',
@@ -2135,8 +2135,8 @@ const SofaCompartmentsList = ({
                       fontFamily: 'var(--font-mono)',
                       fontSize: 'var(--fs-14)',
                       fontWeight: 600,
-                      background: '#f4f6f3',
-                      border: '1px solid #16695f',
+                      background: 'var(--input-bg-muted)',
+                      border: '1px solid var(--c-orange)',
                       borderRadius: 'var(--radius-sm)',
                       padding: '4px 8px',
                       outline: 'none',
@@ -2152,8 +2152,8 @@ const SofaCompartmentsList = ({
                     style={{
                       fontFamily: 'var(--font-sans)',
                       fontSize: 'var(--fs-13)',
-                      background: '#f4f6f3',
-                      border: '1px solid #c2c6bd',
+                      background: 'var(--input-bg-muted)',
+                      border: '1px solid rgb(var(--eng-border-strong))',
                       borderRadius: 'var(--radius-sm)',
                       padding: '4px 8px',
                       outline: 'none',
@@ -2207,8 +2207,8 @@ const SofaCompartmentsList = ({
                   style={{
                     fontFamily: 'var(--font-mono)',
                     fontSize: 'var(--fs-14)',
-                    background: '#f4f6f3',
-                    border: '1px solid #c2c6bd',
+                    background: 'var(--input-bg-muted)',
+                    border: '1px solid rgb(var(--eng-border-strong))',
                     borderRadius: 'var(--radius-sm)',
                     padding: '4px 8px',
                     outline: 'none',
@@ -2274,7 +2274,7 @@ const SofaCompartmentsList = ({
           className={styles.maintRow}
           style={{
             background: '#fff',
-            borderColor: '#16695f',
+            borderColor: 'var(--c-orange)',
             gridTemplateColumns: '32px 1fr auto',
           }}
         >
@@ -2288,8 +2288,8 @@ const SofaCompartmentsList = ({
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: 'var(--fs-14)',
-              background: '#f4f6f3',
-              border: '1px solid #d6d9d2',
+              background: 'var(--input-bg-muted)',
+              border: '1px solid rgb(var(--eng-border))',
               borderRadius: 'var(--radius-sm)',
               padding: '6px 10px',
               outline: 'none',
@@ -2429,8 +2429,8 @@ const SofaQuickPresetsList = ({
                 fontFamily: 'var(--font-mono)',
                 fontSize: 'var(--fs-12)',
                 fontWeight: 600,
-                background: '#f4f6f3',
-                border: '1px solid #16695f',
+                background: 'var(--input-bg-muted)',
+                border: '1px solid var(--c-orange)',
                 borderRadius: 'var(--radius-sm)',
                 padding: '4px 6px',
                 outline: 'none',
@@ -2458,8 +2458,8 @@ const SofaQuickPresetsList = ({
                   fontFamily: 'var(--font-sans)',
                   fontSize: 'var(--fs-14)',
                   fontWeight: 600,
-                  background: '#f4f6f3',
-                  border: '1px solid #16695f',
+                  background: 'var(--input-bg-muted)',
+                  border: '1px solid var(--c-orange)',
                   borderRadius: 'var(--radius-sm)',
                   padding: '4px 8px',
                   outline: 'none',
@@ -2496,7 +2496,7 @@ const SofaQuickPresetsList = ({
                 display: 'flex', flexWrap: 'wrap', gap: 4,
                 padding: 6,
                 background: '#fff',
-                border: '1px dashed #d6d9d2',
+                border: '1px dashed rgb(var(--eng-border))',
                 borderRadius: 'var(--radius-sm)',
               }}>
                 {compartmentPool.map((code) => {
@@ -2512,7 +2512,7 @@ const SofaQuickPresetsList = ({
                         fontWeight: 600,
                         background: on ? '#16695f' : '#fff',
                         color: on ? '#fff' : '#11140f',
-                        border: `1px solid ${on ? '#16695f' : '#c2c6bd'}`,
+                        border: `1px solid ${on ? 'var(--c-orange)' : 'rgb(var(--eng-border-strong))'}`,
                         borderRadius: 'var(--radius-sm)',
                         padding: '2px 8px',
                         cursor: 'pointer',
@@ -2534,8 +2534,8 @@ const SofaQuickPresetsList = ({
               style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: 'var(--fs-12)',
-                background: '#f4f6f3',
-                border: '1px solid #c2c6bd',
+                background: 'var(--input-bg-muted)',
+                border: '1px solid rgb(var(--eng-border-strong))',
                 borderRadius: 'var(--radius-sm)',
                 padding: '4px 6px',
                 outline: 'none',
@@ -2600,7 +2600,7 @@ const SofaQuickPresetsList = ({
           className={styles.maintRow}
           style={{
             background: '#fff',
-            borderColor: '#16695f',
+            borderColor: 'var(--c-orange)',
             gridTemplateColumns: '32px 32px 1fr auto',
           }}
         >
@@ -2936,8 +2936,8 @@ const MaintenanceList = ({
                         fontFamily: 'var(--font-mono)',
                         fontSize: 'var(--fs-14)',
                         fontWeight: 600,
-                        background: '#f4f6f3',
-                        border: '1px solid #16695f',
+                        background: 'var(--input-bg-muted)',
+                        border: '1px solid var(--c-orange)',
                         borderRadius: 'var(--radius-sm)',
                         padding: '4px 8px',
                         outline: 'none',
@@ -2954,8 +2954,8 @@ const MaintenanceList = ({
                       style={{
                         fontFamily: 'var(--font-sans)',
                         fontSize: 'var(--fs-14)',
-                        background: '#f4f6f3',
-                        border: '1px solid #c2c6bd',
+                        background: 'var(--input-bg-muted)',
+                        border: '1px solid rgb(var(--eng-border-strong))',
                         borderRadius: 'var(--radius-sm)',
                         padding: '4px 8px',
                         outline: 'none',
@@ -2971,8 +2971,8 @@ const MaintenanceList = ({
                       style={{
                         fontFamily: 'var(--font-sans)',
                         fontSize: 'var(--fs-14)',
-                        background: '#f4f6f3',
-                        border: '1px solid #c2c6bd',
+                        background: 'var(--input-bg-muted)',
+                        border: '1px solid rgb(var(--eng-border-strong))',
                         borderRadius: 'var(--radius-sm)',
                         padding: '4px 8px',
                         outline: 'none',
@@ -2989,8 +2989,8 @@ const MaintenanceList = ({
                       fontFamily: 'var(--font-sans)',
                       fontSize: 'var(--fs-16)',
                       fontWeight: 600,
-                      background: '#f4f6f3',
-                      border: '1px solid #16695f',
+                      background: 'var(--input-bg-muted)',
+                      border: '1px solid var(--c-orange)',
                       borderRadius: 'var(--radius-sm)',
                       padding: '4px 8px',
                       outline: 'none',
@@ -3058,7 +3058,7 @@ const MaintenanceList = ({
             className={styles.maintRow}
             style={{
               background: '#fff',
-              borderColor: '#16695f',
+              borderColor: 'var(--c-orange)',
               gridTemplateColumns: '32px 1fr auto',
             }}
           >
@@ -3079,8 +3079,8 @@ const MaintenanceList = ({
                     fontFamily: 'var(--font-mono)',
                     fontSize: 'var(--fs-14)',
                     fontWeight: 600,
-                    background: '#f4f6f3',
-                    border: '1px solid #16695f',
+                    background: 'var(--input-bg-muted)',
+                    border: '1px solid var(--c-orange)',
                     borderRadius: 'var(--radius-sm)',
                     padding: '4px 8px',
                     outline: 'none',
@@ -3098,8 +3098,8 @@ const MaintenanceList = ({
                   style={{
                     fontFamily: 'var(--font-sans)',
                     fontSize: 'var(--fs-14)',
-                    background: '#f4f6f3',
-                    border: '1px solid #c2c6bd',
+                    background: 'var(--input-bg-muted)',
+                    border: '1px solid rgb(var(--eng-border-strong))',
                     borderRadius: 'var(--radius-sm)',
                     padding: '4px 8px',
                     outline: 'none',
@@ -3116,8 +3116,8 @@ const MaintenanceList = ({
                   style={{
                     fontFamily: 'var(--font-sans)',
                     fontSize: 'var(--fs-14)',
-                    background: '#f4f6f3',
-                    border: '1px solid #c2c6bd',
+                    background: 'var(--input-bg-muted)',
+                    border: '1px solid rgb(var(--eng-border-strong))',
                     borderRadius: 'var(--radius-sm)',
                     padding: '4px 8px',
                     outline: 'none',
@@ -3135,8 +3135,8 @@ const MaintenanceList = ({
                 style={{
                   fontFamily: 'var(--font-sans)',
                   fontSize: 'var(--fs-14)',
-                  background: '#f4f6f3',
-                  border: '1px solid #d6d9d2',
+                  background: 'var(--input-bg-muted)',
+                  border: '1px solid rgb(var(--eng-border))',
                   borderRadius: 'var(--radius-sm)',
                   padding: '6px 10px',
                   outline: 'none',
@@ -3219,8 +3219,8 @@ const MaintenanceList = ({
                   fontFamily: 'var(--font-sans)',
                   fontSize: 'var(--fs-16)',
                   fontWeight: 600,
-                  background: '#f4f6f3',
-                  border: '1px solid #16695f',
+                  background: 'var(--input-bg-muted)',
+                  border: '1px solid var(--c-orange)',
                   borderRadius: 'var(--radius-sm)',
                   padding: '4px 8px',
                   outline: 'none',
@@ -3257,7 +3257,7 @@ const MaintenanceList = ({
                     fontFamily: 'var(--font-mono)',
                     fontSize: 'var(--fs-14)',
                     background: '#f4f6f3',
-                    border: '1px solid #16695f',
+                    border: '1px solid var(--c-orange)',
                     borderRadius: 'var(--radius-sm)',
                     padding: '4px 8px',
                     outline: 'none',
@@ -3326,7 +3326,7 @@ const MaintenanceList = ({
           className={styles.maintRow}
           style={{
             background: '#fff',
-            borderColor: '#16695f',
+            borderColor: 'var(--c-orange)',
             gridTemplateColumns: '32px 1fr auto',
           }}
         >
@@ -3340,8 +3340,8 @@ const MaintenanceList = ({
             style={{
               fontFamily: 'var(--font-sans)',
               fontSize: 'var(--fs-14)',
-              background: '#f4f6f3',
-              border: '1px solid #d6d9d2',
+              background: 'var(--input-bg-muted)',
+              border: '1px solid rgb(var(--eng-border))',
               borderRadius: 'var(--radius-sm)',
               padding: '6px 10px',
               outline: 'none',
@@ -3362,8 +3362,8 @@ const MaintenanceList = ({
                 textAlign: 'right',
                 fontFamily: 'var(--font-mono)',
                 fontSize: 'var(--fs-14)',
-                background: '#f4f6f3',
-                border: '1px solid #d6d9d2',
+                background: 'var(--input-bg-muted)',
+                border: '1px solid rgb(var(--eng-border))',
                 borderRadius: 'var(--radius-sm)',
                 padding: '6px 8px',
                 outline: 'none',
@@ -3534,7 +3534,7 @@ const CodeFormatPanel = ({
 
       <div style={{
         background: '#f4f6f3',
-        border: '1px solid #d6d9d2',
+        border: '1px solid rgb(var(--eng-border))',
         borderRadius: 'var(--radius-md)',
         padding: 'var(--space-4)',
       }}>
@@ -3590,11 +3590,11 @@ const FabricsMaintenancePanel = () => {
               width: '100%',
               fontFamily: 'var(--font-sans)',
               fontSize: 'var(--fs-14)',
-              background: '#fff',
-              border: '1px solid #d6d9d2',
+              background: 'var(--input-bg)',
+              border: '1px solid rgb(var(--eng-border))',
               borderRadius: 'var(--radius-md)',
               padding: 'var(--space-2) var(--space-3) var(--space-2) var(--space-7)',
-              color: '#11140f',
+              color: 'rgb(var(--eng-ink))',
               outline: 'none',
             }}
           />
@@ -3812,8 +3812,8 @@ const ProductSuppliersDrawer = ({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#f4f6f3',
-          border: '1px solid #c2c6bd',
+          background: 'rgb(var(--eng-surface-2))',
+          border: '1px solid rgb(var(--eng-border-strong))',
           borderTopLeftRadius: 'var(--radius-xl)',
           borderBottomLeftRadius: 'var(--radius-xl)',
           boxShadow: 'var(--shadow-3)',
@@ -3835,7 +3835,7 @@ const ProductSuppliersDrawer = ({
               <Truck {...ICON_PROPS} style={{ verticalAlign: 'middle', marginRight: 6 }} />
               Suppliers · <span className={styles.codeChip}>{row.code}</span>
             </h2>
-            <p style={{ marginTop: 4, fontSize: 'var(--fs-13)', color: '#767b6e' }}>
+            <p style={{ marginTop: 4, fontSize: 'var(--fs-13)', color: 'var(--fg-muted)' }}>
               {row.name}{row.description ? ` — ${row.description}` : ''}
             </p>
             {/* Conts: group and sub-category are changed in the renovation SKU drawer. */}
@@ -3844,7 +3844,7 @@ const ProductSuppliersDrawer = ({
               : (
                 <div style={{ marginTop: 4 }}>
                   <CategorySwapSelect kind="model" id={row.model_id} category={row.category} />
-                  <p style={{ marginTop: 2, fontSize: 'var(--fs-11)', color: '#767b6e' }}>
+                  <p style={{ marginTop: 2, fontSize: 'var(--fs-11)', color: 'var(--fg-muted)' }}>
                     Belongs to model {modelQ.data?.model.model_code ?? row.base_model ?? ''} — changing the category moves the whole model and all its SKUs.
                   </p>
                 </div>
@@ -3854,7 +3854,7 @@ const ProductSuppliersDrawer = ({
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
               <span style={{
                 fontSize: 'var(--fs-11)', fontWeight: 700, textTransform: 'uppercase',
-                letterSpacing: '0.04em', color: '#767b6e',
+                letterSpacing: '0.04em', color: 'var(--fg-muted)',
               }}>
                 Barcode
               </span>
@@ -3870,8 +3870,8 @@ const ProductSuppliersDrawer = ({
                   width: 220,
                   fontFamily: 'var(--font-mono)',
                   fontSize: 'var(--fs-13)',
-                  background: '#fff',
-                  border: '1px solid #c2c6bd',
+                  background: 'var(--input-bg)',
+                  border: '1px solid rgb(var(--eng-border-strong))',
                   borderRadius: 'var(--radius-sm)',
                   padding: '3px 8px',
                   outline: 'none',
@@ -3905,18 +3905,18 @@ const ProductSuppliersDrawer = ({
             }
             return (
               <section style={{ marginBottom: 'var(--space-5)' }}>
-                <h3 style={{ fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#767b6e', marginBottom: 'var(--space-2)' }}>
+                <h3 style={{ fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-muted)', marginBottom: 'var(--space-2)' }}>
                   Available variants
                 </h3>
                 {groups.length === 0 ? (
-                  <p style={{ fontSize: 'var(--fs-13)', color: '#767b6e' }}>
+                  <p style={{ fontSize: 'var(--fs-13)', color: 'var(--fg-muted)' }}>
                     No variant options configured for this model{row.category ? ` (${mfgCategoryLabel(row.category)})` : ''}.
                   </p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                     {groups.map(([label, vals]) => (
                       <div key={label} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'baseline', flexWrap: 'wrap' }}>
-                        <span style={{ minWidth: 120, fontSize: 'var(--fs-11)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#767b6e' }}>{label}</span>
+                        <span style={{ minWidth: 120, fontSize: 'var(--fs-11)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--fg-muted)' }}>{label}</span>
                         <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                           {vals.map((v) => (
                             <span key={v} className={styles.codeChip} style={{ fontSize: 'var(--fs-12)' }}>{v}</span>
@@ -3940,14 +3940,14 @@ const ProductSuppliersDrawer = ({
 
           <ProductPriceTimeline row={row} />
 
-          <h3 style={{ fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#767b6e', marginBottom: 'var(--space-2)' }}>
+          <h3 style={{ fontSize: 'var(--fs-12)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-muted)', marginBottom: 'var(--space-2)' }}>
             Suppliers
           </h3>
           {q.isLoading && (
-            <p style={{ textAlign: 'center', color: '#767b6e' }}>Loading suppliers…</p>
+            <p style={{ textAlign: 'center', color: 'var(--fg-muted)' }}>Loading suppliers…</p>
           )}
           {!q.isLoading && suppliers.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: '#767b6e' }}>
+            <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--fg-muted)' }}>
               <Truck size={32} strokeWidth={1.5} />
               <div style={{ marginTop: 8 }}>No suppliers carry this product yet.</div>
               <div style={{ marginTop: 4, fontSize: 'var(--fs-12)' }}>
@@ -3980,21 +3980,21 @@ const ProductSuppliersDrawer = ({
                   }}>
                     <td style={{ textAlign: 'center' }}>
                       {s.is_main_supplier && (
-                        <Star size={14} strokeWidth={2} style={{ color: '#16695f', fill: '#16695f' }} />
+                        <Star size={14} strokeWidth={2} style={{ color: 'var(--c-orange)', fill: 'var(--c-orange)' }} />
                       )}
                     </td>
                     <td>
                       <div style={{ fontWeight: s.is_main_supplier ? 700 : 400 }}>
                         {s.suppliers?.name ?? '—'}
                       </div>
-                      <div style={{ fontSize: 'var(--fs-11)', color: '#767b6e' }}>
+                      <div style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)' }}>
                         {s.suppliers?.code ?? ''}{s.suppliers?.phone ? ` · ${formatPhone(s.suppliers.phone)}` : ''}
                       </div>
                     </td>
                     <td>
                       {s.supplier_sku
                         ? <span className={styles.codeChip}>{s.supplier_sku}</span>
-                        : <span style={{ color: '#767b6e' }}>(same as our code)</span>}
+                        : <span style={{ color: 'var(--fg-muted)' }}>(same as our code)</span>}
                     </td>
                     <td className={styles.numCell} style={{ whiteSpace: 'nowrap' }}>
                       {fmtRmSen(s.unit_price_sen)}{s.currency !== 'MYR' ? ` ${s.currency}` : ''}
@@ -4021,8 +4021,8 @@ const ProductSuppliersDrawer = ({
         </div>
 
         <footer className={styles.drawerFooter}>
-          <p style={{ fontSize: 'var(--fs-12)', color: '#767b6e', marginRight: 'auto' }}>
-            <Star size={11} strokeWidth={2} style={{ verticalAlign: 'middle', color: '#16695f', fill: '#16695f' }} />
+          <p style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)', marginRight: 'auto' }}>
+            <Star size={11} strokeWidth={2} style={{ verticalAlign: 'middle', color: 'var(--c-orange)', fill: 'var(--c-orange)' }} />
             {' '}Main supplier — used by default when generating POs.
           </p>
           <Button variant="secondary" onClick={onClose}>Close</Button>
@@ -4203,7 +4203,7 @@ const SpecialsMaintenancePanel = ({
     removeRow(i);
   };
 
-  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', fontSize: 'var(--fs-14)', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-md)', background: '#f4f6f3' };
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', fontSize: 'var(--fs-14)', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-md)', background: '#f4f6f3' };
 
   return (
     <>
@@ -4268,7 +4268,7 @@ const SpecialsMaintenancePanel = ({
                 display: 'grid', gridTemplateColumns: '28px 1fr auto 80px',
                 alignItems: 'center', gap: 'var(--space-3)',
                 padding: 'var(--space-3) var(--space-4)',
-                background: '#f4f6f3', border: '1px solid #d6d9d2',
+                background: '#f4f6f3', border: '1px solid rgb(var(--eng-border))',
                 borderRadius: 'var(--radius-md)', opacity: r.active ? 1 : 0.55,
               }}
             >
@@ -4295,7 +4295,7 @@ const SpecialsMaintenancePanel = ({
         /* EDIT — draft rows + follow-up-question editors. Save versions the set. */
         <div style={{ marginTop: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {(draft ?? []).map((r, i) => (
-            <div key={i} style={{ border: '1px solid #c2c6bd', borderRadius: 'var(--radius-lg)', padding: 'var(--space-4)', background: '#fff' }}>
+            <div key={i} style={{ border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-lg)', padding: 'var(--space-4)', background: '#fff' }}>
               <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
                 <label style={{ flex: '1 1 160px' }}>
                   <span style={{ display: 'block', fontSize: 'var(--fs-13)', fontWeight: 600, marginBottom: 4 }}>Code (stable key)</span>
@@ -4315,7 +4315,7 @@ const SpecialsMaintenancePanel = ({
                 <label style={{ display: 'flex', alignItems: 'flex-end', gap: 6, fontSize: 'var(--fs-13)' }}>
                   <input type="checkbox" checked={r.active} onChange={(e) => patchRow(i, { active: e.target.checked })} /> Active
                 </label>
-                <button type="button" onClick={() => void confirmRemove(i, r.label)} style={{ alignSelf: 'flex-end', fontSize: 'var(--fs-12)', background: 'none', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-sm)', padding: '6px 10px', cursor: 'pointer', color: '#b23a3a' }}>
+                <button type="button" onClick={() => void confirmRemove(i, r.label)} style={{ alignSelf: 'flex-end', fontSize: 'var(--fs-12)', background: 'none', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-sm)', padding: '6px 10px', cursor: 'pointer', color: '#b23a3a' }}>
                   <Trash2 size={13} strokeWidth={1.75} style={{ verticalAlign: 'middle' }} /> Remove
                 </button>
               </div>
@@ -4325,10 +4325,10 @@ const SpecialsMaintenancePanel = ({
               </label>
 
               {/* follow-up questions (追问) */}
-              <div style={{ borderTop: '1px solid #d6d9d2', paddingTop: 'var(--space-3)' }}>
+              <div style={{ borderTop: '1px solid rgb(var(--eng-border))', paddingTop: 'var(--space-3)' }}>
                 <span style={{ display: 'block', fontSize: 'var(--fs-13)', fontWeight: 600, marginBottom: 6 }}>Follow-up questions (optional)</span>
                 {r.optionGroups.map((g, gi) => (
-                  <div key={gi} style={{ border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
+                  <div key={gi} style={{ border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
                     <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', marginBottom: 6 }}>
                       <input style={{ ...inputStyle, flex: '1 1 160px' }} placeholder="Question (e.g. Thickness)" value={g.label} onChange={(e) => patchGroup(i, gi, { label: e.target.value })} />
                       <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--fs-12)' }}>
@@ -4343,10 +4343,10 @@ const SpecialsMaintenancePanel = ({
                         <button type="button" onClick={() => removeChoice(i, gi, ci)} style={{ fontSize: 'var(--fs-12)', color: '#767b6e', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
                       </div>
                     ))}
-                    <button type="button" onClick={() => addChoice(i, gi)} style={{ fontSize: 'var(--fs-12)', marginLeft: 'var(--space-3)', background: 'none', border: '1px dashed #c2c6bd', borderRadius: 'var(--radius-sm)', padding: '2px 8px', cursor: 'pointer' }}>+ choice</button>
+                    <button type="button" onClick={() => addChoice(i, gi)} style={{ fontSize: 'var(--fs-12)', marginLeft: 'var(--space-3)', background: 'none', border: '1px dashed rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-sm)', padding: '2px 8px', cursor: 'pointer' }}>+ choice</button>
                   </div>
                 ))}
-                <button type="button" onClick={() => addGroup(i)} style={{ fontSize: 'var(--fs-13)', background: 'none', border: '1px dashed #c2c6bd', borderRadius: 'var(--radius-md)', padding: '4px 10px', cursor: 'pointer' }}>+ Add question</button>
+                <button type="button" onClick={() => addGroup(i)} style={{ fontSize: 'var(--fs-13)', background: 'none', border: '1px dashed rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-md)', padding: '4px 10px', cursor: 'pointer' }}>+ Add question</button>
               </div>
             </div>
           ))}
@@ -4390,7 +4390,7 @@ const SpecialsHistoryDialog = ({
   <div className={styles.drawerBackdrop} onClick={onClose}>
     <div
       onClick={(e) => e.stopPropagation()}
-      style={{ background: '#f4f6f3', border: '1px solid #c2c6bd', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-3)', width: 'min(720px, 95vw)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+      style={{ background: '#f4f6f3', border: '1px solid rgb(var(--eng-border-strong))', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-3)', width: 'min(720px, 95vw)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
     >
       <header className={styles.drawerHeader}>
         <h2 className={styles.drawerTitle}>Specials history · {activeLabel}</h2>
@@ -4403,7 +4403,7 @@ const SpecialsHistoryDialog = ({
         {history.map((entry) => {
           const slice = (entry.addons ?? []).filter((a) => Array.isArray(a.categories) && a.categories.includes(category));
           return (
-            <div key={entry.id} style={{ padding: 'var(--space-3)', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-3)', background: entry.isPending ? 'rgba(232, 107, 58, 0.06)' : '#fff' }}>
+            <div key={entry.id} style={{ padding: 'var(--space-3)', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-3)', background: entry.isPending ? 'rgba(232, 107, 58, 0.06)' : '#fff' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <span style={{ fontFamily: 'var(--font-mark)', fontSize: 'var(--fs-16)', fontWeight: 700, color: '#11140f' }}>Effective from {entry.effectiveFrom}</span>
                 {entry.isPending && (
@@ -4414,7 +4414,7 @@ const SpecialsHistoryDialog = ({
                 Created {fmtDateTime(entry.createdAt)}{entry.createdBy ? ` by ${actorNameOf(entry.createdBy)}` : ''}
               </div>
               {entry.notes && <p style={{ marginTop: 6, fontSize: 'var(--fs-13)', color: '#11140f' }}>Notes: {entry.notes}</p>}
-              <pre style={{ marginTop: 8, padding: 'var(--space-2)', background: '#f4f6f3', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-sm)', fontSize: 'var(--fs-11)', overflow: 'auto', maxHeight: 200 }}>
+              <pre style={{ marginTop: 8, padding: 'var(--space-2)', background: '#f4f6f3', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-sm)', fontSize: 'var(--fs-11)', overflow: 'auto', maxHeight: 200 }}>
                 {JSON.stringify(slice.map((a) => ({ code: a.code, label: a.label, costRM: Math.round(a.costPriceSen) / 100, active: a.active, followUps: (a.optionGroups ?? []).length })), null, 2)}
               </pre>
             </div>
@@ -4452,7 +4452,7 @@ const MaintenanceHistoryDialog = ({
       onClick={(e) => e.stopPropagation()}
       style={{
         background: '#f4f6f3',
-        border: '1px solid #c2c6bd',
+        border: '1px solid rgb(var(--eng-border-strong))',
         borderRadius: 'var(--radius-xl)',
         boxShadow: 'var(--shadow-3)',
         width: 'min(720px, 95vw)',
@@ -4476,7 +4476,7 @@ const MaintenanceHistoryDialog = ({
           return (
             <div key={entry.id} style={{
               padding: 'var(--space-3)',
-              border: '1px solid #d6d9d2',
+              border: '1px solid rgb(var(--eng-border))',
               borderRadius: 'var(--radius-md)',
               marginBottom: 'var(--space-3)',
               background: entry.isPending ? 'rgba(232, 107, 58, 0.06)' : '#fff',
@@ -4501,7 +4501,7 @@ const MaintenanceHistoryDialog = ({
                 marginTop: 8,
                 padding: 'var(--space-2)',
                 background: '#f4f6f3',
-                border: '1px solid #d6d9d2',
+                border: '1px solid rgb(var(--eng-border))',
                 borderRadius: 'var(--radius-sm)',
                 fontSize: 'var(--fs-11)',
                 overflow: 'auto',
@@ -4891,7 +4891,7 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#f4f6f3',
-          border: '1px solid #c2c6bd',
+          border: '1px solid rgb(var(--eng-border-strong))',
           borderRadius: 'var(--radius-xl)',
           boxShadow: 'var(--shadow-3)',
           width: 'min(560px, 95vw)',

@@ -21,10 +21,10 @@ type Row = {
 type ScanResult = { organizer: string; projectCount: number; rows: Row[] };
 
 const STATUS_STYLE: Record<Row["status"], { label: string; color: string }> = {
-  DATE_CHANGED: { label: "Date changed", color: "#b45309" },
-  MISSING: { label: "Not in schedule", color: "#b91c1c" },
-  NEW: { label: "New event", color: "#1d4ed8" },
-  MATCH: { label: "Unchanged", color: "#15803d" },
+  DATE_CHANGED: { label: "Date changed", color: "var(--badge-schedule-changed-fg, #b45309)" },
+  MISSING: { label: "Not in schedule", color: "var(--badge-schedule-missing-fg, #b91c1c)" },
+  NEW: { label: "New event", color: "var(--badge-schedule-new-fg, #1d4ed8)" },
+  MATCH: { label: "Unchanged", color: "var(--badge-schedule-match-fg, #15803d)" },
 };
 const ORDER: Row["status"][] = ["DATE_CHANGED", "MISSING", "NEW", "MATCH"];
 const dash = (s: string | null) => s || "—";
@@ -107,8 +107,8 @@ export function ScheduleReconcile() {
                   </div>
                   <div style={{ fontSize: 12 }}>
                     {r.status === "DATE_CHANGED" && id != null && (
-                      ap === "ok" ? <span style={{ color: "#15803d" }}>Dates applied</span> :
-                      ap === "err" ? <span style={{ color: "#c00" }}>Apply failed</span> :
+                      ap === "ok" ? <span style={{ color: STATUS_STYLE.MATCH.color }}>Dates applied</span> :
+                      ap === "err" ? <span style={{ color: "var(--badge-schedule-failed-fg, #c00)" }}>Apply failed</span> :
                       <button onClick={() => applyDates(r)} disabled={applying[id]}
                         style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "var(--c-primary,#146c43)", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                         {applying[id] ? "Applying…" : "Apply new dates"}

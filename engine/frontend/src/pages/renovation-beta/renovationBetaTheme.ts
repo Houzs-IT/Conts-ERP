@@ -120,12 +120,14 @@ const BASE_TOKENS = {
   /* The project stepper: the track, a step not reached yet, the step in progress and a step done. The track is
      decoration (each step's dot has a 3:1 edge and a number), so it stays pale. */
   stepTrack: ["#D5D9E3", "#3A4055"],
-  stepNext: ["linear-gradient(180deg,rgba(255,255,255,.9),rgba(240,244,250,.55))", "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.04))"],
+  /* The gloss sits on a solid base (the card's own colour, one step above it at night) so the track never shows
+     through a step's number. */
+  stepNext: ["linear-gradient(180deg,rgba(255,255,255,.9),rgba(240,244,250,.55)),rgb(247,248,252)", "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.04)),rgb(42,47,66)"],
   stepNextShadow: [
     "inset 0 2px 2px rgba(255,255,255,.95),inset 0 -3px 6px rgba(110,125,160,.15),0 4px 10px -4px rgba(90,105,150,.3)",
     "inset 0 1px 2px rgba(255,255,255,.2),inset 0 -3px 6px rgba(0,0,0,.2),0 4px 10px -4px rgba(0,0,0,.5)",
   ],
-  stepNextEdge: ["#7A8397", "#6E778C"],
+  stepNextEdge: ["#7A8397", "#8C95AE"],
   stepNow: ["#B8304F", "#FF8FA4"],
   /* The four payment tiles: paid, needs attention, and later. */
   payPaid: ["linear-gradient(135deg,#DDF4F2 0%,#C7E4F4 100%)", "linear-gradient(135deg,rgba(40,200,180,.16) 0%,rgba(60,150,255,.1) 100%)"],

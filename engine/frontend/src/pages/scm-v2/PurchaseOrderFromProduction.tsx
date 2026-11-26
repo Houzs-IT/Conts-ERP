@@ -120,7 +120,7 @@ export const PurchaseOrderFromProduction = () => {
       key: 'mainSupplier', label: 'Main Supplier', width: 200, sortable: true, groupable: true,
       accessor: (r) => r.mainSupplierCode
         ? <span>{supplierOf(r)}</span>
-        : <span className={styles.muted} style={{ color: 'var(--c-festive-b, #B8331F)' }}>— none —</span>,
+        : <span className={styles.muted} style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>— none —</span>,
       searchValue: (r) => supplierOf(r),
       groupValue: (r) => supplierOf(r) || '(none)',
     },

@@ -730,7 +730,7 @@ export const ImportBindingsDialog = ({
           </button>
         </header>
         <div className={styles.modalBody}>
-          <p style={{ fontSize: 'var(--fs-12)', color: '#767b6e', marginBottom: 'var(--space-3)' }}>
+          <p style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)', marginBottom: 'var(--space-3)' }}>
             Upload a CSV or Excel file (exported via <strong>Export Bindings</strong>, or the
             worklist columns <code>internal_code / supplier_sku / price_rm</code>). Both the
             <strong> long</strong> and legacy <strong>wide</strong> layouts are detected
@@ -748,15 +748,15 @@ export const ImportBindingsDialog = ({
           />
           {preview && (
             <div style={{
-              fontSize: 'var(--fs-13)', color: '#11140f', padding: 'var(--space-2) var(--space-3)',
-              background: '#fff', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-2)',
+              fontSize: 'var(--fs-13)', color: 'rgb(var(--eng-ink))', padding: 'var(--space-2) var(--space-3)',
+              background: 'rgb(var(--eng-surface))', border: '1px solid rgb(var(--eng-border))', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-2)',
             }}>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>
                 {preview.creates.length} new · {preview.updates.length} changed · {preview.unchanged} unchanged
               </div>
               {preview.updates.length > 0 && (
                 <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 4 }}>
-                  <div style={{ fontSize: 'var(--fs-11)', color: '#767b6e', marginBottom: 2 }}>Changed:</div>
+                  <div style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)', marginBottom: 2 }}>Changed:</div>
                   {preview.updates.map(({ binding, patch }) => (
                     <div key={binding.id} style={{ fontSize: 'var(--fs-12)', marginBottom: 2 }}>
                       <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{binding.item_code}</span>
@@ -767,7 +767,7 @@ export const ImportBindingsDialog = ({
               )}
               {preview.creates.length > 0 && (
                 <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 4 }}>
-                  <div style={{ fontSize: 'var(--fs-11)', color: '#767b6e', marginBottom: 2 }}>New:</div>
+                  <div style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)', marginBottom: 2 }}>New:</div>
                   {preview.creates.map((c) => (
                     <div key={c.itemCode} style={{ fontSize: 'var(--fs-12)', fontFamily: 'var(--font-mono, monospace)' }}>
                       {c.itemCode} → {c.supplierSku} · {fmtRm(c.unitPriceSen)}{c.priceMatrix ? ' · matrix' : ''}
@@ -778,17 +778,17 @@ export const ImportBindingsDialog = ({
             </div>
           )}
           {progress.total > 0 && running && (
-            <p style={{ fontSize: 'var(--fs-12)', color: '#767b6e' }}>
+            <p style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
               Updating {progress.done} / {progress.total}…
             </p>
           )}
           {summary && (
             <p style={{
               fontSize: 'var(--fs-13)',
-              color: '#11140f',
+              color: 'rgb(var(--eng-ink))',
               padding: 'var(--space-2) var(--space-3)',
-              background: '#fff',
-              border: '1px solid #d6d9d2',
+              background: 'rgb(var(--eng-surface))',
+              border: '1px solid rgb(var(--eng-border))',
               borderRadius: 'var(--radius-md)',
               marginTop: 'var(--space-2)',
             }}>

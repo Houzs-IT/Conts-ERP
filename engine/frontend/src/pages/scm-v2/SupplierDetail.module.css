@@ -26,8 +26,8 @@
 /* ── Cards (shared shell) ─────────────────────────────────────────── */
 
 .card {
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: rgb(var(--eng-surface));
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
   overflow: hidden;
@@ -41,9 +41,9 @@
   justify-content: space-between;
   gap: var(--space-2);
   padding: 8px var(--space-3);
-  border-bottom: 1px solid #d6d9d2;
-  border-left: 3px solid #0c3f39;
-  background: #f4f6f3;
+  border-bottom: 1px solid rgb(var(--eng-border));
+  border-left: 3px solid rgb(var(--eng-primary-ink));
+  background: rgb(var(--eng-surface-2));
 }
 
 .cardTitle {
@@ -57,7 +57,7 @@
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #0c3f39;
+  color: rgb(var(--eng-primary-ink));
   margin: 0;
   display: flex;
   align-items: center;
@@ -116,7 +116,7 @@
 .infoValue {
   font-family: var(--font-sans);
   font-size: var(--fs-12);
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   word-break: break-word;
 }
 
@@ -139,7 +139,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   /* Light scrollbar styling to stay quiet against the card. */
-  scrollbar-color: #d6d9d2 transparent;
+  scrollbar-color: rgb(var(--eng-border)) transparent;
   scrollbar-width: thin;
 }
 
@@ -156,7 +156,7 @@
   background: linear-gradient(
     to right,
     rgba(255, 255, 255, 0),
-    #fff 80%
+    rgb(var(--eng-surface)) 80%
   );
   /* Sticky pseudo-elements are unreliable across browsers — keep the
      gradient subtle so the absence isn't jarring when it doesn't paint. */
@@ -182,36 +182,36 @@
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--c-ink, #11140f);
+  color: var(--c-ink, rgb(var(--eng-ink)));
   text-align: left;
   padding: 4px var(--space-2);
-  background: #e3e6e0;
-  border-bottom: 2px solid #d6d9d2;
+  background: rgb(var(--eng-surface-dim));
+  border-bottom: 2px solid rgb(var(--eng-border));
   white-space: nowrap;
 }
 
 .table tbody td {
   padding: 4px var(--space-2);
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   font-family: var(--font-sans);
   font-size: var(--fs-12);
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   vertical-align: middle;
 }
 
 .table tbody tr:last-child td { border-bottom: none; }
-.table tbody tr:hover { background: #f4f6f3; }
+.table tbody tr:hover { background: rgb(var(--eng-surface-2)); }
 
 .tableRight { text-align: right; }
 
 .codeCell {
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  color: #0c3f39;
+  color: rgb(var(--eng-primary-ink));
   font-weight: 600;
 }
 
-.muted { color: #767b6e; }
+.muted { color: var(--fg-muted); }
 
 .priceCell {
   /* PR — Commander 2026-05-27: drop to fs-12/700 so RM values fit the
@@ -220,7 +220,7 @@
   font-size: var(--fs-12);
   font-weight: 700;
   font-stretch: 80%;
-  color: #0c3f39;
+  color: rgb(var(--eng-primary-ink));
   text-align: right;
   white-space: nowrap;
 }
@@ -234,7 +234,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: rgba(47, 93, 79, 0.12);
-  color: var(--c-secondary-a, #2F5D4F);
+  color: var(--c-secondary-a, var(--c-secondary-a));
   padding: 2px 8px;
   border-radius: var(--radius-pill);
 }
@@ -250,7 +250,7 @@
 .iconBtn {
   background: transparent;
   border: none;
-  color: #767b6e;
+  color: var(--fg-muted);
   cursor: pointer;
   padding: 4px;
   border-radius: var(--radius-sm);
@@ -259,18 +259,18 @@
 }
 
 .iconBtn:hover {
-  background: #f4f6f3;
-  color: #11140f;
+  background: rgb(var(--eng-surface-2));
+  color: rgb(var(--eng-ink));
 }
 
 .iconBtnDanger:hover {
   background: rgba(184, 51, 31, 0.10);
-  color: var(--c-festive-b, #B8331F);
+  color: var(--c-festive-b, var(--c-festive-b));
 }
 
 .emptyRow {
   text-align: center;
-  color: #767b6e;
+  color: var(--fg-muted);
   padding: var(--space-4);
   font-style: italic;
 }
@@ -282,7 +282,7 @@
   font-size: var(--fs-10);
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: var(--c-secondary-a, #2F5D4F);
+  color: var(--c-secondary-a, var(--c-secondary-a));
   text-transform: uppercase;
 }
 
@@ -291,7 +291,7 @@
   font-size: var(--fs-10);
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: var(--c-festive-b, #B8331F);
+  color: var(--c-festive-b, var(--c-festive-b));
   text-transform: uppercase;
 }
 
@@ -314,8 +314,8 @@
 }
 
 .modal {
-  background: #f4f6f3;
-  border: 1px solid #c2c6bd;
+  background: rgb(var(--eng-surface-2));
+  border: 1px solid rgb(var(--eng-border-strong));
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-3);
   width: min(640px, 92vw);
@@ -330,8 +330,8 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid #d6d9d2;
-  background: #fff;
+  border-bottom: 1px solid rgb(var(--eng-border));
+  background: rgb(var(--eng-surface));
   border-top-left-radius: var(--radius-xl);
   border-top-right-radius: var(--radius-xl);
 }
@@ -340,7 +340,7 @@
   font-family: var(--font-title);
   font-size: var(--fs-15);
   font-weight: 600;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   margin: 0;
 }
 
@@ -355,8 +355,8 @@
   justify-content: flex-end;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-top: 1px solid #d6d9d2;
-  background: #fff;
+  border-top: 1px solid rgb(var(--eng-border));
+  background: rgb(var(--eng-surface));
   border-bottom-left-radius: var(--radius-xl);
   border-bottom-right-radius: var(--radius-xl);
 }
@@ -392,11 +392,11 @@
      focus burnt with soft ring. Matches SO Detail inputs. */
   font-family: var(--font-sans);
   font-size: var(--fs-12);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: rgb(var(--eng-surface));
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm);
   padding: 6px 10px;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   outline: none;
   width: 100%;
   line-height: 1.3;
@@ -404,17 +404,17 @@
 
 .fieldInput:focus,
 .fieldSelect:focus {
-  border-color: #0c3f39;
-  background: #fff;
+  border-color: rgb(var(--eng-primary-ink));
+  background: rgb(var(--eng-surface));
   box-shadow: 0 0 0 2px rgba(22, 105, 95, 0.16);
 }
 
 .fieldInput:disabled,
 .fieldSelect:disabled,
 .fieldInput[readonly] {
-  background: #f4f6f3;
-  border-color: #d6d9d2;
-  color: #767b6e;
+  background: rgb(var(--eng-surface-2));
+  border-color: rgb(var(--eng-border));
+  color: var(--fg-muted);
   cursor: not-allowed;
 }
 
@@ -438,7 +438,7 @@
   right: 10px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--c-ink-60, #767b6e);
+  color: var(--c-ink-60, var(--fg-muted));
   pointer-events: none;
 }
 
@@ -460,7 +460,7 @@
   gap: var(--space-2);
   width: 100%;
   padding: 4px var(--space-3);
-  background: #f4f6f3;
+  background: rgb(var(--eng-surface-2));
   border: none;
   cursor: pointer;
   font-family: var(--font-button);
@@ -468,7 +468,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
 }
 
 .subGroupHeadCount {
@@ -493,7 +493,7 @@
 }
 
 .matrixCurrency {
-  color: #767b6e;
+  color: var(--fg-muted);
   font-size: var(--fs-10);
   font-family: var(--font-sans);
 }
@@ -501,18 +501,18 @@
 .matrixInput {
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: rgb(var(--eng-surface));
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm);
   padding: 3px 6px;
   outline: none;
   width: 64px;
   text-align: right;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
 }
 
 .matrixInput:focus {
-  border-color: #0c3f39;
+  border-color: rgb(var(--eng-primary-ink));
   box-shadow: 0 0 0 2px rgba(22, 105, 95, 0.16);
 }
 
@@ -525,36 +525,36 @@
 .inlineSku {
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: rgb(var(--eng-surface));
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm);
   padding: 3px 8px;
   outline: none;
   width: 100%;
   min-width: 100px;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
 }
 
 .inlineSku:focus {
-  border-color: #0c3f39;
+  border-color: rgb(var(--eng-primary-ink));
   box-shadow: 0 0 0 2px rgba(22, 105, 95, 0.16);
 }
 
 .inlinePrice {
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: rgb(var(--eng-surface));
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm);
   padding: 3px 8px;
   outline: none;
   width: 88px;
   text-align: right;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
 }
 
 .inlinePrice:focus {
-  border-color: #0c3f39;
+  border-color: rgb(var(--eng-primary-ink));
   box-shadow: 0 0 0 2px rgba(22, 105, 95, 0.16);
 }
 
@@ -563,7 +563,7 @@
 .variantBlock {
   margin-top: 2px;
   font-size: var(--fs-10);
-  color: #767b6e;
+  color: var(--fg-muted);
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -574,11 +574,11 @@
   align-items: center;
   font-family: var(--font-sans);
   font-size: var(--fs-10);
-  background: #f4f6f3;
-  border: 1px solid #d6d9d2;
+  background: rgb(var(--eng-surface-2));
+  border: 1px solid rgb(var(--eng-border));
   padding: 1px 6px;
   border-radius: var(--radius-pill);
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   font-variant-numeric: tabular-nums;
 }
 

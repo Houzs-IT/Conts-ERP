@@ -44,24 +44,24 @@
 .fieldSelect {
   font-family: var(--font-sans);
   font-size: var(--fs-13);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: var(--input-bg);
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: 6px 32px 6px 10px;
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
   width: 100%;
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
 }
-.fieldSelect:focus { border-color: #16695f; background: #fff; }
+.fieldSelect:focus { border-color: var(--c-orange); background: var(--input-bg); }
 .selectChevron {
   position: absolute;
   right: 10px;
   top: 50%;
   transform: translateY(-50%);
-  color: #767b6e;
+  color: var(--input-fg-muted);
   pointer-events: none;
 }
 
@@ -100,21 +100,21 @@
   left: var(--space-3);
   top: 50%;
   transform: translateY(-50%);
-  color: #767b6e;
+  color: var(--input-fg-muted);
   pointer-events: none;
 }
 .searchInput {
   width: 100%;
   font-family: var(--font-sans);
   font-size: var(--fs-14);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: var(--input-bg);
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-7);
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
 }
-.searchInput:focus { border-color: #16695f; background: #fff; }
+.searchInput:focus { border-color: var(--c-orange); background: var(--input-bg); }
 
 .filterRow {
   display: flex;
@@ -220,7 +220,7 @@
 /* ── Cards / sections ─────────────────────────────────────────────────── */
 .panel {
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
   padding: var(--space-4) var(--space-5);
@@ -263,22 +263,22 @@
 .fieldTextarea {
   font-family: var(--font-sans);
   font-size: var(--fs-13);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: var(--input-bg);
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: 6px 10px;
-  color: #11140f;
+  color: var(--input-fg);
   outline: none;
   width: 100%;
 }
 .fieldInput:focus,
-.fieldTextarea:focus { border-color: #16695f; background: #fff; }
+.fieldTextarea:focus { border-color: var(--c-orange); background: var(--input-bg); }
 .fieldTextarea { resize: vertical; min-height: 52px; }
 
 /* ── Callout preview boxes ────────────────────────────────────────────── */
 .previewBox {
   background: #f4f6f3;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-md);
   padding: var(--space-3);
   font-family: var(--font-sans);
@@ -292,7 +292,7 @@
 /* ── Table ────────────────────────────────────────────────────────────── */
 .tableCard {
   background: #fff;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   border-radius: var(--radius-sm, 6px);
   overflow: hidden;
 }
@@ -317,12 +317,12 @@
   text-align: left;
   padding: var(--space-2) var(--space-3);
   background: #f4f6f3;
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   white-space: nowrap;
 }
 .table tbody td {
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid #d6d9d2;
+  border-bottom: 1px solid rgb(var(--eng-border));
   font-family: var(--font-sans);
   font-size: var(--fs-13);
   color: #11140f;
@@ -336,7 +336,7 @@
   font-size: var(--fs-12);
   background: #f4f6f3;
   color: #11140f;
-  border: 1px solid #d6d9d2;
+  border: 1px solid rgb(var(--eng-border));
   padding: 1px 8px;
   border-radius: var(--radius-pill);
 }
@@ -386,7 +386,7 @@
   max-height: 84vh;
   overflow-y: auto;
   background: #fff;
-  border: 1px solid #c2c6bd;
+  border: 1px solid rgb(var(--eng-border-strong));
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-3);
   padding: var(--space-5);
@@ -419,7 +419,7 @@
 .closeBtn:hover { background: #f4f6f3; color: #11140f; }
 
 .detailItem {
-  border: 1px solid #e3e6e0;
+  border: 1px solid rgb(var(--eng-border-subtle));
   border-radius: var(--radius-md);
   background: #f4f6f3;
   padding: var(--space-3);

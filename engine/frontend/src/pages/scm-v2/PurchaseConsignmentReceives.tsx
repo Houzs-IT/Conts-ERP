@@ -63,7 +63,7 @@ type GrnRow = Record<string, unknown> & {
 const buildColumns = (): GridColumn<GrnRow>[] => [
   {
     key: 'receive_number', label: 'Receive No.', width: 150, sortable: true,
-    accessor: (g) => <span style={{ fontWeight: 700, color: '#16695f', fontVariantNumeric: 'tabular-nums' }} className={cancelledDocNoClass(g.status)}>{g.receive_number}</span>,
+    accessor: (g) => <span style={{ fontWeight: 700, color: 'var(--c-orange)', fontVariantNumeric: 'tabular-nums' }} className={cancelledDocNoClass(g.status)}>{g.receive_number}</span>,
     searchValue: (g) => g.receive_number,
     /* Accessor is JSX → export the raw doc-no string or the cell exports blank. */
     exportValue: (g) => g.receive_number,
@@ -90,7 +90,7 @@ const buildColumns = (): GridColumn<GrnRow>[] => [
   },
   {
     key: 'pc_number', label: transferFromColumnLabel('pco'), width: 160, sortable: true, groupable: true,
-    accessor: (g) => <span style={{ fontWeight: 700, color: '#16695f', fontVariantNumeric: 'tabular-nums' }}>{g.purchase_consignment_order?.pc_number ?? '—'}</span>,
+    accessor: (g) => <span style={{ fontWeight: 700, color: 'var(--c-orange)', fontVariantNumeric: 'tabular-nums' }}>{g.purchase_consignment_order?.pc_number ?? '—'}</span>,
     searchValue: (g) => g.purchase_consignment_order?.pc_number ?? '',
     /* Accessor is JSX → export the source order doc-no string. */
     exportValue: (g) => g.purchase_consignment_order?.pc_number ?? '',
@@ -111,7 +111,7 @@ const buildColumns = (): GridColumn<GrnRow>[] => [
   {
     key: 'total_sen', label: 'Total', width: 130, sortable: true, align: 'right', groupable: false,
     accessor: (g) => (
-      <span style={{ fontFamily: 'var(--font-mark)', color: '#16695f', fontWeight: 800 }}>
+      <span style={{ fontFamily: 'var(--font-mark)', color: 'var(--c-orange)', fontWeight: 800 }}>
         {fmtMoney(Number(g.total_sen ?? 0), g.currency)}
       </span>
     ),
@@ -151,13 +151,13 @@ type GrnItem = Record<string, unknown> & {
 const buildDrilldownColumns = (currency: string): GridColumn<GrnItem>[] => [
   {
     key: 'item_code', label: 'Item Code', width: 130,
-    accessor: (it) => <span style={{ fontWeight: 700, color: '#16695f' }}>{it.item_code ?? '—'}</span>,
+    accessor: (it) => <span style={{ fontWeight: 700, color: 'var(--c-orange)' }}>{it.item_code ?? '—'}</span>,
     searchValue: (it) => it.item_code ?? '',
     sortFn: (a, b) => (a.item_code ?? '').localeCompare(b.item_code ?? ''),
   },
   {
     key: 'source_po', label: transferFromColumnLabel('po'), width: 160,
-    accessor: (it) => <span style={{ fontWeight: 700, color: '#16695f', fontVariantNumeric: 'tabular-nums' }}>{it.source_po_number ?? '—'}</span>,
+    accessor: (it) => <span style={{ fontWeight: 700, color: 'var(--c-orange)', fontVariantNumeric: 'tabular-nums' }}>{it.source_po_number ?? '—'}</span>,
     searchValue: (it) => it.source_po_number ?? '',
     sortFn: (a, b) => (a.source_po_number ?? '').localeCompare(b.source_po_number ?? ''),
   },
@@ -191,7 +191,7 @@ const buildDrilldownColumns = (currency: string): GridColumn<GrnItem>[] => [
   },
   {
     key: 'line_total', label: 'Line Total', width: 120, align: 'right',
-    accessor: (it) => <span style={{ fontWeight: 700, color: '#16695f' }}>{fmtMoney(Number(it.line_total_sen ?? 0), currency)}</span>,
+    accessor: (it) => <span style={{ fontWeight: 700, color: 'var(--c-orange)' }}>{fmtMoney(Number(it.line_total_sen ?? 0), currency)}</span>,
     exportValue: (it) => Number(it.line_total_sen ?? 0) / 100,
     exportFormat: 'money',
     searchValue: (it) => String(it.line_total_sen ?? 0),
@@ -215,7 +215,7 @@ const ExpandedLines = ({ grn }: { grn: GrnRow }) => {
   }
   if (detail.error) {
     return (
-      <div style={{ padding: '8px 12px', fontSize: 'var(--fs-11)', color: 'var(--c-festive-b, #B8331F)' }}>
+      <div style={{ padding: '8px 12px', fontSize: 'var(--fs-11)', color: 'var(--c-festive-b, var(--c-festive-b))' }}>
         Failed to load lines: {detail.error instanceof Error ? detail.error.message : String(detail.error)}
       </div>
     );
@@ -248,7 +248,7 @@ const ExpandedLines = ({ grn }: { grn: GrnRow }) => {
           fontFamily: 'var(--font-button)', fontSize: 'var(--fs-10)',
           letterSpacing: '0.06em', textTransform: 'uppercase',
         }}>Subtotal</span>
-        <span>Total <strong style={{ color: '#16695f' }}>{fmtMoney(subtotal, currency)}</strong></span>
+        <span>Total <strong style={{ color: 'var(--c-orange)' }}>{fmtMoney(subtotal, currency)}</strong></span>
       </div>
     </div>
   );

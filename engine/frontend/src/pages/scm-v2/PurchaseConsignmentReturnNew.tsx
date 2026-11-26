@@ -449,7 +449,7 @@ export const PurchaseConsignmentReturnNew = () => {
                           background: 'transparent',
                           border: 'none',
                           cursor: 'pointer',
-                          color: 'var(--c-festive-b, #B8331F)',
+                          color: 'var(--c-festive-b, var(--c-festive-b))',
                           padding: 4,
                           display: 'inline-flex',
                         }}

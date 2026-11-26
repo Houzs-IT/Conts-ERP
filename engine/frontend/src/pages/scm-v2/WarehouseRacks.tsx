@@ -72,7 +72,7 @@ const TABS: { key: TabKey; label: string }[] = [
 
 /* The collapsed header stat strip — value colour per the design token table. */
 const STAT_INK: Record<'ink' | 'primary' | 'warn' | 'primaryInk', string> = {
-  ink: '#11140f', primary: '#16695f', warn: '#6e4d12', primaryInk: '#0c3f39',
+  ink: 'rgb(var(--eng-ink))', primary: 'var(--badge-rack-stat-occupied-fg, #16695f)', warn: 'var(--badge-rack-stat-reserved-fg, #6e4d12)', primaryInk: 'rgb(var(--eng-primary-ink))',
 };
 
 /* ── Rack scope (shared across warehouses) ────────────────────────────────

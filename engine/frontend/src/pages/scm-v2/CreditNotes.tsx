@@ -125,10 +125,10 @@ export const CreditNotes = () => {
         description="A credit note to a customer, a debit note to a customer, a credit note from a supplier. Raised as a draft, posted to the ledger, cancelled by contra."
         primaryAction={<Button size="sm" onClick={() => setForm({ mode: 'new', values: emptyForm() })}><Plus size={16} strokeWidth={1.75} /> New note</Button>} />
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div role="tablist" aria-label="Note kind" style={{ display: 'inline-flex', border: '1px solid var(--border-weak, #e3e1da)', borderRadius: 6, overflow: 'hidden' }}>
+        <div role="tablist" aria-label="Note kind" style={{ display: 'inline-flex', border: '1px solid var(--badge-pill-edge, #e3e1da)', borderRadius: 6, overflow: 'hidden' }}>
           {KIND_TABS.map((k) => (
             <button key={k} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
-              style={{ padding: '4px 12px', fontSize: 'var(--fs-12)', border: 'none', cursor: 'pointer', background: kind === k ? 'var(--c-ink, #221f20)' : 'transparent', color: kind === k ? '#fff' : 'inherit' }}>
+              style={{ padding: '4px 12px', fontSize: 'var(--fs-12)', border: 'none', cursor: 'pointer', background: kind === k ? 'var(--badge-pill-chosen-bg, var(--c-ink, #221f20))' : 'transparent', color: kind === k ? 'var(--badge-pill-chosen-fg, #fff)' : 'inherit' }}>
               {k === 'ALL' ? 'All' : k}
             </button>
           ))}

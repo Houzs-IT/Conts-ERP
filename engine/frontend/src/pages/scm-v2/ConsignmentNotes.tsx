@@ -473,8 +473,8 @@ export const ConsignmentNotes = () => {
             placeholder="Search note no / customer…"
             style={{
               height: 32, padding: '0 12px 0 30px', width: 288,
-              borderRadius: 6, border: '1px solid #d6d9d2',
-              background: '#ffffff', color: 'var(--c-ink)', fontSize: 12,
+              borderRadius: 6, border: '1px solid rgb(var(--eng-border))',
+              background: 'var(--input-bg)', color: 'var(--c-ink)', fontSize: 12,
             }}
           />
           <SearchProgress active={searchTransition.isSearching} className="ml-2" />

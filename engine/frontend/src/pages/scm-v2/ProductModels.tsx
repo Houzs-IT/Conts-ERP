@@ -235,7 +235,7 @@ export const ProductModels = () => {
                 style={{
                   background: '#e1efed',
                   color: '#0c3f39',
-                  borderColor: '#16695f',
+                  borderColor: 'var(--c-orange)',
                   fontWeight: 600,
                 }}
               >
@@ -622,7 +622,7 @@ function ModelPhotoCell({ model }: { model: ProductModelRow }) {
           width: 48,
           height: 48,
           borderRadius: 'var(--radius-sm)',
-          border: '1px solid #d6d9d2',
+          border: '1px solid rgb(var(--eng-border))',
           background: src ? `#f4f6f3 center/cover no-repeat url(${src})` : '#f4f6f3',
           padding: 0,
           cursor: busy ? 'wait' : 'pointer',
@@ -1117,7 +1117,7 @@ export function NewModelDialog({
             width: '100%',
             padding: '10px 12px',
             marginTop: 4,
-            border: '1px dashed #16695f',
+            border: '1px dashed var(--c-orange)',
             borderRadius: 'var(--radius-md)',
             background: 'transparent',
             color: '#16695f',
@@ -1305,7 +1305,7 @@ function ModelRowCard({
           every SKU this row generates is bound to each filled entry with a
           code auto-suffixed per size/variant. Only one entry can be Main.
           Shown for every category (None = no binding). */}
-      <div style={{ borderTop: '1px solid #d6d9d2', marginTop: 8, paddingTop: 8 }}>
+      <div style={{ borderTop: '1px solid rgb(var(--eng-border))', marginTop: 8, paddingTop: 8 }}>
         {row.suppliers.map((sup, si) => {
           const patchSup = (patch: Partial<SupplierEntry>) => {
             onChange({
@@ -1450,7 +1450,7 @@ function InlineAllowedOptions({
                 textTransform: 'uppercase',
                 padding: '1px 7px',
                 borderRadius: 999,
-                border: '1px solid #d6d9d2',
+                border: '1px solid rgb(var(--eng-border))',
                 background: '#fff',
                 color: allOn ? '#767b6e' : '#11140f',
                 cursor: allOn ? 'default' : 'pointer',
@@ -1471,7 +1471,7 @@ function InlineAllowedOptions({
                 textTransform: 'uppercase',
                 padding: '1px 7px',
                 borderRadius: 999,
-                border: '1px solid #d6d9d2',
+                border: '1px solid rgb(var(--eng-border))',
                 background: '#fff',
                 color: allOff ? '#767b6e' : '#11140f',
                 cursor: allOff ? 'default' : 'pointer',
@@ -1505,7 +1505,7 @@ function InlineAllowedOptions({
                 gap: 6,
                 padding: '4px 12px',
                 borderRadius: 999,
-                border: '1px solid ' + (isOn ? '#16695f' : '#c2c6bd'),
+                border: '1px solid ' + (isOn ? 'var(--c-orange)' : 'rgb(var(--eng-border-strong))'),
                 background: isOn ? '#16695f' : '#fff',
                 /* isOn = petrol fill, so --c-cream here was fg-on-petrol → #fff. */
                 color: isOn ? '#fff' : '#11140f',
@@ -2013,7 +2013,7 @@ export function ModularAssignSupplierDialog({
         />
 
         <div style={{
-          border: '1px solid #d6d9d2',
+          border: '1px solid rgb(var(--eng-border))',
           borderRadius: 'var(--radius-md)',
           background: '#fff',
           // The table area takes the remaining modal height and scrolls on its
@@ -2025,7 +2025,7 @@ export function ModularAssignSupplierDialog({
         }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-sans)' }}>
             <thead>
-              <tr style={{ background: '#e3e6e0', borderBottom: '2px solid #d6d9d2' }}>
+              <tr style={{ background: '#e3e6e0', borderBottom: '2px solid rgb(var(--eng-border))' }}>
                 <th style={thStyle}>Model · Supplier</th>
                 <th style={thStyle}>Supplier Code</th>
                 <th style={thStyle}>Description</th>
@@ -2054,7 +2054,7 @@ export function ModularAssignSupplierDialog({
                 const head = rowsForModel[0]!;
                 return (
                   <Fragment key={modelId}>
-                    <tr style={{ background: '#e3e6e0', borderBottom: '2px solid #d6d9d2' }}>
+                    <tr style={{ background: '#e3e6e0', borderBottom: '2px solid rgb(var(--eng-border))' }}>
                       <td colSpan={7} style={{
                         padding: '6px 12px',
                         fontSize: 'var(--fs-12)',
@@ -2077,7 +2077,7 @@ export function ModularAssignSupplierDialog({
                       const isOpen = expanded.has(d.key);
                       return (
                         <Fragment key={d.key}>
-                          <tr style={{ borderBottom: '1px solid #d6d9d2' }}>
+                          <tr style={{ borderBottom: '1px solid rgb(var(--eng-border))' }}>
                             <td style={tdStyle}>
                               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{d.supplierCode_s}</div>
                               <div style={{ color: '#767b6e', fontSize: 'var(--fs-12)' }}>{d.supplierName}</div>
@@ -2155,8 +2155,8 @@ export function ModularAssignSupplierDialog({
                             <tr style={{ background: '#f4f6f3' }}>
                               <td colSpan={7} style={{
                                 padding: 'var(--space-2) var(--space-3)',
-                                borderBottom: '1px solid #d6d9d2',
-                                borderTop: '1px dashed #d6d9d2',
+                                borderBottom: '1px solid rgb(var(--eng-border))',
+                                borderTop: '1px dashed rgb(var(--eng-border))',
                               }}>
                                 {/* PR — preview uses THIS row's typed base code +
                                     composeSupplierSku() so commander sees the
@@ -2241,7 +2241,7 @@ const inputStyle: React.CSSProperties = {
   fontFamily: 'var(--font-mono)',
   fontSize: 'var(--fs-13)',
   background: '#f4f6f3',
-  border: '1px solid #d6d9d2',
+  border: '1px solid rgb(var(--eng-border))',
   borderRadius: 'var(--radius-sm)',
   padding: '4px 8px',
   outline: 'none',
