@@ -26,6 +26,18 @@ test('a chosen pill (near-black fill, pale text) flips as a pair through the cho
   assert.equal(transformTsx(source).text, "const pill = <button style={{ border: '1px solid var(--badge-pill-chosen-line, #11140f)', background: 'var(--badge-pill-chosen-bg, #11140f)', color: 'var(--badge-pill-chosen-fg, #f4f6f3)' }} />;");
 });
 
+test('a second run changes nothing: a colour already written as a variable fallback is left alone', () => {
+  const source = "const pill = <button style={{ border: '1px solid #11140f', background: '#11140f', color: '#f4f6f3' }} />;";
+  const once = transformTsx(source).text;
+  assert.equal(transformTsx(once).text, once);
+  assert.equal(transformTsx(once).swaps, 0);
+});
+
+test('a fallback colour the table does not know does not hold the rest of the file back', () => {
+  const result = transformCss(".note { background: var(--badge-stock-note-bg, #fef3c7); } .value { color: #11140f; }");
+  assert.match(result.text, /color: rgb\(var\(--eng-ink\)\)/);
+});
+
 test('white text and a petrol fill stay as they are, since night would split the pair', () => {
   const css = '.pill { background: #16695f; color: #fff; }';
   assert.equal(transformCss(css).text, css);

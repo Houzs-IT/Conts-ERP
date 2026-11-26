@@ -95,16 +95,22 @@ function blockersIn(colourUses) {
 function swapIn(value, role, allowed) {
   if (!role || (role === 'ink' && !allowed.swapsInk) || (role === 'fill' && !allowed.swapsFill)) return { value, swaps: 0 };
   let swaps = 0;
-  const next = value.replace(HEX_IN_VALUE, (whole, digits) => {
+  const next = value.replace(HEX_IN_VALUE, (whole, digits, offset) => {
     const token = TOKEN_BY_ROLE[role][normaliseHex(digits)];
-    if (!token) return whole;
+    if (!token || isVariableFallback(value, offset)) return whole;
     swaps += 1;
     return token;
   });
   return { value: next, swaps };
 }
 
-const usesIn = (value, role) => [...value.matchAll(HEX_IN_VALUE)].map((match) => ({ hexDigits: normaliseHex(match[1]), role }));
+// A colour already written as a variable's fallback, var(--x, #hex), is theme-driven: swapping it again would nest the
+// variable inside itself on every run.
+const isVariableFallback = (value, offset) => /var\(--[\w-]+,\s*$/.test(value.slice(0, offset));
+
+const usesIn = (value, role) => [...value.matchAll(HEX_IN_VALUE)]
+  .filter((match) => !isVariableFallback(value, match.index ?? 0))
+  .map((match) => ({ hexDigits: normaliseHex(match[1]), role }));
 
 export function transformCss(sourceText) {
   const root = postcss.parse(sourceText);
