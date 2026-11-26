@@ -194,3 +194,4 @@
   --color-fill-ring: #6576AC;
 }
 :root[data-theme="theconts-dark"][data-side="dream-crafter"] .bg-black { background-color: #2A2F42; }
+:root[data-theme="theconts-dark"][data-side="dream-crafter"] :is(.bg-black[aria-pressed="true"], .bg-black[aria-selected="true"]) { background-color: #EEF1F8; color: #151823; }

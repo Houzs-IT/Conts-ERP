@@ -13,6 +13,7 @@ import { PageHeader } from "../components/Layout";
 import { DataTable, type Column } from "../components/DataTable";
 import { TabStrip } from "../components/TabStrip";
 import { Button } from "../components/Button";
+import { StatCard } from "../components/StatCard";
 import { Modal } from "../vendor/scm/components/Modal";
 import { DateField } from "../vendor/scm/components/DateField";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
@@ -102,11 +103,11 @@ export function ContsCommission() {
     <div className="space-y-4">
       <PageHeader title="Commission" description="Worked out from each order, its VOs and the money collected. Paid out in stages as the customer pays." />
       {data && (
-        <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap", fontSize: "var(--fs-13)" }}>
-          <Kpi label="Can claim now" value={`RM ${rm(toPay)}`} strong />
-          <Kpi label="Earned so far" value={`RM ${rm(people.reduce((t, p) => t + p.earnedSen, 0))}`} />
-          <Kpi label="Paid" value={`RM ${rm(people.reduce((t, p) => t + p.paidSen, 0))}`} />
-          {missing > 0 && <Kpi label="Orders with no commission" value={`${missing} of ${data.rows.length}`} bad />}
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          <StatCard label="Can claim now" value={`RM ${rm(toPay)}`} tone="success" />
+          <StatCard label="Earned so far" value={`RM ${rm(people.reduce((t, p) => t + p.earnedSen, 0))}`} />
+          <StatCard label="Paid" value={`RM ${rm(people.reduce((t, p) => t + p.paidSen, 0))}`} />
+          {missing > 0 && <StatCard label="Orders with no commission" value={`${missing} of ${data.rows.length}`} tone="error" />}
         </div>
       )}
       {data && data.schemes.filter((s) => s.active).length === 0 && (
@@ -128,11 +129,10 @@ export function ContsCommission() {
   );
 }
 
-function Kpi({ label, value, strong, bad }: { label: string; value: string; strong?: boolean; bad?: boolean }) {
+function Kpi({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "8px 14px", minWidth: 150 }}>
-      <div style={{ color: MUTED, fontSize: "var(--fs-12)" }}>{label}</div>
-      <div style={{ ...num, fontWeight: 600, fontSize: "var(--fs-16, 16px)", color: bad ? BAD : strong ? GOOD : undefined }}>{value}</div>
+    <div style={{ minWidth: 150 }}>
+      <StatCard label={label} value={value} tone={strong ? "success" : "default"} />
     </div>
   );
 }
@@ -176,7 +176,7 @@ function OrderDialog({ row, payouts, canPay, onClose }: { row: CommissionRow; pa
           {row.branding && <span style={chip}>{row.branding}</span>}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 1, background: "var(--border)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 1, background: "var(--line)", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
           <Fact label="Contract" value={`RM ${rm(row.baseSen)}`} />
           <Fact label="Collected" value={`RM ${rm(row.collectedSen)}`} sub={pctText(row.collectedBp)} bar={row.collectedBp} />
           <Fact label="Commission released" value={row.problem ? "—" : pctText(row.releasedBp)} sub={row.stages.length ? `${row.stages.filter((x) => x.reached).length} of ${row.stages.length} stages reached` : undefined} />
@@ -188,7 +188,7 @@ function OrderDialog({ row, payouts, canPay, onClose }: { row: CommissionRow; pa
         {row.stages.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {row.stages.map((x, i) => (
-              <span key={i} style={{ ...chip, background: x.reached ? "var(--c-success-soft, #e3f1e8)" : "var(--bg-subtle, rgba(0,0,0,0.04))", color: x.reached ? GOOD : MUTED }}>
+              <span key={i} style={{ ...chip, background: x.reached ? "var(--c-success-bg)" : "var(--bg-subtle, rgba(0,0,0,0.04))", color: x.reached ? GOOD : MUTED }}>
                 {x.reached ? "✓" : "○"} {x.label}{x.thresholdBp == null ? " (no such payment)" : ""} · releases {pctText(x.releaseBp)}
               </span>
             ))}
@@ -198,15 +198,15 @@ function OrderDialog({ row, payouts, canPay, onClose }: { row: CommissionRow; pa
         {!row.problem && (
           <section>
             <h3 style={sectionTitle}>Commission by part</h3>
-            <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 10 }}>
+            <div className="rounded-xl border border-border bg-surface shadow-stone" style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
-                <thead><tr style={{ color: MUTED, background: "var(--bg-subtle, rgba(0,0,0,0.03))" }}>
+                <thead><tr className="bg-surface-2" style={{ color: MUTED }}>
                   <th style={{ ...th, textAlign: "left", paddingLeft: 12 }}>Part</th><th style={{ ...th, textAlign: "left" }}>Month</th><th style={th}>Amount</th>
                   {showSales && <th style={th}>Month&apos;s sales</th>}{showSales && <th style={th}>Salesperson</th>}{showManager && <th style={th}>Manager</th>}<th style={{ ...th, paddingRight: 12 }}>Rate</th>
                 </tr></thead>
                 <tbody>
                   {row.portions.map((p, i) => (
-                    <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                    <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
                       <td style={{ padding: "8px 0 8px 12px", fontWeight: 600 }}>{p.source === "SO" ? "Sales order" : p.source === "VO" ? p.ref : "Other changes"}</td>
                       <td style={{ paddingLeft: 8 }}>{monthLabel(p.month)}</td>
                       <td style={td}>{rm(p.sen)}</td>
@@ -217,7 +217,7 @@ function OrderDialog({ row, payouts, canPay, onClose }: { row: CommissionRow; pa
                     </tr>
                   ))}
                   {row.portions.length > 1 && (
-                    <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 600 }}>
+                    <tr style={{ borderTop: "2px solid var(--line)", fontWeight: 600 }}>
                       <td style={{ padding: "8px 0 8px 12px" }} colSpan={2}>Total</td>
                       <td style={td}>{rm(row.portions.reduce((t, p) => t + p.sen, 0))}</td>
                       {showSales && <td />}
@@ -236,7 +236,7 @@ function OrderDialog({ row, payouts, canPay, onClose }: { row: CommissionRow; pa
             <h3 style={sectionTitle}>Who gets what</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
               {row.shares.map((s) => (
-                <div key={s.staffId} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div key={s.staffId} className="rounded-xl border border-border bg-surface shadow-stone" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 700, fontSize: "var(--fs-15, 15px)", flex: 1 }}>{s.staffName}</span>
                     <span style={chip}>{ROLE[s.role]}</span>
@@ -264,9 +264,9 @@ function OrderDialog({ row, payouts, canPay, onClose }: { row: CommissionRow; pa
         {payouts.length > 0 && (
           <section>
             <h3 style={sectionTitle}>Paid on this order</h3>
-            <div style={{ border: "1px solid var(--border)", borderRadius: 10 }}>
+            <div className="rounded-xl border border-border bg-surface shadow-stone">
               {payouts.map((p, i) => (
-                <div key={p.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 12px", borderTop: i ? "1px solid var(--border)" : undefined, textDecoration: p.voidedAt ? "line-through" : undefined, color: p.voidedAt ? MUTED : undefined }}>
+                <div key={p.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 12px", borderTop: i ? "1px solid var(--line)" : undefined, textDecoration: p.voidedAt ? "line-through" : undefined, color: p.voidedAt ? MUTED : undefined }}>
                   <span style={{ width: 96, color: MUTED }}>{p.paidOn}</span><span style={{ flex: 1 }}>{p.staffName}{p.note ? ` · ${p.note}` : ""}</span>
                   <span style={{ ...num, fontWeight: 600 }}>RM {rm(p.amountSen)}</span>
                   {/* Asked here, not in a pop-up: a pop-up opens behind this dialog. */}
@@ -417,7 +417,7 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
         </label>
         <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>Every order whose customer has paid far enough, however old. Amounts use the rates locked when each month closed.</span>
       </div>
-      <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+      <div className="rounded-xl border border-border bg-surface shadow-stone" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
           <thead><tr style={{ color: MUTED }}>
             <th style={{ ...th, textAlign: "left", paddingLeft: 12, width: 32 }}>
@@ -430,7 +430,7 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
           <tbody>
             {shown.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: MUTED }}>Nothing to claim right now.</td></tr>}
             {shown.map((c) => (
-              <tr key={c.key} style={{ borderTop: "1px solid var(--border)" }}>
+              <tr key={c.key} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "6px 0 6px 12px" }}>
                   <input type="checkbox" aria-label={`Pay ${c.share.staffName} on ${c.row.soDocNo}`} checked={!!picked[c.key]}
                     onChange={(e) => setPicked({ ...picked, [c.key]: e.target.checked })} />
@@ -438,7 +438,7 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
                 <td style={{ paddingLeft: 8, fontWeight: 600 }}>{c.share.staffName}</td>
                 <td style={{ paddingLeft: 8, color: MUTED }}>{ROLE[c.share.role]}</td>
                 <td style={{ paddingLeft: 8 }}>
-                  <button type="button" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
+                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
                 </td>
                 <td style={{ paddingLeft: 8, color: MUTED, whiteSpace: "nowrap" }}>{c.row.soDate ?? ""}</td>
                 <td style={{ paddingLeft: 8 }}>{c.row.projectName || c.row.customerName}</td>
@@ -508,7 +508,7 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
         <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>HR pays each person what they claimed this month. Tick claims under Monthly settlement to add them here. Click a person for the orders.</span>
       </div>
 
-      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+      <div className="rounded-xl border border-border bg-surface shadow-stone" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
           <thead><tr style={{ color: MUTED }}>
             <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Person</th>
@@ -519,7 +519,7 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
             {list.length === 0 && <tr><td colSpan={5} style={{ padding: 14, color: MUTED }}>Nothing claimed or waiting.</td></tr>}
             {list.map((x) => (
               <Fragment key={x.id}>
-                <tr style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={() => setOpenPerson(openPerson === x.id ? null : x.id)}>
+                <tr style={{ borderTop: "1px solid var(--line)", cursor: "pointer" }} onClick={() => setOpenPerson(openPerson === x.id ? null : x.id)}>
                   <td style={{ padding: "8px 0 8px 14px", fontWeight: 600 }}>{openPerson === x.id ? "▾" : "▸"} {x.name}</td>
                   <td style={{ ...td, fontWeight: 600, color: sumPaid(x) > 0 ? GOOD : MUTED }}>RM {rm(sumPaid(x))}</td>
                   <td style={td}>{x.paid.length}</td>
@@ -532,9 +532,9 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
                       <div>
                         <div style={{ fontWeight: 600, padding: "6px 0" }}>Claimed in {monthLabel(month)}</div>
                         {x.paid.length === 0 ? <div style={{ color: MUTED }}>Nothing this month.</div> : x.paid.map((p) => (
-                          <div key={p.id} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
+                          <div key={p.id} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--line)" }}>
                             <span style={{ color: MUTED, whiteSpace: "nowrap" }}>{p.paidOn}</span>
-                            <button type="button" onClick={() => onOpen(p.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{p.soDocNo}</button>
+                            <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(p.soDocNo)} style={{ border: 0, background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>{p.soDocNo}</button>
                             <span style={{ flex: 1, color: MUTED }}>{project(p.soDocNo)}</span>
                             <span style={{ ...num, fontWeight: 600 }}>{rm(p.amountSen)}</span>
                           </div>
@@ -543,8 +543,8 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
                       <div>
                         <div style={{ fontWeight: 600, padding: "6px 0" }}>Can claim now</div>
                         {x.open.length === 0 ? <div style={{ color: MUTED }}>Nothing waiting.</div> : x.open.map((c) => (
-                          <div key={c.key} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
-                            <button type="button" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
+                          <div key={c.key} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--line)" }}>
+                            <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
                             <span style={{ flex: 1, color: MUTED }}>{c.row.projectName || c.row.customerName}</span>
                             <span style={{ ...num, fontWeight: 600, color: GOOD }}>{rm(c.share.claimableSen)}</span>
                           </div>
@@ -629,7 +629,7 @@ function SchemeCard({ scheme, initial, data, onDone, readOnly }: { scheme: Commi
   };
   const managerBp = bpFromPct(rates.manager) ?? 0;
   return (
-    <fieldset disabled={readOnly} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "var(--space-4)", margin: 0, display: "flex", flexDirection: "column", gap: "var(--space-3)", fontSize: "var(--fs-13)", opacity: t.active ? 1 : 0.6 }}>
+    <fieldset disabled={readOnly} className="rounded-xl border border-border bg-surface shadow-stone" style={{ padding: "var(--space-4)", margin: 0, display: "flex", flexDirection: "column", gap: "var(--space-3)", fontSize: "var(--fs-13)", opacity: t.active ? 1 : 0.6 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "var(--space-3)" }}>
         <label className={styles.field}><span className={styles.fieldLabel}>Scheme name</span>
           <input className={styles.fieldInput} value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} /></label>
@@ -744,7 +744,7 @@ function Overview({ data, people, allowEveryone, onOpen }: {
       <button key={p.staffId || "all"} type="button" onClick={() => pick(p.staffId)} aria-pressed={on}
         style={{
           display: "flex", flexDirection: "column", gap: 2, width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 8, cursor: "pointer", font: "inherit",
-          border: on ? "1px solid var(--accent, #1f5c4a)" : "1px solid var(--border)", background: on ? "var(--accent-soft, rgba(31,92,74,0.08))" : "var(--bg-surface, #fff)",
+          border: on ? `1px solid ${GOOD}` : "1px solid var(--line)", background: on ? "var(--c-success-bg)" : "var(--bg-surface, #fff)",
         }}>
         <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <span style={{ fontWeight: 600 }}>{p.staffId === data.viewer.staffId ? `${p.staffName} (me)` : p.staffName}</span>
@@ -834,11 +834,11 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
                 <button key={mo} type="button" onClick={() => setMonth(on ? null : mo)} aria-pressed={on}
                   style={{
                     flex: "0 0 168px", display: "flex", flexDirection: "column", gap: 3, padding: "8px 10px", borderRadius: 8, textAlign: "left", cursor: "pointer", font: "inherit",
-                    border: on ? "1px solid var(--accent, #1f5c4a)" : "1px solid var(--border)", background: on ? "var(--accent-soft, rgba(31,92,74,0.08))" : "var(--bg-surface, #fff)",
+                    border: on ? `1px solid ${GOOD}` : "1px solid var(--line)", background: on ? "var(--c-success-bg)" : "var(--bg-surface, #fff)",
                   }}>
                   <span style={{ fontWeight: 600 }}>{monthLabel(mo)}</span>
-                  <span style={{ height: 4, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
-                    <span style={{ display: "block", height: "100%", width: `${Math.round((((x?.salesSen ?? 0) + team) / maxSales) * 100)}%`, background: "var(--accent, #1f5c4a)" }} />
+                  <span style={{ height: 4, borderRadius: 2, background: "var(--line)", overflow: "hidden" }}>
+                    <span style={{ display: "block", height: "100%", width: `${Math.round((((x?.salesSen ?? 0) + team) / maxSales) * 100)}%`, background: GOOD }} />
                   </span>
                   <span style={num}>Own RM {rm0(x?.salesSen ?? 0)}{x?.salesBp != null && (x.salesSen) !== 0 ? ` · ${pctText(x.salesBp)}` : ""}</span>
                   {team !== 0 && <span style={num}>Team RM {rm0(team)}</span>}
@@ -852,7 +852,7 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
       </div>
 
       {m && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+        <div className="rounded-xl border border-border bg-surface shadow-stone" style={{ overflowX: "auto" }}>
           <div style={{ padding: "10px 14px", fontWeight: 600 }}>
             {monthLabel(m.month)}: own sales RM {rm(m.salesSen)}{teamIn(m) !== 0 ? `, team sales RM ${rm(teamIn(m))}` : ""}, comm RM {rm(m.commissionSen)}
           </div>
@@ -864,7 +864,7 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
               </tr></thead>
               <tbody>
                 {m.lines.map((l, i) => (
-                  <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                  <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
                     <td style={{ padding: "6px 0 6px 14px" }}><span style={{ fontWeight: 600 }}>{l.portion.source === "OTHER" ? "Other" : l.portion.source}</span> {l.row.soDocNo}{l.portion.source === "VO" ? ` ${l.portion.ref}` : ""}</td>
                     <td style={{ paddingLeft: 8 }}>{l.row.projectName || l.row.customerName}</td>
                     <td style={{ paddingLeft: 8 }}>{l.portion.date}</td>
@@ -874,7 +874,7 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
                     <td style={{ ...td, paddingRight: 14 }}>{rm(l.commissionSen)}</td>
                   </tr>
                 ))}
-                <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 600 }}>
+                <tr style={{ borderTop: "2px solid var(--line)", fontWeight: 600 }}>
                   <td style={{ padding: "6px 0 6px 14px" }} colSpan={6}>Comm on {monthLabel(m.month)} sales</td>
                   <td style={{ ...td, paddingRight: 14 }}>{rm(m.commissionSen)}</td>
                 </tr>
@@ -892,7 +892,7 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
           </label>
           <input className={styles.fieldInput} style={{ maxWidth: 240 }} value={query} placeholder="Search SO, project or customer" aria-label="Search orders" onChange={(e) => setQuery(e.target.value)} />
         </div>
-        <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+        <div className="rounded-xl border border-border bg-surface shadow-stone" style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
             <thead><tr style={{ color: MUTED }}>
               {head("order", "Order", true, { paddingLeft: 14 })}{head("date", "SO date", true)}{head("project", "Project", true)}{head("role", "As", true)}
@@ -902,7 +902,7 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
               {orders.length === 0 && <tr><td colSpan={7} style={{ padding: 14, color: MUTED }}>No orders match.</td></tr>}
               {orders.map(({ row, share }) => (
                 <Fragment key={row.soDocNo}>
-                  <tr style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={() => setOpenDoc(openDoc === row.soDocNo ? null : row.soDocNo)}>
+                  <tr style={{ borderTop: "1px solid var(--line)", cursor: "pointer" }} onClick={() => setOpenDoc(openDoc === row.soDocNo ? null : row.soDocNo)}>
                     <td style={{ padding: "6px 0 6px 14px", fontWeight: 600, whiteSpace: "nowrap" }}>{openDoc === row.soDocNo ? "▾" : "▸"} {row.soDocNo}</td>
                     <td style={{ paddingLeft: 8, color: MUTED, whiteSpace: "nowrap" }}>{row.soDate ?? ""}</td>
                     <td style={{ paddingLeft: 8 }}>{row.projectName || row.customerName}</td>
@@ -941,7 +941,7 @@ function ClaimBreakdown({ row, share }: { row: CommissionRow; share: CommissionS
       </tr></thead>
       <tbody>
         {parts.map((x, i) => (
-          <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+          <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
             <td style={{ padding: "6px 0 6px 10px" }}>{x.portion.source === "SO" ? `Order ${row.soDocNo}` : x.portion.source === "VO" ? x.portion.ref : "Other changes"}</td>
             <td style={{ paddingLeft: 8 }}>{monthLabel(x.portion.month)}{x.portion.lockedAt ? " (locked)" : ""}</td>
             <td style={td}>{rm(x.portion.sen)}</td>
@@ -952,7 +952,7 @@ function ClaimBreakdown({ row, share }: { row: CommissionRow; share: CommissionS
             <td style={{ ...td, paddingRight: 10, fontWeight: 600 }}>{rm(x.leftSen)}</td>
           </tr>
         ))}
-        <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 600 }}>
+        <tr style={{ borderTop: "2px solid var(--line)", fontWeight: 600 }}>
           <td style={{ padding: "6px 0 6px 10px" }} colSpan={4}>Total</td>
           <td style={td}>{rm(share.totalSen)}</td><td style={td}>{rm(share.earnedSen)}</td><td style={td}>{rm(share.paidSen)}</td>
           <td style={{ ...td, paddingRight: 10 }}>{rm(share.claimableSen)}</td>
