@@ -28,7 +28,7 @@
 import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
 import { refreshUnconfirmedLinks, type LinkRow } from '../../acc/settlement';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId, allowedCompanyIds } from '../lib/companyScope';
 import { todayMyt } from '../lib/my-time';
 import { parseStatement, type StatementColumnMap } from '../../acc/settlement-parse';
@@ -47,6 +47,13 @@ type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
     other). One wrapper, so no handler in this file can be added without it. */
 const guard = (handler: (c: Ctx) => Promise<Response>) => async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) {
+    return c.json({ error: "You don't have permission to reconcile acquirer settlements." }, 403);
+  }
+  return handler(c);
+};
+
+const readGuard = (handler: (c: Ctx) => Promise<Response>) => async (c: Ctx): Promise<Response> => {
+  if (!canReadBooks(c)) {
     return c.json({ error: "You don't have permission to reconcile acquirer settlements." }, 403);
   }
   return handler(c);
@@ -94,7 +101,7 @@ type StoredRow = {
    the money lands in — per company, because the same merchant pays different
    companies into different banks. Owner, 2026-08-18: "例如pbb，在houzs 可能是
    maybank 收钱，但是在2990 是hong leong bank 收钱"). */
-export const settlementSetup = guard(async (c) => {
+export const settlementSetup = readGuard(async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -701,7 +708,7 @@ const payableOf = (b: { stated_net_sen?: number | null; net_sen?: number | null 
    its payout has actually arrived. Derived from the receipts on every read
    (§2.3: no caches), because "one statement, one credit" is not true — Hong
    Leong pays a multi-day statement one credit per day. */
-export const settlementBatches = guard(async (c) => {
+export const settlementBatches = readGuard(async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -1279,7 +1286,7 @@ export const settlementIgnoreRow = guard(async (c) => {
      arrivedNotRecorded — the acquirer sent money with no sale behind it.
    Both are also what layer 4 (bank reconciliation, phase 4) will refuse to
    open until they are empty. */
-export const settlementWatchlist = guard(async (c) => {
+export const settlementWatchlist = readGuard(async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');

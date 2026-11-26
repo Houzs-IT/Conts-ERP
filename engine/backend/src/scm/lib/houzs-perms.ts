@@ -21,6 +21,7 @@ import {
   isProductCostViewer,
 } from '../../services/pmsAccess';
 import { userCanWriteScmConfig } from '../../services/positionPolicy';
+import { LEDGER_REPORTS_KEY } from '../../conts/ledger-access';
 import { isCostingDisplayEnabled, type CostingDisplayEnv } from './costing-enabled';
 import type { AuthUser } from '../../services/auth';
 import type { Env, Variables } from '../env';
@@ -50,6 +51,13 @@ function grantedFor(c: HouzsUserSource): ReadonlyArray<string> | ReadonlySet<str
 /** Inline check — true when the caller holds `perm` (or the `*` wildcard). */
 export function hasHouzsPerm(c: HouzsUserSource, perm: string): boolean {
   return hasPermission(grantedFor(c), perm);
+}
+
+const BOOKS_POST_KEY = 'scm.payment_voucher.post';
+
+/** Reading the books (statements, ledgers, reconciliations). Posting still holds it, so no existing reader loses it. */
+export function canReadBooks(c: HouzsUserSource): boolean {
+  return hasHouzsPerm(c, LEDGER_REPORTS_KEY) || hasHouzsPerm(c, BOOKS_POST_KEY);
 }
 
 /**

@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { contsPageAccess, contsPermissions, parseContsAccess, type ContsAccess } from '../src/conts/access';
-import { ACCOUNTING_OPEN_PATHS, LEDGER_KEY, PAYMENT_VOUCHER_OPEN_PATHS, ledgerPermissions, requireLedgerAccess } from '../src/conts/ledger-access';
+import { ACCOUNTING_OPEN_PATHS, LEDGER_KEY, LEDGER_REPORTS_KEY, PAYMENT_VOUCHER_OPEN_PATHS, ledgerPermissions, requireLedgerAccess } from '../src/conts/ledger-access';
 import { accessFingerprint, roleIdFor } from '../src/conts/sso';
 
 const EIGHT = ['scSales', 'scInvoices', 'scConsignment', 'scProcurement', 'scTransportPlan', 'scWarehouse', 'serviceCases', 'projects'];
@@ -88,10 +88,10 @@ describe('the sign-on levels', () => {
 
   test('ledgerPermissions grants the payment voucher keys by level', () => {
     expect(ledgerPermissions('none')).toEqual([]);
-    expect(ledgerPermissions('view')).toEqual([LEDGER_KEY]);
-    expect(ledgerPermissions('edit')).toEqual([LEDGER_KEY, 'scm.payment_voucher.create', 'scm.payment_voucher.write']);
+    expect(ledgerPermissions('view')).toEqual([LEDGER_KEY, LEDGER_REPORTS_KEY]);
+    expect(ledgerPermissions('edit')).toEqual([LEDGER_KEY, LEDGER_REPORTS_KEY, 'scm.payment_voucher.create', 'scm.payment_voucher.write']);
     expect(ledgerPermissions('full')).toEqual([
-      LEDGER_KEY, 'scm.payment_voucher.create', 'scm.payment_voucher.write',
+      LEDGER_KEY, LEDGER_REPORTS_KEY, 'scm.payment_voucher.create', 'scm.payment_voucher.write',
       'scm.payment_voucher.check', 'scm.payment_voucher.approve', 'scm.payment_voucher.post', 'scm.payment_voucher.cancel',
       'scm.project_limit.approve', 'scm.reno_estimate.change',
     ]);

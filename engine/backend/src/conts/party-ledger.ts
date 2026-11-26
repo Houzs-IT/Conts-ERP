@@ -3,7 +3,7 @@
 // the balance brought forward, then each line of the period with a running balance — a customer's as what they owe
 // (debit), a supplier's as what is owed to them (credit). Mounted under /accounting, behind the Ledger guard.
 //   GET /accounting/party-ledger?kind=debtor|creditor&code=&from=&to=
-import { hasHouzsPerm } from '../scm/lib/houzs-perms';
+import { canReadBooks } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { paginateAll } from '../scm/lib/paginate-all';
 import { isReversalPair } from '../acc/reversal-pairs';
@@ -22,7 +22,7 @@ export type PartyLedgerLine = {
 };
 
 export const partyLedgerHandler = async (c: Ctx): Promise<Response> => {
-  if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json({ error: "You don't have permission to read the ledger." }, 403);
+  if (!canReadBooks(c)) return c.json({ error: "You don't have permission to read the ledger." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const kind = String(c.req.query('kind') ?? '');

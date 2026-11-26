@@ -9,13 +9,14 @@ import { hasPermissionLiterally } from "../services/permissions";
 import type { ContsLevel } from "./access";
 
 export const LEDGER_KEY = "scm.ledger.use";
+export const LEDGER_REPORTS_KEY = "scm.ledger.reports";
 
 const LADDER: Record<ContsLevel, string[]> = {
   none: [],
-  view: [LEDGER_KEY],
-  edit: [LEDGER_KEY, "scm.payment_voucher.create", "scm.payment_voucher.write"],
+  view: [LEDGER_KEY, LEDGER_REPORTS_KEY],
+  edit: [LEDGER_KEY, LEDGER_REPORTS_KEY, "scm.payment_voucher.create", "scm.payment_voucher.write"],
   full: [
-    LEDGER_KEY, "scm.payment_voucher.create", "scm.payment_voucher.write",
+    LEDGER_KEY, LEDGER_REPORTS_KEY, "scm.payment_voucher.create", "scm.payment_voucher.write",
     "scm.payment_voucher.check", "scm.payment_voucher.approve", "scm.payment_voucher.post", "scm.payment_voucher.cancel",
     "scm.project_limit.approve", "scm.reno_estimate.change",
   ],

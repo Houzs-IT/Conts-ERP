@@ -19,7 +19,7 @@
 // vouchers' write key.
 // ----------------------------------------------------------------------------
 
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { defaultSectionFor } from '../lib/account-sections';
 import { allowedIds, resolveLayout } from './accounting-report-layouts';
@@ -31,7 +31,6 @@ import {
 type Ctx = any;
 type Row = Record<string, unknown>;
 
-const READ_PERM = 'scm.payment_voucher.post';
 const WRITE_PERM = 'scm.payment_voucher.write';
 const NO_READ = { error: "You don't have permission to read the forecast." };
 const NO_WRITE = { error: "You don't have permission to change the forecast." };
@@ -69,7 +68,7 @@ export async function loadGrid(sb: any, companyId: number): Promise<{ ok: true; 
 }
 
 export const forecastGetHandler = async (c: Ctx): Promise<Response> => {
-  if (!hasHouzsPerm(c, READ_PERM)) return c.json(NO_READ, 403);
+  if (!canReadBooks(c)) return c.json(NO_READ, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -112,7 +111,7 @@ export const forecastPutHandler = async (c: Ctx): Promise<Response> => {
 };
 
 export const forecastFiguresHandler = async (c: Ctx): Promise<Response> => {
-  if (!hasHouzsPerm(c, READ_PERM)) return c.json(NO_READ, 403);
+  if (!canReadBooks(c)) return c.json(NO_READ, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const from = String(c.req.query('from') ?? '').trim();

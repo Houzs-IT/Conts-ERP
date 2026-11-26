@@ -15,7 +15,7 @@
 
 import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks, hasHouzsPerm } from '../lib/houzs-perms';
 import {
   REPORT_BLOCKS, defaultLayout, isReportKey, validateLayout,
   type ChartAccount, type Layout, type LayoutItem, type ReportKey,
@@ -119,7 +119,7 @@ const companiesOf = (c: Ctx, ids: number[]): Array<{ id: number; code: string }>
 
 /* ── GET /accounting/reports/layout?report=pnl ──────────────────────────── */
 export const reportLayoutGet = async (c: Ctx): Promise<Response> => {
-  if (!requirePerm(c)) return c.json(NO_PERM, 403);
+  if (!canReadBooks(c)) return c.json(NO_PERM, 403);
   const report = reportOf(c);
   if (!report) return c.json(BAD_REPORT, 400);
   const ids = allowedIds(c);

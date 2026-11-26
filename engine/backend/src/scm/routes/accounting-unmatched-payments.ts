@@ -18,7 +18,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canReadBooks } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { todayMyt } from '../lib/my-time';
 import { paginateAll } from '../lib/paginate-all';
@@ -47,7 +47,7 @@ const shiftDays = (day: string, days: number): string =>
 
 /** The page's one gate and its one window, for both lists. */
 const opened = (c: Ctx): { ok: true; companyId: number; from: string; to: string; today: string } | { ok: false; response: Response } => {
-  if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) {
+  if (!canReadBooks(c)) {
     return { ok: false, response: c.json({ error: "You don't have permission to see the reconciliation lists." }, 403) };
   }
   const co = requireActiveCompanyId(c);
