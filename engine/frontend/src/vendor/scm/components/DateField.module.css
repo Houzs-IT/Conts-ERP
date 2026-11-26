@@ -9,9 +9,9 @@
   align-items: center;
   gap: 2px;
   padding: 4px 4px 4px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-edge, var(--line));
   border-radius: var(--radius-md);
-  background: var(--c-paper, #fff);
+  background: var(--field-fill, var(--c-paper, #fff));
   box-sizing: border-box;
 }
 .wrap:focus-within {

@@ -65,8 +65,8 @@
 /* ── Cards ──────────────────────────────────────────────────────────── */
 
 .card {
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: rgb(var(--eng-surface));
+  border: 1px solid rgb(var(--eng-border));
   border-radius: 10px;
   box-shadow: var(--shadow-1);
   overflow: hidden;
@@ -80,9 +80,9 @@
   justify-content: space-between;
   gap: var(--space-2);
   padding: 8px var(--space-3);
-  border-bottom: 1px solid #d6d9d2;
-  border-left: 3px solid #0c3f39;
-  background: #f4f6f3;
+  border-bottom: 1px solid rgb(var(--eng-border));
+  border-left: 3px solid rgb(var(--eng-primary-ink));
+  background: rgb(var(--eng-surface-2));
 }
 
 .cardTitle {
@@ -96,7 +96,7 @@
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #0c3f39;
+  color: rgb(var(--eng-primary-ink));
   margin: 0;
   display: flex;
   align-items: center;
@@ -220,7 +220,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #767b6e;
+  color: var(--fg-muted, #767b6e);
   line-height: 1.3;
 }
 
@@ -302,19 +302,19 @@
      Padding bumps from 3px → 6px so text doesn't crowd the border. */
   font-family: var(--font-sans);
   font-size: var(--fs-12);
-  background: #fff;
-  border: 1px solid #d6d9d2;
+  background: var(--field-fill, #fff);
+  border: 1px solid var(--field-edge, #d6d9d2);
   border-radius: 8px;
   padding: 6px 10px;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   outline: none;
   width: 100%;
   line-height: 1.3;
 }
 .fieldInput:focus,
 .fieldSelect:focus {
-  border-color: #0c3f39;
-  background: #fff;
+  border-color: rgb(var(--eng-primary-ink));
+  background: var(--field-fill, #fff);
   box-shadow: 0 0 0 2px rgba(232, 107, 58, 0.16);
 }
 /* Scan blue-diff — a field whose value the operator changed from the
@@ -336,9 +336,9 @@
 .fieldInput:disabled,
 .fieldSelect:disabled,
 .fieldInput[readonly] {
-  background: #f4f6f3;
-  border-color: #d6d9d2;
-  color: #767b6e;
+  background: var(--field-fill-locked, #f4f6f3);
+  border-color: var(--field-edge-locked, #d6d9d2);
+  color: var(--fg-muted, #767b6e);
   cursor: not-allowed;
 }
 /* PR — commander 2026-05-27 followup: native UA chevron varies wildly
@@ -370,7 +370,7 @@
   right: 10px;
   top: 50%;
   transform: translateY(-50%);
-  color: #767b6e;
+  color: var(--fg-muted, #767b6e);
   pointer-events: none;
 }
 

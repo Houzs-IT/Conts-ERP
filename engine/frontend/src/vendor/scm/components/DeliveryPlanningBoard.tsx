@@ -632,7 +632,7 @@ const PlanningExpandedLines = ({ docNo }: { docNo: string }) => {
   return (
     <div style={{
       padding: 'var(--space-2) var(--space-3) var(--space-2) 40px',
-      background: '#fff',
+      background: 'rgb(var(--eng-surface))',
     }}>
       <DataGridCompat<DrillItem>
         rows={items}

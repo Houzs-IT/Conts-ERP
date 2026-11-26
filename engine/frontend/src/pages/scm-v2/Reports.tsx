@@ -182,7 +182,7 @@ export const PnLTab = () => {
       {editing && <ReportLayoutEditor report="pnl" onClose={() => setEditing(false)} />}
       {monthly && <MonthlyReport<PnlResponse> report="pnl" title="P&L" withCumulative fetchColumn={(col: MonthColumn) => fetchPnl(col.from, col.to, department, subDepartment)} keyParts={[department, subDepartment]} department={department} linesOf={pnlLines} fmt={fmtSenPlain} pctTitle="% of sales" />}
       {!monthly && q.isLoading && <div style={soft}>Working the period out…</div>}
-      {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>The statement did not load — adjust the dates to retry.</div>}
+      {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--badge-error-fg, #a33)' }}>The statement did not load — adjust the dates to retry.</div>}
       {!monthly && q.data && lay && (
         <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-13)' }}>
@@ -288,7 +288,7 @@ export const BalanceSheetTab = () => {
       {editing && <ReportLayoutEditor report="balance_sheet" onClose={() => setEditing(false)} />}
       {monthly && <MonthlyReport<BsResponse> report="balance-sheet" title="Balance sheet (as at month end)" withCumulative={false} fetchColumn={fetchBsColumn} linesOf={balanceSheetLines} fmt={fmtSenPlain} pctTitle="% of total assets" />}
       {!monthly && q.isLoading && <div style={soft}>Adding the ledger up…</div>}
-      {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>The statement did not load — pick the date again to retry.</div>}
+      {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--badge-error-fg, #a33)' }}>The statement did not load — pick the date again to retry.</div>}
       {!monthly && q.data && lay && (
         <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-13)' }}>
@@ -318,7 +318,7 @@ export const BalanceSheetTab = () => {
                 <td style={{ padding: '8px 10px', fontWeight: 700 }}>
                   {q.data.totals.checkSen === 0 ? 'BALANCED' : 'OUT OF BALANCE'}
                 </td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', color: q.data.totals.checkSen === 0 ? 'var(--c-good, #2f5d4f)' : 'var(--c-danger, #a33)' }}>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', color: q.data.totals.checkSen === 0 ? 'var(--c-good, #2f5d4f)' : 'var(--badge-error-fg, #a33)' }}>
                   {q.data.totals.checkSen === 0 ? fmtSenPlain(q.data.totals.assetsSen) : fmtSenPlain(q.data.totals.checkSen)}
                 </td>
                 <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', ...soft }}>{q.data.totals.checkSen === 0 ? fmtPct(pctOf(q.data.totals.assetsSen, base)) : ''}</td>

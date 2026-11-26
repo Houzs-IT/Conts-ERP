@@ -160,6 +160,7 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-brand-zanotti-fg: #D2B8FF;
   --badge-cancel-bg: rgba(255,110,100,.16);
   --badge-cancel-fg: #FF9B90;
+  --badge-error-fg: #FF9B90;
   --badge-category-appliance-bg: rgba(80,130,255,.18);
   --badge-category-appliance-fg: #A9C4FF;
   --badge-category-builtin-bg: rgba(224,196,143,.16);
@@ -186,6 +187,15 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-package-mark-bg: rgba(255,120,190,.16);
   --badge-package-mark-fg: #FFB3D9;
   --badge-package-mark-line: rgba(255,120,190,.4);
+  --badge-pill-chosen-bg: #EEF1F8;
+  --badge-pill-chosen-fg: #151823;
+  --badge-pill-chosen-line: #EEF1F8;
+  --badge-pill-edge: #6576AC;
+  --badge-pill-fg: #B9C0D0;
+  --badge-pill-hover-edge: #6576AC;
+  --badge-pill-hover-fg: #EEF1F8;
+  --badge-pill-sg-chosen-bg: #7BE8D8;
+  --badge-pill-sg-fg: #7BE8D8;
   --badge-plan-file-bg: rgba(255,255,255,.08);
   --badge-plan-file-fg: #ADB4C5;
   --badge-plan-file-line: rgba(150,175,255,.24);
@@ -200,6 +210,8 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-project-status-confirmed-fg: #7FD1A8;
   --badge-project-status-pending-bg: rgba(245,190,80,.16);
   --badge-project-status-pending-fg: #F7CD73;
+  --badge-rack-stat-occupied-fg: #7BE8D8;
+  --badge-rack-stat-reserved-fg: #F7CD73;
   --badge-reno-status-done-fg: #7FD1A8;
   --badge-reno-status-overdue-fg: #FF9B90;
   --badge-schedule-changed-fg: #F7CD73;
@@ -275,4 +287,9 @@ html.conts-embedded[data-beta-skin="night"] :is(input:not([type=checkbox], [type
 html.conts-embedded[data-beta-skin="night"] :is(input, select, textarea):is([readonly], :disabled) {
   background-color: #232736;
   border-color: #323A55;
+}
+/* The engine's own field classes (.fieldInput, DateField's box) read these, so the box a DateField draws around its
+   text matches the sunken input inside it instead of framing a dark strip in a lighter box. */
+html.conts-embedded[data-beta-skin="night"] {
+  --field-fill: #151823; --field-edge: #6576AC; --field-fill-locked: #232736; --field-edge-locked: #323A55; --field-edge-width: 1px;
 }
