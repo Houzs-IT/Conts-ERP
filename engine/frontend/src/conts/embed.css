@@ -253,3 +253,14 @@ html.conts-embedded[data-beta-skin="night"] {
   --badge-type-so-bg: rgba(255,255,255,.08);
   --badge-type-so-fg: #ADB4C5;
 }
+
+/* Night fields sit a step below the card with a 3.6:1 edge, as on the main app's Dream Crafter pages, so they read as
+   "type here"; read-only and disabled ones keep the raised fill, so the two never look alike. */
+html.conts-embedded[data-beta-skin="night"] :is(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color]), select, textarea) {
+  background-color: #151823;
+  border-color: #6576AC;
+}
+html.conts-embedded[data-beta-skin="night"] :is(input, select, textarea):is([readonly], :disabled) {
+  background-color: #232736;
+  border-color: #323A55;
+}
