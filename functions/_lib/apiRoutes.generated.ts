@@ -224,36 +224,37 @@ import * as r219 from '../api/stock/movements';
 import * as r220 from '../api/suppliers/[id]';
 import * as r221 from '../api/suppliers/index';
 import * as r222 from '../api/supply-chain/engine';
-import * as r223 from '../api/system/health/audit-feed';
-import * as r224 from '../api/system/health/index';
-import * as r225 from '../api/table-layouts/index';
-import * as r226 from '../api/tasks/facets';
-import * as r227 from '../api/tasks/index';
-import * as r228 from '../api/threepl-companies/[id]';
-import * as r229 from '../api/threepl-companies/index';
-import * as r230 from '../api/unbilled-deliveries/index';
-import * as r231 from '../api/unit-bed-sizes/index';
-import * as r232 from '../api/unit-layout-types/index';
-import * as r233 from '../api/units/[id]/agreement';
-import * as r234 from '../api/units/[id]/channels/airbnb-listings';
-import * as r235 from '../api/units/[id]/channels/index';
-import * as r236 from '../api/units/[id]/contract';
-import * as r237 from '../api/units/detail';
-import * as r238 from '../api/units/export';
-import * as r239 from '../api/units/financials';
-import * as r240 from '../api/units/index';
-import * as r241 from '../api/units/jobs';
-import * as r242 from '../api/units/scheduled-changes';
-import * as r243 from '../api/units/stays';
-import * as r244 from '../api/users/[id]/access';
-import * as r245 from '../api/users/[id]/category-access';
-import * as r246 from '../api/users/access';
-import * as r247 from '../api/users/category-access';
-import * as r248 from '../api/users/index';
-import * as r249 from '../api/users/sign-ins';
-import * as r250 from '../api/vehicles/index';
-import * as r251 from '../api/warehouses/index';
-import * as r252 from '../api/working-hours/index';
+import * as r223 from '../api/supply-chain/mail-waiting';
+import * as r224 from '../api/system/health/audit-feed';
+import * as r225 from '../api/system/health/index';
+import * as r226 from '../api/table-layouts/index';
+import * as r227 from '../api/tasks/facets';
+import * as r228 from '../api/tasks/index';
+import * as r229 from '../api/threepl-companies/[id]';
+import * as r230 from '../api/threepl-companies/index';
+import * as r231 from '../api/unbilled-deliveries/index';
+import * as r232 from '../api/unit-bed-sizes/index';
+import * as r233 from '../api/unit-layout-types/index';
+import * as r234 from '../api/units/[id]/agreement';
+import * as r235 from '../api/units/[id]/channels/airbnb-listings';
+import * as r236 from '../api/units/[id]/channels/index';
+import * as r237 from '../api/units/[id]/contract';
+import * as r238 from '../api/units/detail';
+import * as r239 from '../api/units/export';
+import * as r240 from '../api/units/financials';
+import * as r241 from '../api/units/index';
+import * as r242 from '../api/units/jobs';
+import * as r243 from '../api/units/scheduled-changes';
+import * as r244 from '../api/units/stays';
+import * as r245 from '../api/users/[id]/access';
+import * as r246 from '../api/users/[id]/category-access';
+import * as r247 from '../api/users/access';
+import * as r248 from '../api/users/category-access';
+import * as r249 from '../api/users/index';
+import * as r250 from '../api/users/sign-ins';
+import * as r251 from '../api/vehicles/index';
+import * as r252 from '../api/warehouses/index';
+import * as r253 from '../api/working-hours/index';
 
 // Built on first use, not at load: a handler module that is still loading is never read.
 let routes: ApiRoute[] | undefined;
@@ -268,7 +269,7 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/housekeeping/tasks/:id/photos', method: 'GET', handler: r98.onRequestGet },
     { path: '/api/maintenance/issues/:id/documents', method: 'GET', handler: r116.onRequestGet },
     { path: '/api/owner/statements/:id/pdf', method: 'GET', handler: r139.onRequestGet },
-    { path: '/api/units/:id/channels/airbnb-listings', method: 'GET', handler: r234.onRequestGet },
+    { path: '/api/units/:id/channels/airbnb-listings', method: 'GET', handler: r235.onRequestGet },
     { path: '/api/attendance/:id/photo/:side', method: 'GET', handler: r10.onRequestGet },
     { path: '/api/demo/portal/documents', method: 'GET', handler: r39.onRequestGet },
     { path: '/api/demo/portal/property-health', method: 'GET', handler: r40.onRequestGet },
@@ -277,7 +278,7 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/expenses/utilities/scan', method: 'GET', handler: r60.onRequestGet },
     { path: '/api/integrations/channex/status', method: 'GET', handler: r103.onRequestGet },
     { path: '/api/operations/service-prices/export', method: 'GET', handler: r131.onRequestGet },
-    { path: '/api/system/health/audit-feed', method: 'GET', handler: r223.onRequestGet },
+    { path: '/api/system/health/audit-feed', method: 'GET', handler: r224.onRequestGet },
     { path: '/api/field/repairs/:id', method: 'GET', handler: r67.onRequestGet },
     { path: '/api/housekeeping/tasks/:id', method: 'GET', handler: r96.onRequestGet },
     { path: '/api/it-support/attachments/:id', method: 'GET', handler: r106.onRequestGet },
@@ -299,11 +300,11 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/reservations/:id/payments', method: 'GET', handler: r179.onRequestGet },
     { path: '/api/statements/:id/pdf', method: 'GET', handler: r210.onRequestGet },
     { path: '/api/statements/:id/report', method: 'GET', handler: r211.onRequestGet },
-    { path: '/api/units/:id/agreement', method: 'GET', handler: r233.onRequestGet },
-    { path: '/api/units/:id/channels', method: 'GET', handler: r235.onRequestGet },
-    { path: '/api/units/:id/contract', method: 'GET', handler: r236.onRequestGet },
-    { path: '/api/users/:id/access', method: 'GET', handler: r244.onRequestGet },
-    { path: '/api/users/:id/category-access', method: 'GET', handler: r245.onRequestGet },
+    { path: '/api/units/:id/agreement', method: 'GET', handler: r234.onRequestGet },
+    { path: '/api/units/:id/channels', method: 'GET', handler: r236.onRequestGet },
+    { path: '/api/units/:id/contract', method: 'GET', handler: r237.onRequestGet },
+    { path: '/api/users/:id/access', method: 'GET', handler: r245.onRequestGet },
+    { path: '/api/users/:id/category-access', method: 'GET', handler: r246.onRequestGet },
     { path: '/api/airbnb-recon/income-types', method: 'GET', handler: r5.onRequestGet },
     { path: '/api/auth/reset-password', method: 'GET', handler: r13.onRequestGet },
     { path: '/api/auth/session', method: 'GET', handler: r14.onRequestGet },
@@ -392,17 +393,18 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/statements/pdf', method: 'GET', handler: r213.onRequestGet },
     { path: '/api/stock/movements', method: 'GET', handler: r219.onRequestGet },
     { path: '/api/supply-chain/engine', method: 'GET', handler: r222.onRequestGet },
-    { path: '/api/system/health', method: 'GET', handler: r224.onRequestGet },
-    { path: '/api/tasks/facets', method: 'GET', handler: r226.onRequestGet },
-    { path: '/api/units/detail', method: 'GET', handler: r237.onRequestGet },
-    { path: '/api/units/export', method: 'GET', handler: r238.onRequestGet },
-    { path: '/api/units/financials', method: 'GET', handler: r239.onRequestGet },
-    { path: '/api/units/jobs', method: 'GET', handler: r241.onRequestGet },
-    { path: '/api/units/scheduled-changes', method: 'GET', handler: r242.onRequestGet },
-    { path: '/api/units/stays', method: 'GET', handler: r243.onRequestGet },
-    { path: '/api/users/access', method: 'GET', handler: r246.onRequestGet },
-    { path: '/api/users/category-access', method: 'GET', handler: r247.onRequestGet },
-    { path: '/api/users/sign-ins', method: 'GET', handler: r249.onRequestGet },
+    { path: '/api/supply-chain/mail-waiting', method: 'GET', handler: r223.onRequestGet },
+    { path: '/api/system/health', method: 'GET', handler: r225.onRequestGet },
+    { path: '/api/tasks/facets', method: 'GET', handler: r227.onRequestGet },
+    { path: '/api/units/detail', method: 'GET', handler: r238.onRequestGet },
+    { path: '/api/units/export', method: 'GET', handler: r239.onRequestGet },
+    { path: '/api/units/financials', method: 'GET', handler: r240.onRequestGet },
+    { path: '/api/units/jobs', method: 'GET', handler: r242.onRequestGet },
+    { path: '/api/units/scheduled-changes', method: 'GET', handler: r243.onRequestGet },
+    { path: '/api/units/stays', method: 'GET', handler: r244.onRequestGet },
+    { path: '/api/users/access', method: 'GET', handler: r247.onRequestGet },
+    { path: '/api/users/category-access', method: 'GET', handler: r248.onRequestGet },
+    { path: '/api/users/sign-ins', method: 'GET', handler: r250.onRequestGet },
     { path: '/api/access-credentials/:id', method: 'GET', handler: r1.onRequestGet },
     { path: '/api/approvals/:id', method: 'GET', handler: r8.onRequestGet },
     { path: '/api/consignment-notes/:id', method: 'GET', handler: r19.onRequestGet },
@@ -429,7 +431,7 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/stock-takes/:id', method: 'GET', handler: r214.onRequestGet },
     { path: '/api/stock-transfers/:id', method: 'GET', handler: r216.onRequestGet },
     { path: '/api/suppliers/:id', method: 'GET', handler: r220.onRequestGet },
-    { path: '/api/threepl-companies/:id', method: 'GET', handler: r228.onRequestGet },
+    { path: '/api/threepl-companies/:id', method: 'GET', handler: r229.onRequestGet },
     { path: '/api/account/:path*', method: 'GET', handler: r3.onRequestGet },
     { path: '/api/claims/:path*', method: 'GET', handler: r18.onRequestGet },
     { path: '/api/meetings/:path*', method: '', handler: r119.onRequest },
@@ -500,17 +502,17 @@ export function apiRoutes(): ApiRoute[] {
     { path: '/api/stock-takes', method: 'GET', handler: r215.onRequestGet },
     { path: '/api/stock-transfers', method: 'GET', handler: r217.onRequestGet },
     { path: '/api/suppliers', method: 'GET', handler: r221.onRequestGet },
-    { path: '/api/table-layouts', method: 'GET', handler: r225.onRequestGet },
-    { path: '/api/tasks', method: 'GET', handler: r227.onRequestGet },
-    { path: '/api/threepl-companies', method: 'GET', handler: r229.onRequestGet },
-    { path: '/api/unbilled-deliveries', method: 'GET', handler: r230.onRequestGet },
-    { path: '/api/unit-bed-sizes', method: 'GET', handler: r231.onRequestGet },
-    { path: '/api/unit-layout-types', method: 'GET', handler: r232.onRequestGet },
-    { path: '/api/units', method: 'GET', handler: r240.onRequestGet },
-    { path: '/api/users', method: 'GET', handler: r248.onRequestGet },
-    { path: '/api/vehicles', method: 'GET', handler: r250.onRequestGet },
-    { path: '/api/warehouses', method: 'GET', handler: r251.onRequestGet },
-    { path: '/api/working-hours', method: 'GET', handler: r252.onRequestGet },
+    { path: '/api/table-layouts', method: 'GET', handler: r226.onRequestGet },
+    { path: '/api/tasks', method: 'GET', handler: r228.onRequestGet },
+    { path: '/api/threepl-companies', method: 'GET', handler: r230.onRequestGet },
+    { path: '/api/unbilled-deliveries', method: 'GET', handler: r231.onRequestGet },
+    { path: '/api/unit-bed-sizes', method: 'GET', handler: r232.onRequestGet },
+    { path: '/api/unit-layout-types', method: 'GET', handler: r233.onRequestGet },
+    { path: '/api/units', method: 'GET', handler: r241.onRequestGet },
+    { path: '/api/users', method: 'GET', handler: r249.onRequestGet },
+    { path: '/api/vehicles', method: 'GET', handler: r251.onRequestGet },
+    { path: '/api/warehouses', method: 'GET', handler: r252.onRequestGet },
+    { path: '/api/working-hours', method: 'GET', handler: r253.onRequestGet },
     { path: '/api/:path*', method: '', handler: r0.onRequest },
   ];
 }

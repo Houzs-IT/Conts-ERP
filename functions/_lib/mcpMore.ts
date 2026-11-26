@@ -263,6 +263,8 @@ const PO_OPEN = ['SUBMITTED', 'PARTIALLY_RECEIVED'];
 export interface BriefInput {
   today: string; origin: string; name: string;
   badges: unknown; tasks: unknown; approvals: unknown; salesOrders: unknown; purchaseOrders: unknown; maintenance: unknown;
+  /** GET /api/supply-chain/mail-waiting (Mail Center's waiting-for-my-reply count); null when not read or refused. */
+  mail?: unknown;
   noAccess: string[];
 }
 
@@ -314,6 +316,11 @@ export function buildBrief(i: BriefInput) {
       due: dueLabel(ymd(r.dueOn), today), link: `${origin}/operations/maintenance?id=${encodeURIComponent(str(r.id))}`,
     })));
   }
+  // Mail Center (the engine): open threads whose last word is the customer's, assigned to me or in my own mailbox.
+  if (i.mail) {
+    const n = num(obj(i.mail).count);
+    add('Mail Center: emails waiting for your reply', [{ title: `${n} email thread${n === 1 ? '' : 's'} waiting for your reply`, detail: 'Assigned to you, or unassigned in your own mailbox.', link: `${origin}/mail` }], n, `${origin}/mail`);
+  }
   // The side menu's bell: everything else waiting for this person's role (each already limited to what they may open).
   const alerts = arr(obj(i.badges).alerts).filter(a => a.key !== 'approvals' || !i.approvals);
   if (alerts.length) {
@@ -329,7 +336,7 @@ export function buildBrief(i: BriefInput) {
     sections,
     ...(sections.length ? {} : { nothing: 'Nothing overdue or due in the next 3 days, and nothing waiting for you.' }),
     ...(i.noAccess.length ? { noAccess: `Your account does not have access to: ${i.noAccess.join(', ')}. Those are left out.` } : {}),
-    notCovered: 'Mail Center threads and acknowledgements are not included: Mail Center runs on the supply chain engine, which the AI Connector cannot read yet. Open Mail Center in the ERP.',
+    ...(i.mail ? {} : { notCovered: 'Mail Center is not included: it could not be read for your account (no Mail Center access, or Mail Center is not set up or did not answer). Open Mail Center in the ERP.' }),
   };
 }
 

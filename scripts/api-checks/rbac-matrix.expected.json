@@ -282,6 +282,7 @@
  "GET /api/suppliers": "AAAAFFFU",
  "GET /api/suppliers/[id]": "AFFAFFFU",
  "GET /api/supply-chain/engine": "AAAAFFFU",
+ "GET /api/supply-chain/mail-waiting": "EEEEFFFU",
  "GET /api/system/health": "AAFAFFFU",
  "GET /api/system/health/audit-feed": "AAFAFFFU",
  "GET /api/table-layouts": "AAAAFFFU",
