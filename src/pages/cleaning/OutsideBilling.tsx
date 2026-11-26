@@ -12,6 +12,7 @@ import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import { rm, monthLabel, plural } from '../../lib/format';
 import { OpsModal, FormRow, INPUT, mytDay, dayLabel } from '../../components/ops/OpsUi';
+import Icon from '../../components/Icon';
 
 /* Outside billing (chew, 26-27 Nov 2026): the cleaning team bills outside cleaning jobs, any it picks together on one
    invoice to the bill-to it types (a total typed over makes one lump-sum line, a package) or each job on its own, and
@@ -37,19 +38,26 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
   const [month, setMonth] = useState(mytDay(0).slice(0, 7));
   const { data, loading, error, reload } = useApi<{ month: string; jobs: Job[]; invoices: Invoice[] }>(`/housekeeping/cleaning-invoices?month=${month}`);
   const [picks, setPicks] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<'unbilled' | 'invoices'>('unbilled');
   const [billing, setBilling] = useState<'combine' | 'each' | null>(null);
   const [retotal, setRetotal] = useState<Invoice | null>(null);
   const [paying, setPaying] = useState<Invoice | null>(null);
   const jobs = data?.jobs ?? [];
-  const unbilled = jobs.filter(j => !j.invoiceId);
-  const invoices = (data?.invoices ?? []).slice().sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate) || b.invoiceNo.localeCompare(a.invoiceNo));
+  const [q, setQ] = useState('');
+  /* Search: client, address, invoice number or what the job was, on both tabs. */
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = (...texts: (string | null | undefined)[]) => { const t = texts.join(' ').toLowerCase(); return words.every(w => t.includes(w)); };
+  const allUnbilled = jobs.filter(j => !j.invoiceId);
+  const unbilled = allUnbilled.filter(j => hit(j.client, j.address, j.phone, KIND[j.kind], j.title));
+  const allInvoices = (data?.invoices ?? []).slice().sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate) || b.invoiceNo.localeCompare(a.invoiceNo));
+  const invoices = allInvoices.filter(i => hit(i.invoiceNo, i.customerName, i.address, i.phone, ...i.lines.map(l => l.description)));
   /* The jobs not billed yet, by client: one invoice is for one client. */
   const groups = useMemo(() => {
     const m = new Map<string, Job[]>();
     for (const j of unbilled) { const k = clientKey(j) || `—${j.id}`; m.set(k, [...(m.get(k) ?? []), j]); }
     return [...m.values()];
   }, [unbilled]);
-  const picked = unbilled.filter(j => picks.has(j.id));
+  const picked = allUnbilled.filter(j => picks.has(j.id)); // a search hides rows, never takes ticked jobs off the bill
   const toggle = (ids: string[], on: boolean) => setPicks(p => { const n = new Set(p); ids.forEach(id => (on ? n.add(id) : n.delete(id))); return n; });
   const open = invoices.reduce((n, i) => n + i.outstandingSen, 0);
 
@@ -58,15 +66,30 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
       <PageHeader title="Cleaning" sub="Outside billing: invoice outside clients and record what they pay" actions={tabs} />
       {error && <StaleBanner message={error} onRetry={reload} />}
 
+      {/* Two tabs and a search (chew, 27 Nov 2026), as the payment voucher list: what is still to bill, and the invoices. */}
+      <div role="tablist" aria-label="Outside billing" className="inline-flex items-center gap-1 p-1 rounded-control border border-solid border-line bg-card self-start max-w-full overflow-x-auto [scrollbar-width:none] box-border">
+        {([['unbilled', 'Not billed yet', unbilled.length], ['invoices', 'Invoices', invoices.length]] as const).map(([key, label, n]) => (
+          <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => setView(key)}
+            className={cx('h-8 px-4 rounded-[6px] cursor-pointer whitespace-nowrap border-0 text-meta font-semibold uppercase tracking-[0.08em] [font-family:inherit] max-md:min-h-11',
+              view === key ? 'bg-black text-white' : 'bg-transparent text-muted-ink hover:text-ink')}>
+            {label} <span className={cx('[font-variant-numeric:tabular-nums]', view === key ? 'text-gold' : '')}>{n}</span>
+          </button>
+        ))}
+      </div>
+      <label className="relative block max-w-[420px]">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink flex"><Icon name="Search" size="sm" /></span>
+        <input className={cx(INPUT, 'pl-9')} type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search client, address or invoice number" aria-label="Search outside billing" />
+      </label>
+      {view === 'unbilled' ? (
       <section className={CARD}>
         <div className="flex items-center gap-2 flex-wrap">
-          <b className="text-copy flex-1">Not billed yet {unbilled.length ? `(${unbilled.length})` : ''}</b>
+          <b className="text-copy flex-1">Not billed yet</b>
           {picked.length > 0 && <span className="text-meta text-muted-ink">{plural(picked.length, 'job')} · {rm(picked.reduce((n, j) => n + (j.amount ?? 0), 0))}</span>}
           <Button size="sm" variant="secondary" onClick={() => setBilling('each')} disabled={picked.length === 0} disabledReason="Tick the jobs to bill.">Bill each job</Button>
           <Button size="sm" variant="primary" onClick={() => setBilling('combine')} disabled={picked.length === 0} disabledReason="Tick the jobs to bill.">Bill together</Button>
         </div>
         <span className="text-meta text-muted-ink">Tick any jobs. Bill together puts them on one invoice (type a different total for a package); Bill each job makes one invoice per job.</span>
-        {loading && !data ? <Skeleton height={120} /> : groups.length === 0 ? <span className="text-meta text-muted-ink">Every outside cleaning job is billed.</span> : groups.map(g => {
+        {loading && !data ? <Skeleton height={120} /> : groups.length === 0 ? <span className="text-meta text-muted-ink">{words.length && allUnbilled.length ? 'No job not billed yet matches the search.' : 'Every outside cleaning job is billed.'}</span> : groups.map(g => {
           const ids = g.map(j => j.id);
           const all = ids.every(id => picks.has(id));
           const name = g[0].client?.trim();
@@ -95,7 +118,7 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
           );
         })}
       </section>
-
+      ) : (
       <section className={CARD}>
         <div className="flex items-center gap-2 flex-wrap">
           <b className="text-copy flex-1">Invoices</b>
@@ -107,7 +130,7 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
           </label>
         </div>
         <span className="text-meta text-muted-ink">The invoices of jobs this month. A payment stays "Waiting for finance" until finance confirms the money in the bank; then its receipt is official.</span>
-        {loading && !data ? <Skeleton height={120} /> : invoices.length === 0 ? <EmptyState icon="Sparkles" title={`No outside cleaning invoices in ${monthLabel(`${month}-01`)}.`} /> : invoices.map(inv => (
+        {loading && !data ? <Skeleton height={120} /> : invoices.length === 0 ? <EmptyState icon="Sparkles" title={words.length && allInvoices.length ? 'No invoice matches the search.' : `No outside cleaning invoices in ${monthLabel(`${month}-01`)}.`} /> : invoices.map(inv => (
           <div key={inv.id} className="flex flex-col gap-2 border-t border-solid border-line-soft pt-3">
             <div className="flex items-center gap-2 flex-wrap">
               <b className="text-copy">{inv.invoiceNo}</b>
@@ -144,9 +167,10 @@ export function OutsideBillingView({ tabs }: { tabs: ReactNode }) {
           </div>
         ))}
       </section>
+      )}
 
-      {billing === 'combine' && <BillModal jobs={picked} onClose={() => setBilling(null)} onDone={no => { setBilling(null); setPicks(new Set()); toast({ tone: 'success', title: `Invoice ${no} issued.`, body: 'Print it from Invoices for the client.' }); reload(); }} />}
-      {billing === 'each' && <BillEachModal jobs={picked} onClose={() => setBilling(null)} onDone={(title, body) => { setBilling(null); setPicks(new Set()); toast({ tone: body ? 'warning' : 'success', title, body }); reload(); }} />}
+      {billing === 'combine' && <BillModal jobs={picked} onClose={() => setBilling(null)} onDone={no => { setBilling(null); setPicks(new Set()); setView('invoices'); toast({ tone: 'success', title: `Invoice ${no} issued.`, body: 'Print it from Invoices for the client.' }); reload(); }} />}
+      {billing === 'each' && <BillEachModal jobs={picked} onClose={() => setBilling(null)} onDone={(title, body) => { setBilling(null); setPicks(new Set()); setView('invoices'); toast({ tone: body ? 'warning' : 'success', title, body }); reload(); }} />}
       {retotal && <TotalModal invoice={retotal} onClose={() => setRetotal(null)} onDone={() => { setRetotal(null); toast({ tone: 'success', title: `${retotal.invoiceNo} total changed.`, body: 'Print it again for the client.' }); reload(); }} />}
       {paying && <PaymentModal invoice={paying} onClose={() => setPaying(null)} onDone={() => { setPaying(null); toast({ tone: 'success', title: 'Payment recorded.', body: 'It waits for finance to confirm the money in the bank.' }); reload(); }} />}
     </div>
