@@ -211,7 +211,7 @@ export async function writeSoToProject(db: Db, projectId: number, so: SoShared, 
     .bind(projectId, docNo, "Customer and property information saved from the sales order", actorId, companyId).run();
   /* Then every order of the project carries the project's values, so two orders never show two names. The
      salesperson stays each order's own: a second order may be another salesperson's sale (commission follows it). */
-  await pushProjectToOpenSos(db, projectId, { keepSalesperson: true });
+  await pushProjectToOpenSos(db, projectId);
 }
 
 /** The project's name follows its building and unit (projectNameFrom in scm/shared/renovation-property.ts;
@@ -298,13 +298,15 @@ export async function readSoRooms(db: Db, docNo: string): Promise<{ roomSections
 }
 
 /** Project -> every linked SO that is not cancelled: every filled project value becomes the SO's; an empty one
-    never clears an SO field. Returns the doc numbers refreshed (`kept` stays for callers and is always empty). */
-export async function pushProjectToOpenSos(db: Db, projectId: number, opts: { keepSalesperson?: boolean } = {}): Promise<{ updated: string[]; kept: string[] }> {
+    never clears an SO field. The salesperson never goes across: a project may hold orders by different salespeople
+    and commission follows each order's own (owner, 26 Nov 2026). Returns the doc numbers refreshed (`kept` stays
+    for callers and is always empty). */
+export async function pushProjectToOpenSos(db: Db, projectId: number): Promise<{ updated: string[]; kept: string[] }> {
   const p = await readProjectShared(db, projectId, "");
   if (!p) return { updated: [], kept: [] };
   /* Every SO column exists; before 0115 the project's structured values are blank (its single address is split
      into lines 1 and 2 by readProjectShared), and a blank never clears the SO's. */
-  const fields = opts.keepSalesperson ? SHARED_FIELDS.filter((f) => f.key !== "salespersonId") : SHARED_FIELDS;
+  const fields = SHARED_FIELDS.filter((f) => f.key !== "salespersonId");
   const sos = await db.prepare(
     `SELECT doc_no, so_kind, status::text AS status, processing_date::text AS processing_date, proceeded_at::text AS proceeded_at
        FROM scm.mfg_sales_orders WHERE project_id = ? AND status::text <> 'CANCELLED' ORDER BY doc_no`,
