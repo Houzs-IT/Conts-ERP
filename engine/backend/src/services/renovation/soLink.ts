@@ -104,7 +104,7 @@ export async function linkSoToProject(db: Db, projectId: number, docNo: string, 
   await shareBrandWithProject(db, docNo, projectId);
   /* The link is made; copying the SO's customer and property into the project must not undo or fail it. */
   try {
-    await copySoIntoProject(db, docNo, projectId, actorId, p.company_id);
+    await copySoIntoProject(db, docNo, projectId, actorId, p.company_id, { fillOnly: true });
   } catch (e) {
     console.error("[renovation] copy SO into project after link failed", e);
   }
