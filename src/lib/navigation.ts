@@ -166,6 +166,7 @@ export const NAV: NavGroup[] = [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', tabs: true, children: [
       { key: 'unitList', label: 'All units', path: '/properties/units', area: 'properties' },
+      { key: 'passKeys', label: 'Pass key', path: '/properties/pass-keys', area: 'passKeys' },
       // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
       { key: 'scheduledChanges', label: 'Scheduled changes', path: '/properties/scheduled-changes', area: 'scheduledChanges' },
       // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).

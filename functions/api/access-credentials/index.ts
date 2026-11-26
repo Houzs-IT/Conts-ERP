@@ -30,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
-      id: r.id, unitNumber: r.unit_number, propertyName: r.property_name,
+      id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name,
       kind: r.kind, label: r.label, instruction: r.instruction,
       rotatesAfterStay: !!r.rotates_after_stay, updatedAt: r.updated_at,
       usedBy: hasUsedBy && Array.isArray(r.used_by) ? r.used_by : [...CREDENTIAL_USERS],

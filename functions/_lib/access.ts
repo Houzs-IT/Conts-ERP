@@ -92,6 +92,8 @@ export const AREAS: Area[] = [
   { key: 'scheduledChanges', label: 'Scheduled changes', group: 'Units', api: [] },
   { key: 'agentToLet', label: 'Agent to let', group: 'Units', api: [] },
   { key: 'unitSettings', label: 'Unit settings', group: 'Units', api: [] },
+  // ownGrant keeps Pass key closed until it is given person by person; Full also reveals codes.
+  { key: 'passKeys', label: 'Pass key', group: 'Units', api: [], ownGrant: true },
   { key: 'owners', label: 'Owners', group: 'Units', api: ['owners'] },
   { key: 'contracts', label: 'Contracts', group: 'Units', api: ['contracts'] },
   { key: 'deductions', label: 'Deductions', group: 'Units', api: [], managed: true, strictRead: true },
@@ -325,6 +327,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[
   { method: '*', path: /^\/api\/maintenance\/skus(\/[^/]+)?$/, area: ['cleaning', 'maintenance'], why: 'The service price list on Cleaning and Maintenance edits the repair SKUs.' },
   { method: '*', path: /^\/api\/operations\/(service-prices|job-money|job-invoices|job-profit)(\/.*)?$/, area: ['cleaning', 'maintenance'], why: 'Service prices and job money are shown on both Cleaning and Maintenance.' },
   { method: 'GET', path: /^\/api\/units\/scheduled-changes$/, area: 'scheduledChanges', why: 'The Scheduled changes page.' },
+  { method: 'GET', path: /^\/api\/access-credentials(\/[^/]+)?$/, area: ['properties', 'passKeys'], why: 'The Pass key tab lists every unit\'s codes, and Full on it may reveal one.' },
   { method: '*', path: /^\/api\/lettings(\/[^/]+)?$/, area: ['properties', 'agentToLet'], why: 'Lettings show on a unit and on Agent to let.' },
   { method: '*', path: /^\/api\/properties(\/[^/]+)?$/, area: ['properties', 'unitSettings'], why: 'Buildings are added and changed from Units and from Unit settings.' },
   { method: 'GET', path: /^\/api\/(unit-layout-types|unit-bed-sizes)$/, area: ['properties', 'unitSettings'], why: 'The unit forms read the layout and bed size lists that Unit settings keeps.' },
