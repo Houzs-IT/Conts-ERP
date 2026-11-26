@@ -28,6 +28,7 @@ test('Dream Crafter System holds Users and roles, System health and a Settings w
   const dreamCrafterSettings = navFor('management', true).find(group => group.workspace === 'supply' && group.label === 'SYSTEM')
     ?.items.find(item => item.key === 'settings');
   assert.deepEqual(dreamCrafterSettings?.children?.map(tab => tab.key), ['myAccount']);
+  assert.equal(dreamCrafterSettings?.label, 'My account');
 });
 
 test('one-side screens still switch the sidebar to their side', () => {
