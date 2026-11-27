@@ -1018,7 +1018,7 @@ export const Mrp = () => {
           a category the catalogue holds can never be one this page cannot show.
           Underline strip matching the shared <TabStrip>; hand-rolled so the
           tablist/tab/aria-selected semantics this page already had survive. */}
-      <div className="no-scrollbar -mx-4 flex items-center gap-1 overflow-x-auto border-b border-border px-4 sm:mx-0 sm:px-0 [&>*]:shrink-0" role="tablist">
+      <div className="no-scrollbar flex items-center gap-1 overflow-x-auto w-fit max-w-full rounded-lg border border-border bg-surface px-1 [&>*]:shrink-0" role="tablist">
         {views.map((t) => (
           <button key={t.value} type="button" role="tab" aria-selected={view === t.value}
             data-active={view === t.value} onClick={() => switchView(t.value)}

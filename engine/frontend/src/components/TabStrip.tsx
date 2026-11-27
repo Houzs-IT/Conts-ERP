@@ -36,20 +36,15 @@ export function TabStrip<V extends string>({
   return (
     <div
       className={cn(
-        // Outer wrapper owns the bottom border so it spans the full
-        // viewport even while the inner row scrolls horizontally — the
-        // edge stays anchored when tabs overflow.
-        "mb-4 border-b border-border",
+        // A solid box behind the row so the tabs never sit straight on the page backdrop (27 Nov 2026).
+        "mb-4 w-fit max-w-full rounded-lg border border-border bg-surface px-1",
         className
       )}
     >
       <div
         className={cn(
-          // Negative margin + matching padding lets the scrollable area
-          // bleed to the screen edge on phones (where the page itself
-          // has px-4) without breaking out of its container on larger
-          // screens. Hidden scrollbar keeps the brass aesthetic.
-          "no-scrollbar -mx-4 flex items-center gap-1 overflow-x-auto px-4 sm:mx-0 sm:px-0",
+          // Hidden scrollbar keeps the brass aesthetic; the row scrolls inside the box on a phone.
+          "no-scrollbar flex items-center gap-1 overflow-x-auto",
           // Stop the row from compressing children; let them keep
           // their natural width so long labels never get clipped.
           "[&>*]:shrink-0"
