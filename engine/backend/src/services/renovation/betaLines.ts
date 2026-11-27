@@ -125,6 +125,17 @@ export interface LinesAnswer {
   categoryRestricted: boolean;
 }
 
+/** The SO tab for someone without Procurement (owner, 27 Nov 2026: sales see their projects, not POs or costs): the
+    lines stay, but no PO, goods receipt, PO change, supplier or supplier price leaves the server. */
+export function withoutProcurement(a: LinesAnswer): LinesAnswer {
+  return {
+    ...a,
+    suppliers: [],
+    pendingPoChanges: [],
+    lines: a.lines.map((l) => ({ ...l, pos: [], gr: markOf(0, 0), supplierChoices: [], supplierName: null, supplierId: null, materials: [], materialsClosedBy: null })),
+  };
+}
+
 /* ---------- pure pieces (tested) ---------- */
 
 export function markOf(total: number, done: number): Mark {

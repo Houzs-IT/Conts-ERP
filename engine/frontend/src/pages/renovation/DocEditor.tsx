@@ -19,6 +19,15 @@ import type { DocType } from '../../components/doc-attachments/docAttachmentsApi
 import type { PackageHit } from '../../lib/renovation/renovationPackagesApi';
 import { PackageHits, usePackageSearch } from './renovationPackagePick';
 import { PkgMark } from './renovationPackageParts';
+import { useOptionalAuth } from '../../auth/AuthContext';
+import { canViewProductCost } from '../../auth/salesAccess';
+
+/** Whether this person sees what we pay for a product: the line's unit cost, its supplier and the picker's cost. Sales do
+    not (owner, 27 Nov 2026). Outside a session (a component rendered on its own) it stays as it was. */
+function useSeesCost(): boolean {
+  const auth = useOptionalAuth();
+  return auth ? canViewProductCost(auth.user) : true;
+}
 
 /** Packages in the product search (owner, 20 Nov 2026): given, the search also offers active packages and kits. */
 export type PickPackage = (h: PackageHit, sectionIndex: number, lineIndex: number) => void;
@@ -73,6 +82,7 @@ export function ProductPicker({ value, onPick, disabled, onPickPackage, packageK
   /** Offer only packages of this kind (a package's own lines can take a kit, never a whole package). */
   packageKind?: PackageHit['kind'];
 }) {
+  const seesCost = useSeesCost();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ProductPick[]>([]);
@@ -138,7 +148,7 @@ export function ProductPicker({ value, onPick, disabled, onPickPackage, packageK
               <button key={p.code} type="button" onClick={() => { onPick(p); setOpen(false); }}
                 className="flex w-full flex-col rounded px-2 py-1.5 text-left hover:bg-primary-soft">
                 <span className="text-[12.5px] font-semibold text-ink">{p.code} <span className="font-normal text-ink-secondary">{p.name}</span></span>
-                <span className="text-[11px] text-ink-muted">{[p.group, p.subCategory, p.supplierName, p.costSen ? `cost ${rm(p.costSen)}` : null].filter(Boolean).join(' · ')}</span>
+                <span className="text-[11px] text-ink-muted">{[p.group, p.subCategory, seesCost ? p.supplierName : null, seesCost && p.costSen ? `cost ${rm(p.costSen)}` : null].filter(Boolean).join(' · ')}</span>
               </button>
             ))}
           </div>
@@ -476,7 +486,7 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
 /** "Generate rooms from layout": the document's layout, or why there is none. */
 export type RoomLayout = { label: string; bedrooms: number; bathrooms: number } | { missing: string };
 
-export function DocEditor({ sections, onChange, disabled, showCost = true, allowLumpSum = true, roomLayout, files, onPickPackage, packageCodes }: {
+export function DocEditor({ sections, onChange, disabled, showCost: showCostAsked, allowLumpSum = true, roomLayout, files, onPickPackage, packageCodes }: {
   sections: DocSection[]; onChange: (s: DocSection[]) => void; disabled?: boolean; showCost?: boolean; allowLumpSum?: boolean;
   /** Given (the VO's Add part): the product search also offers packages and kits; the picked one opens its confirm dialog. */
   onPickPackage?: PickPackage;
@@ -487,6 +497,8 @@ export function DocEditor({ sections, onChange, disabled, showCost = true, allow
   /** Omitted: no button (templates, VOs). Given: the button, disabled with the hint when there is no layout. */
   roomLayout?: RoomLayout;
 }) {
+  const seesCost = useSeesCost();
+  const showCost = (showCostAsked ?? true) && seesCost;
   const sq = useSuppliers({ status: 'ACTIVE' });
   const suppliers = useMemo(() => (sq.data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name })), [sq.data]);
   const [roomNote, setRoomNote] = useState<string | null>(null);
