@@ -70,7 +70,7 @@ import { DateField } from "./DateField";
 import { DiscountInput } from './DiscountInput';
 import { NumberInput, cleanNumericText } from './NumberInput';
 import { variantCategoryOf } from '../lib/renovationVariantCategory';
-import { RenovationPhotoButton, renovationLineStyles as compactStyles } from './renovationSoLineCompact';
+import { RenovationPhotoButton, qtyForAmount, renovationLineStyles as compactStyles } from './renovationSoLineCompact';
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -756,6 +756,27 @@ const SoLineCardInner = ({
     [draft.qty, draft.unitPriceSen, draft.discountSen],
   );
 
+  /* Renovation row: typing the Amount works the qty out from the unit price. The note names the
+     line it was written for, so any later change to qty, price or discount drops it. */
+  const canTypeAmount = compact && isEditing && !isFeeLine && draft.unitPriceSen > 0;
+  const [amountText, setAmountText] = useState<string | null>(null);
+  const [amountNote, setAmountNote] = useState<{ lineKey: string; text: string } | null>(null);
+  const amountLineKey = `${draft.qty}|${draft.unitPriceSen}|${draft.discountSen}`;
+  const commitTypedAmount = (): void => {
+    const typedText = amountText;
+    setAmountText(null);
+    if (typedText == null || typedText.trim() === '') return;
+    const typedSen = Math.round(Number(typedText) * 100);
+    if (!Number.isFinite(typedSen) || typedSen <= 0 || typedSen === lineTotal) return;
+    const qty = qtyForAmount(typedSen, draft.unitPriceSen, draft.discountSen, decimalQty);
+    const realSen = Math.max(0, Math.round(qty * draft.unitPriceSen) - draft.discountSen);
+    setAmountNote(realSen === typedSen ? null : {
+      lineKey: `${qty}|${draft.unitPriceSen}|${draft.discountSen}`,
+      text: `${fmtRm(typedSen)} is not a whole qty at ${fmtRm(draft.unitPriceSen)} each. Qty set to ${qty}, so the amount is ${fmtRm(realSen)}.`,
+    });
+    onChange({ qty });
+  };
+
   /* Colour KIV (owner 2026-07-24, SO-2607-016) — the line committed to a
      fabric SERIES but the colour is still open. The Fabrics box already shows
      the required-red border; this names WHY it is red and what blocks next:
@@ -1211,7 +1232,22 @@ const SoLineCardInner = ({
         />
 
         {/* 8. Amount */}
-        <span className={styles.amount}>{fmtRm(lineTotal)}</span>
+        {canTypeAmount ? (
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label="Amount"
+            title="Type the amount to work out the qty"
+            className={styles.priceInput}
+            value={amountText ?? (lineTotal / 100).toFixed(2)}
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setAmountText(cleanNumericText(e.target.value, 'unsigned', true))}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            onBlur={commitTypedAmount}
+          />
+        ) : (
+          <span className={styles.amount}>{fmtRm(lineTotal)}</span>
+        )}
 
         {/* 9. Group badge (compact: the photo button in its place) */}
         {compact ? (
@@ -1258,6 +1294,10 @@ const SoLineCardInner = ({
         {compact && <span className={compactStyles.label}>Processing</span>}
         <span className={compact ? compactStyles.label : styles.cellLabel}>{compact ? 'Delivery' : 'Delivery date'}</span>
       </div>
+
+      {amountNote?.lineKey === amountLineKey && (
+        <div role="status" style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)', padding: '2px 8px 4px', textAlign: 'right' }}>{amountNote.text}</div>
+      )}
 
       {isEditing && specLockedNote && (
         <div style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)', padding: '2px 8px 4px' }}>{specLockedNote}</div>
