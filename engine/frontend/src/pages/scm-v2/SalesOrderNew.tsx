@@ -40,7 +40,7 @@ import {
 //   • Navigation repointed to /scm/sales-orders/*.
 // ----------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
 import { useFormDraft } from '../../lib/formDraft';
 import { FormDraftBar } from '../../components/FormDraftBar';
@@ -177,6 +177,12 @@ const subtotalStyle = {
   fontWeight: 800,
   color: 'var(--c-burnt)',
 } as const;
+
+/* Auto-derived fields (Country, Sales Location): same 36px box as the inputs beside them, in the locked look. */
+const READ_ONLY_FIELD: CSSProperties = {
+  display: 'inline-flex', alignItems: 'center',
+  background: 'var(--input-bg-locked)', borderColor: 'var(--input-border-locked)', color: 'var(--input-fg-muted)',
+};
 
 /* New Quotation is this page (owner, 5 Nov 2026: "它就是 sales order 来的"): the same blocks and rooms, saved as a quotation. */
 export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean } = {}) => {
@@ -2328,7 +2334,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
                 value={processingDate}
                 min={today}
                 onChange={(iso) => setProcessingDate(iso)}
-                style={datesXor && !processingDate ? { borderColor: 'var(--c-festive-b, #B8331F)' } : undefined}
+                style={datesXor && !processingDate ? { borderColor: 'var(--c-error, #b23a3a)' } : undefined}
               />
             </label>
             <label className={styles.field} style={{ gridColumn: 'span 2' }}>
@@ -2339,7 +2345,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
                 value={deliveryDate}
                 min={today}
                 onChange={(iso) => setDeliveryDate(iso)}
-                style={datesXor && !deliveryDate ? { borderColor: 'var(--c-festive-b, #B8331F)' } : undefined}
+                style={datesXor && !deliveryDate ? { borderColor: 'var(--c-error, #b23a3a)' } : undefined}
               />
             </label>
             <label className={styles.field} style={{ gridColumn: 'span 4' }}>
@@ -2369,7 +2375,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       <section className={styles.card}>
         <header className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Emergency contact</h2>
-          <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+          <span style={{ fontSize: 'var(--fs-12)', color: 'rgb(var(--eng-ink-muted))' }}>
             Used only if we cannot reach the customer on delivery day
           </span>
         </header>
@@ -2431,8 +2437,8 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
             style={{
               display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
               padding: 'var(--space-3)',
-              background: fillAddressLater ? 'rgba(22, 105, 95, 0.08)' : 'var(--c-cream)',
-              border: '1px solid ' + (fillAddressLater ? 'var(--c-orange)' : 'var(--line)'),
+              background: fillAddressLater ? 'rgb(var(--eng-primary-soft))' : 'rgb(var(--eng-surface-2))',
+              border: '1px solid ' + (fillAddressLater ? 'var(--c-orange)' : 'rgb(var(--eng-border))'),
               borderRadius: 'var(--radius-md)',
               marginBottom: 'var(--space-3)',
               cursor: 'pointer',
@@ -2446,7 +2452,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
             />
             <div>
               <div style={{ fontWeight: 600, fontSize: 'var(--fs-14)' }}>Fill in address later</div>
-              <div style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)', marginTop: 2 }}>
+              <div style={{ fontSize: 'var(--fs-12)', color: 'rgb(var(--eng-ink-muted))', marginTop: 2 }}>
                 Customer hasn't confirmed delivery address yet — we'll capture it before dispatch.
               </div>
             </div>
@@ -2531,10 +2537,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
                 it onto the SO header on POST. */}
             <div className={styles.field}>
               <span className={styles.fieldLabel}>Country</span>
-              <span className={styles.fieldInput} style={{
-                display: 'inline-flex', alignItems: 'center', height: 26,
-                color: 'var(--fg-muted)',
-              }}>
+              <span className={styles.fieldInput} style={READ_ONLY_FIELD}>
                 {country}
               </span>
             </div>
@@ -2544,10 +2547,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
                 state has no warehouse wired up yet. */}
             <div className={styles.field}>
               <span className={styles.fieldLabel}>Sales Location</span>
-              <span className={styles.fieldInput} style={{
-                display: 'inline-flex', alignItems: 'center', height: 26,
-                color: 'var(--fg-muted)',
-              }}
+              <span className={styles.fieldInput} style={READ_ONLY_FIELD}
                 title={salesLocation
                   ? `Auto-set from State → Warehouse mapping for "${state}"`
                   : 'Pick a State above to auto-set'}
@@ -2765,7 +2765,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
             ...subtotalStyle,
             marginTop: 'var(--space-2)',
             paddingTop: 'var(--space-3)',
-            borderTop: '1px solid var(--line)',
+            borderTop: '1px solid rgb(var(--eng-border))',
           }}>
             Subtotal: {fmtRm(subtotalSen)}
           </div>

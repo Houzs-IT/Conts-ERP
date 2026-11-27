@@ -25,7 +25,7 @@
 
 /* ── Section card — white, hairline border, soft stone shadow ───────── */
 .card {
-  background: #fff;
+  background: rgb(var(--eng-surface));
   border: 1px solid rgb(var(--eng-border));
   border-radius: 10px;
   overflow: hidden;
@@ -40,7 +40,7 @@
   justify-content: space-between;
   gap: 12px;
   min-height: 38px;
-  background: #f4f6f3;
+  background: rgb(var(--eng-surface-2));
 }
 
 .cardTitle {
@@ -52,7 +52,7 @@
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   line-height: 14px;
   display: inline-flex;
   align-items: center;
@@ -65,7 +65,7 @@
   top: 0;
   width: 3px;
   height: 14px;
-  background: #16695f;
+  background: var(--c-orange);
   border-radius: 3px;
 }
 
@@ -101,7 +101,7 @@
   font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #767b6e;
+  color: rgb(var(--eng-ink-muted));
   margin-bottom: 5px;
   line-height: 1;
 }
@@ -109,13 +109,13 @@
 /* Required-field label — darker ink + heavier weight so mandatory inputs
    read louder than the optional (muted) ones. Pairs with .req below. */
 .fieldLabelReq {
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   font-weight: 700;
 }
 
 /* Required marker (*) — err red, bold and a touch larger than the label. */
 .req {
-  color: #b23a3a;
+  color: var(--c-error, #b23a3a);
   font-weight: 800;
   font-size: 11px;
   margin-left: 3px;
@@ -126,7 +126,7 @@
 .fieldSelect {
   width: 100%;
   height: 36px;
-  border: 1px solid rgb(var(--eng-border));
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   background: var(--input-bg);
   padding: 0 11px;
@@ -141,7 +141,7 @@
 .fieldInput:focus,
 .fieldSelect:focus {
   border-color: var(--c-orange);
-  box-shadow: 0 0 0 3px rgba(22, 105, 95, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-orange) 25%, transparent);
 }
 .fieldInput:disabled,
 .fieldSelect:disabled { background: var(--input-bg-muted); color: var(--input-fg-muted); cursor: not-allowed; }
@@ -164,7 +164,8 @@ textarea.fieldInput { height: auto; padding: 11px 12px; line-height: 1.5; resize
 }
 
 /* Field-level "edited" tint (scan blue-diff highlight). */
-.edited { border-color: var(--c-orange); background: #e1efed; }
+/* !important: the night skin's input rule (embed.css) outranks any module class and would hide the marker. */
+.edited { border-color: var(--c-orange) !important; background: rgb(var(--eng-primary-soft)) !important; }
 
 /* ── Customer name suggestion popover ──────────────────────────────── */
 .suggestList {
@@ -174,7 +175,7 @@ textarea.fieldInput { height: auto; padding: 11px 12px; line-height: 1.5; resize
   width: 100%;
   max-height: 260px;
   overflow-y: auto;
-  background: #fff;
+  background: rgb(var(--eng-surface));
   border: 1px solid rgb(var(--eng-border-strong));
   border-radius: 10px;
   box-shadow: 0 20px 40px -20px rgba(17, 24, 16, 0.24);
@@ -186,16 +187,16 @@ textarea.fieldInput { height: auto; padding: 11px 12px; line-height: 1.5; resize
   padding: 9px 12px;
   font-family: var(--font-sans, system-ui);
   font-size: 13px;
-  color: #11140f;
+  color: rgb(var(--eng-ink));
   border-bottom: 1px solid rgb(var(--eng-border-subtle));
   cursor: pointer;
 }
 .suggestItem:last-child { border-bottom: none; }
-.suggestItem:hover { background: #f4f6f3; }
+.suggestItem:hover { background: rgb(var(--eng-surface-2)); }
 .suggestCode {
   font-family: var(--font-mono, monospace);
   font-size: 11px;
-  color: #767b6e;
+  color: rgb(var(--eng-ink-muted));
 }
 
 /* Renovation mode (Conts, 14 Oct 2026): a compact two-column header. Customer and

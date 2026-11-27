@@ -13,7 +13,7 @@ import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { renovationApi } from "./renovationApi";
 import { errorText } from "./renovationModel";
-import { Dialog, Field, inputClass } from "./renovationUi";
+import { Dialog, Field, inputClass, selectClass } from "./renovationUi";
 import { PersonSelect, usePeople } from "./PersonSelect";
 import { AttendingPicker } from "./ProjectRecords";
 import type { AttendingPerson } from "./simpleApi";
@@ -92,15 +92,15 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
       footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={submit} disabled={busy}>{busy ? "Creating..." : "Create project"}</Button></>}
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr]">
-          <div className="min-w-0 text-sm">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="min-w-0 text-sm sm:col-span-2">
             <span className="mb-1 block text-ink-secondary">Project name</span>
             <div className="flex h-[38px] items-center rounded-md border border-dashed border-border bg-surface-dim px-3 text-ink" aria-live="polite">
               {projectName ? <span className="truncate font-medium">{projectName}</span> : <span className="text-ink-secondary">Building and unit (or the customer name)</span>}
             </div>
           </div>
           <Field label="Project type">
-            <select className={inputClass} value={typeId} onChange={set("projectTypeId")}>
+            <select className={selectClass} value={typeId} onChange={set("projectTypeId")}>
               {activeTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </Field>
@@ -108,14 +108,14 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
         <section>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Funding">
-              <select aria-label="Funding" className={inputClass} value={funding} onChange={(e) => setFunding(e.target.value as "customer" | "internal")}>
+              <select aria-label="Funding" className={selectClass} value={funding} onChange={(e) => setFunding(e.target.value as "customer" | "internal")}>
                 <option value="customer">Customer project</option>
                 <option value="internal">Internal (our own money)</option>
               </select>
             </Field>
             {internal && (
               <Field label="Counts to">
-                <select aria-label="Counts to" className={inputClass} value={department} onChange={(e) => setDepartment(e.target.value as "" | "rental" | "supply")}>
+                <select aria-label="Counts to" className={selectClass} value={department} onChange={(e) => setDepartment(e.target.value as "" | "rental" | "supply")}>
                   <option value="">— Choose —</option>
                   <option value="rental">Rental (a unit to rent out)</option>
                   <option value="supply">Renovation (showroom)</option>
@@ -124,7 +124,7 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
             )}
             {branded && (
               <Field label="Brand *">
-                <select aria-label="Brand" className={inputClass} value={brandId ?? ""} disabled={busy}
+                <select aria-label="Brand" className={selectClass} value={brandId ?? ""} disabled={busy}
                   onChange={(e) => setBrandId(e.target.value ? Number(e.target.value) : null)}>
                   <option value="">— Choose —</option>
                   {brandRows.map((b) => <option key={b.brandId} value={b.brandId}>{b.name}</option>)}
