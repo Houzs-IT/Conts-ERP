@@ -13,6 +13,22 @@ import {
    the page decides what a drop or a click does. */
 
 const HH = 48; // pixels per hour in the time grid
+const DARK_INK = "#11140F";
+const LIGHT_INK = "#FFFFFF";
+
+const channel = (v: number): number => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const luminance = (hex: string): number => {
+  const n = parseInt(hex.slice(1), 16);
+  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
+};
+
+/** Text colour for a meeting block: white or near-black, whichever reads better on the room or company colour.
+ *  A CSS variable (my own meetings) pairs with the theme's on-primary colour. */
+function inkOn(background: string): string {
+  if (!/^#[0-9a-f]{6}$/i.test(background)) return "var(--color-on-primary)";
+  const bg = luminance(background);
+  return (1.05 / (bg + 0.05)) >= ((bg + 0.05) / (luminance(DARK_INK) + 0.05)) ? LIGHT_INK : DARK_INK;
+}
 const WORKDAY_SCROLL_HOUR = 8.5;
 const QUICK_SLOT_MIN = 30;
 const span = (GRID_TO - GRID_FROM) * 60;
@@ -218,8 +234,8 @@ export function TimeGrid(p: CalProps & {
                     <div key={m.id} role="button" tabIndex={0} aria-label={`${m.title}, ${fmtRange(item.start, item.end)}`}
                       onPointerDown={(e) => grab(e, m, "move")}
                       onKeyDown={(e) => { if (e.key === "Enter") { const r = e.currentTarget.getBoundingClientRect(); p.onOpen(m, r.right, r.top); } }}
-                      className={cn("absolute cursor-pointer select-none overflow-hidden rounded-control border border-card px-1.5 py-0.5 text-[11.5px] leading-[15px] text-on-primary", m.status === "ended" && "opacity-55", m.status === "live" && "ring-2 ring-success-line ring-offset-1")}
-                      style={{ top: top(item.start), height: h - 2, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, background: p.colorOf(m), touchAction: "pan-y" }}>
+                      className={cn("absolute cursor-pointer select-none overflow-hidden rounded-control border border-card px-1.5 py-0.5 text-[11.5px] leading-[15px]", m.status === "ended" && "opacity-55", m.status === "live" && "ring-2 ring-success-line ring-offset-1")}
+                      style={{ top: top(item.start), height: h - 2, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, background: p.colorOf(m), color: inkOn(p.colorOf(m)), touchAction: "pan-y" }}>
                       <b className="block truncate text-[12px] font-semibold">{m.status === "live" ? "Live · " : ""}{m.title || "(No title)"}</b>
                       {h > 30 && <span>{fmtRange(item.start, item.end)}{room ? ` · ${room.name}` : ""}</span>}
                       {h > 58 && <span className="block truncate opacity-90">{m.guest ? `Guest · host ${personName(m.organizer, p.people)}` : [org?.company, org?.department].filter(Boolean).join(" · ")}</span>}
@@ -339,8 +355,8 @@ export function RoomsTimeline(p: CalProps & { day: number; onCreate: (s: number,
                 const org = p.people.get(m.organizer);
                 return (
                   <button key={m.id} type="button" onClick={(e) => p.onOpen(m, e.clientX, e.clientY)}
-                    className={cn("absolute bottom-2.5 top-2.5 overflow-hidden rounded-control px-2 py-1 text-left text-[11.5px] leading-[15px] text-on-primary", m.status === "ended" && "opacity-55")}
-                    style={{ left: `${pct(ms(m.start))}%`, width: `calc(${pct(ms(m.end)) - pct(ms(m.start))}% - 3px)`, background: p.colorOf(m) }}>
+                    className={cn("absolute bottom-2.5 top-2.5 overflow-hidden rounded-control px-2 py-1 text-left text-[11.5px] leading-[15px]", m.status === "ended" && "opacity-55")}
+                    style={{ left: `${pct(ms(m.start))}%`, width: `calc(${pct(ms(m.end)) - pct(ms(m.start))}% - 3px)`, background: p.colorOf(m), color: inkOn(p.colorOf(m)) }}>
                     <b className="block truncate">{m.title}</b>{fmtRange(ms(m.start), ms(m.end))}
                     <span className="block truncate">{m.guest ? "Guest booking" : [org?.company, org?.department].filter(Boolean).join(" · ")}</span>
                   </button>
