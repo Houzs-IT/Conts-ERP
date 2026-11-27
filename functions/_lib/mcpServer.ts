@@ -33,6 +33,9 @@
  * behind its own switch (default off) and the main one. Round 4c (mcpVisibility.ts): tools/list and prompts/list show
  * only what the person can use (the session middleware's own module gate, accessFor); quick answers carry
  * structuredContent + outputSchema, an ERP link and money in RM; heavy summaries are reused for 60 s per person.
+ * Round 5 (owner, 27 Nov 2026; mcpHowtoTools.ts, pure answers in mcpHowto.ts, data in howto/): process help: how_to,
+ * module_overview, glossary, explain_error, onboarding, tailored to The Conts or Dream Crafter; canDo is the ERP's own
+ * gate. Unanswered questions are logged (note no-guide) and listed on System > AI Connector.
  */
 import { type Env } from './db';
 import { MCP_INNER_HEADER, mcpInnerSecret } from './mcpInner';
@@ -41,13 +44,14 @@ import { logCall, type McpIdentity } from './mcpStore';
 import { dispatchGet } from './mcpDispatch';
 import { apiRoutes } from './apiRoutes.generated';
 import { originOf } from './mcpDiscovery';
-import { ACTION_TOOLS, gateFor, runActionTool } from './mcpActionTools';
+import { ACTION_TOOLS, gateFor, runActionTool, type ToolContent } from './mcpActionTools';
 import { WRITE_TOOLS } from './mcpWrite';
 import { actionsEnabled, mcpActionsReady, recentCallCounts, writeKindsReady, writeSwitches } from './mcpStore';
 import { scmEngineConfigured } from './scmEngine';
 import { AnswerCache, QUICK_OUTPUT_SCHEMA, STRUCTURED_TOOLS, cacheKey, noAccessText, parseQuickText, readToolAllowed, withLinksAndRm } from './mcpVisibility';
 import { MORE_TOOLS, runMoreTool } from './mcpMoreTools';
 import { CONTS4_TOOLS, runConts4Tool } from './mcpConts4Tools';
+import { HOWTO_TOOLS, SCREEN_TOOLS, SHOW_ME_TOOLS, runHowtoTool } from './mcpHowtoTools';
 import { RATE_LIMITED_STATUS, limitVerdict, todayStays } from './mcpMore';
 import {
   FETCH_SPECS, PROMPTS, PROMPT_TOOLS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
@@ -64,7 +68,7 @@ const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.5.0
 /** The GET routes as list_modules and list_endpoints show them. */
 export const mcpRouteInfo = (): RouteInfo[] => apiRoutes().map(r => ({ method: r.method, path: r.path }));
 
-type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean; structuredContent?: Record<string, unknown> };
+type ToolResult = { content: ToolContent[]; isError?: boolean; structuredContent?: Record<string, unknown> };
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
 
 const INSTRUCTIONS = `You are connected to The Conts ERP as the signed-in staff member. The Conts manages short-stay rental units for their owners: units and buildings, owners and their contracts, reservations from Airbnb, Booking.com and Agoda, guests, cleaning and maintenance jobs, owner statements and payouts, expenses and utility bills, pricing and reviews, HR for field staff; plus the Dream Crafter supply chain screens (sales orders, purchasing, stock, transport).
@@ -83,7 +87,9 @@ ANSWER FAST: use a quick answer first. It is one call and already summarised:
 - A list as an Excel file: export_excel {list, filters, from, to, fields}; give the person the link it returns.
 Only when no quick answer fits: list_modules, then list_endpoints for a module, then erp_get. With erp_get pass "fields" (only the keys you need) and query parameters (from / to dates, page / pageSize, q or search, status) to keep replies small.
 Quick answers give money in RM. In erp_get replies money is in sen (RM x 100) where a field ends in Sen or is an amount. Dates are YYYY-MM-DD, Malaysia time.
-If a call says "not available to your role" or names a missing access, tell the person their account does not have access to that data.`;
+If a call says "not available to your role" or names a missing access, tell the person their account does not have access to that data.
+HELP ("how do I...", "where is...", "what does X mean", an error message): how_to {question} gives click-by-click steps with ERP links for the person's own company (The Conts' short-stay rental, or Dream Crafter's renovation); end-to-end chains (a reservation to the owner's payout, a renovation project from quotation to handover) come back as one flow. module_overview {module} explains a module; glossary {term} explains a term or abbreviation; explain_error {text} explains an ERP error message (read it off a screenshot if needed); onboarding {role} gives a new starter's first-week reading path. "Where do I open X?": where_is {thing} (sidebar path + a link that outlines the button). What a screen or button does: explain_screen. "Show me where": show_me {guide_id, step} or {path, label} returns a screenshot of The Conts' screen (test data: say so) with the button's box, a 15-minute link to the same picture with a red box drawn on it, and the live-page link that outlines the button.
+SCREENSHOTS: when the person sends a screenshot or photo of the ERP, read the address bar (the path after the domain, e.g. /owners/payouts) and the visible button, tab and heading labels, then call explain_screen {path, visible_text: [labels]}. Explain the page from its answer, not from guesses; point at buttons by their exact label and give the link. Follow the guide's steps and labels exactly; if canDo is false, tell the person to ask their supervisor or management for the permission. Guides are in English; answer in the person's language.`;
 
 const RO = { readOnlyHint: true, openWorldHint: false };
 const NO_ARGS = { type: 'object', properties: {}, additionalProperties: false };
@@ -134,6 +140,9 @@ const TOOLS = [
   },
   ...MORE_TOOLS,
   ...CONTS4_TOOLS,
+  ...HOWTO_TOOLS,
+  ...SCREEN_TOOLS,
+  ...SHOW_ME_TOOLS,
   ...ACTION_TOOLS,
   ...WRITE_TOOLS,
   {
@@ -265,7 +274,8 @@ const answerCache = new AnswerCache<{ result: ToolResult; target: string; note: 
 
 /** A quick answer also as structuredContent, with its ERP link and money in RM; the text carries the same JSON. */
 function structured(name: string, r: ToolResult, origin: string): ToolResult {
-  const raw = r.content[0]?.text ?? '';
+  const first = r.content[0];
+  const raw = first && first.type === 'text' ? first.text : '';
   const v = parseQuickText(raw);
   if (!v) return { ...r, structuredContent: { text: raw } };
   const value = withLinksAndRm(name, v, origin);
@@ -289,7 +299,7 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
     const hidden = !over && !ACTION_NAMES.has(name) && TOOLS.some(t => t.name === name) && !(await (await toolAccess(env, id))(name));
     const key = over || hidden ? null : cacheKey(id.user.id, id.user.role, name, args);
     const cached = key ? answerCache.get(key) : null;
-    const acted = over || hidden || cached ? null : (await runMoreTool(name, args, ctx)) ?? (await runConts4Tool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
+    const acted = over || hidden || cached ? null : (await runMoreTool(name, args, ctx)) ?? (await runConts4Tool(name, args, ctx)) ?? (await runHowtoTool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
     if (over) {
       result = text(over, true);
       status = RATE_LIMITED_STATUS;

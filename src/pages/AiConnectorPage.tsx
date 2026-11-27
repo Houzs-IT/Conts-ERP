@@ -26,6 +26,8 @@ type Overview = {
   allowed: (Person & { approvedAt: string | null })[];
   calls: { id: string; userId: string; name: string; app: string; tool: string; target: string; status: number; ok: boolean; note: string; ms: number; at: string | null }[];
   staff: Person[];
+  /** Help questions no guide answered in the last 30 days (personal data removed when logged). */
+  noGuide?: { tool: string; question: string; count: number; lastAt: string | null }[];
 };
 type LeakRow = { path: string; outcome: 'opened' | 'refused' | 'error'; status: number; hidden: string[]; sensitive: string[] };
 
@@ -287,6 +289,21 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
       )}
 
       <LeakCheck people={ov.allowed} />
+
+      {ov.noGuide && (
+        <Section title="Questions with no guide yet" sub="Help questions (how to, errors, terms, screens) the AI Connector could not answer in the last 30 days: what to write next. Names, emails and numbers are removed.">
+          {ov.noGuide.length === 0 ? <Empty>Every help question found a guide.</Empty> : (
+            <ul className="m-0 p-0 list-none">
+              {ov.noGuide.map(g => (
+                <li key={`${g.tool}:${g.question}`} className={ROW}>
+                  <span className="min-w-0 break-words text-copy text-ink">{g.question}</span>
+                  <span className="shrink-0 text-meta text-muted-ink">{g.tool} · {g.count}x · {when(g.lastAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
 
       <Section title="Recent lookups" sub="The last 100 things an AI app read, proposed or did, newest first. Emails show the recipients and subject only.">
         {ov.calls.length === 0 ? <Empty>Nothing yet.</Empty> : (

@@ -299,6 +299,12 @@ export const PROMPTS = [
     description: "Owner statements and payouts, contracts ending soon, owners missing bank details or a contract, and one owner's account when named.",
     arguments: [{ name: 'owner', description: "an owner's name (optional)", required: false }],
   },
+  // Process help (owner, 27 Nov 2026; mcpHowto.ts): staff who do not know how to do something ask here.
+  { name: 'how_do_i', title: 'How do I...?', description: 'Step-by-step help for a task in the ERP, e.g. create a reservation, bill a renovation instalment.', arguments: [{ name: 'task', description: 'What you want to do', required: true }] },
+  { name: 'explain_module', title: 'What is this module for?', description: 'What an ERP module does, its pages and how it links to the rest.', arguments: [{ name: 'module', description: 'e.g. Reservations or Projects (leave empty for all)', required: false }] },
+  { name: 'what_does_it_mean', title: 'What does this term mean?', description: 'A plain-English meaning of an ERP term or abbreviation.', arguments: [{ name: 'term', description: 'e.g. RevPAR, VO, owner statement', required: true }] }, // vocab-ok: glossary terms staff ask about
+  { name: 'explain_this_error', title: 'Explain this error', description: 'What an ERP error message means and how to fix it.', arguments: [{ name: 'message', description: 'The error text', required: true }] },
+  { name: 'my_first_week', title: 'My first week', description: 'A first-week reading path for a new starter in a role.', arguments: [{ name: 'role', description: 'reservations | operations | finance | renovation-sales | renovation-project | renovation-finance', required: true }] },
 ];
 
 /** The tools behind each prompt: a prompt is listed only when the person can use at least one of them (round 4c). */
@@ -312,6 +318,11 @@ export const PROMPT_TOOLS: Record<string, string[]> = {
   reservations_revenue_review: ['revenue_summary', 'channel_mix', 'booking_pace', 'cancellations_summary'],
   finance_review: ['arrears_summary', 'payables_summary', 'owner_statement_summary', 'company_report'],
   owner_relations_review: ['owner_statement_summary', 'leases_expiring', 'data_gaps'],
+  how_do_i: ['how_to'],
+  explain_module: ['module_overview'],
+  what_does_it_mean: ['glossary'],
+  explain_this_error: ['explain_error'],
+  my_first_week: ['onboarding'],
 };
 
 const ROLE_TAIL = ' If a tool says I do not have access, say so in one line and carry on with the rest. Lead with the numbers (RM), give each item\'s ERP link, keep it short and in plain language.';
@@ -328,6 +339,21 @@ export function promptText(name: string, a: Record<string, unknown>): string | n
   }
   if (name === 'find_reservation') {
     return `Find "${v('query')}" with search, open the best match with fetch, and summarise it: dates, unit, guest, channel, status and amounts. Give the ERP link.`;
+  }
+  if (name === 'how_do_i') {
+    return `How do I ${v('task') || '...'} in the ERP? Use how_to {question: "${v('task')}"}. Walk me through the steps in order with the exact button names and each step's link, tell me what to check before I confirm and what cannot be undone. If canDo is false, tell me to ask my supervisor or management for the permission. If there is no guide, show me the closest titles.`;
+  }
+  if (name === 'explain_module') {
+    return `Use module_overview${v('module') ? ` {module: "${v('module')}"}` : ''} and explain ${v('module') ? `the ${v('module')} module` : 'the ERP modules'} in plain language: what it is for, its key pages (with links), who uses it and how it connects to the other modules.`;
+  }
+  if (name === 'what_does_it_mean') {
+    return `What does "${v('term')}" mean in our ERP? Use glossary {term: "${v('term')}"} and explain it in one or two plain sentences, with where I see it.`;
+  }
+  if (name === 'explain_this_error') {
+    return `I got this error in the ERP: "${v('message')}". Use explain_error {text} to tell me what it means, why it happened and what I should do.`;
+  }
+  if (name === 'my_first_week') {
+    return `I am new in ${v('role') || 'my role'}. Use onboarding {role: "${v('role')}"} and give me my first-week reading path day by day; for each item give one line on why it matters and its link.`;
   }
   if (name === 'daily-brief') {
     return 'What do I need to look at today? Use daily_brief. Start with what is overdue, then what is due soon, then the rest. For each section give the count and the items with their links. If something is not available to my account, say so in one line. Short.';

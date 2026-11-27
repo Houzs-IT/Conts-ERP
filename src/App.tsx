@@ -118,6 +118,13 @@ const MeetingBookPage = lazy(() => import('./pages/MeetingBookPage'));
 const MyClaimsPage = lazy(() => import('./pages/MyClaimsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const AiConnectorPage = lazy(() => import('./pages/AiConnectorPage'));
+/** The AI Connector's ?highlight=<label> outline (src/lib/useHighlightParam.ts): loaded only when a link carries it, so
+ *  it adds nothing to the first download. */
+const HighlightOverlay = lazy(() => import('./lib/useHighlightParam').then(m => ({ default: m.HighlightFromUrl })));
+function HighlightFromUrl() {
+  const { search } = useLocation();
+  return new URLSearchParams(search).has('highlight') ? <Suspense fallback={null}><HighlightOverlay /></Suspense> : null;
+}
 const AiConnectPage = lazy(() => import('./pages/AiConnectPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
@@ -174,6 +181,8 @@ function AppLayout() {
   const engineShown = viaEngine && !closed;
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
+      {/* ?highlight=<label> from the AI Connector's links outlines that button for a few seconds (read-only). */}
+      <HighlightFromUrl />
       {lastEnginePath.current && (
         <div style={{ display: engineShown ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
           <SupplyChainEngine enginePath={lastEnginePath.current} active={engineShown} />
