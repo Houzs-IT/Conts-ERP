@@ -211,6 +211,8 @@ const stockWhereText = (skus: ReadonlyArray<{ stockWhere?: Array<{ code: string;
   return [...at].sort((a, b) => b[1] - a[1]).map(([code, qty]) => `${code} ${qty}`).join(' · ');
 };
 
+const DRAFT_NOTE = '\n\nOpen each draft under Purchase Orders to check it and Confirm. Until then MRP still shows these lines as short.';
+
 export const Mrp = () => {
   const navigate = useNavigate();
   const { staff, canWriteScmConfig } = useAuth();
@@ -482,7 +484,7 @@ export const Mrp = () => {
         /* The page reads a stored plan: regenerate it, or the lines just ordered still read short. */
         regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
         setDialog(res.total > 0
-          ? { kind: 'created', title: `${asDraft ? 'Saved' : 'Successfully created'} ${res.total} ${asDraft ? 'draft ' : ''}PO${res.total === 1 ? '' : 's'}`, body: res.created.map((p) => p.poNumber).join(', ') }
+          ? { kind: 'created', title: `${asDraft ? 'Saved' : 'Successfully created'} ${res.total} ${asDraft ? 'draft ' : ''}PO${res.total === 1 ? '' : 's'}`, body: res.created.map((p) => p.poNumber).join(', ') + (asDraft ? DRAFT_NOTE : '') }
           : { kind: 'info', title: 'Already ordered', body: 'These materials are already on a PO. The list has been refreshed.' });
       }).catch((err: unknown) => {
         const raw = err instanceof Error ? err.message : 'Something went wrong.';
@@ -534,9 +536,7 @@ export const Mrp = () => {
             ? `Saved ${created.length} draft PO${created.length === 1 ? '' : 's'}`
             : `Successfully created ${created.length} PO${created.length === 1 ? '' : 's'}`,
           body: created.map((p) => p.poNumber).join(', ')
-            + (asDraft ? '
-
-Open each draft under Purchase Orders to check it and Confirm. Until then MRP still shows these lines as short.' : ''),
+            + (asDraft ? DRAFT_NOTE : ''),
         });
       } catch (err) {
         const raw = err instanceof Error ? err.message : 'Something went wrong.';
