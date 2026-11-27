@@ -5078,12 +5078,1013 @@
    ]
   },
   {
+   "project": "ASTRUM R-29-27",
+   "projectId": 319,
+   "newProject": null,
+   "versions": [
+    {
+     "file": "ASTRUM_R-29-27.pdf (Google sheet JINNI UNIT PROGRESS)",
+     "docDate": null,
+     "lastAmended": null,
+     "preparedBy": "WILLIAM",
+     "to": "LOOI YOKE GUIN",
+     "payableSen": 0,
+     "linesSen": 0,
+     "sections": [
+      {
+       "heading": "BEDROOM SET",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "BED-HKA-1013-(Q)",
+         "description": "BEDFRAME JAGER QUEEN PC151-01",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "AKEMI GALLENT MATT (Q)",
+         "description": "AKEMI HOTEL MATTRESS QUEEN GALLENT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-151037",
+         "description": "SIDE TABLE 151037",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-355019",
+         "description": "SOFT CLOSE WARDROBE 355019",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-336046",
+         "description": "TV CONSOLE 336046",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "DINING",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-143017",
+         "description": "DINING TABLE 143017",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-241503",
+         "description": "DINING CHAIR 241503",
+         "qty": 2,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "CURTAIN",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "CUR-GEN-DOUBLE",
+         "description": "BLACKOUT CURTAIN DOUBLE LAYER MVP-01",
+         "qty": 20,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "OTHERS",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "MIR-GEN-ROUND600",
+         "description": "TOILET MIRROR 600MM",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-ELECTRICAL",
+         "description": "TV BRACKET",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "DLT-GEN-SURF-12IN-24W-BK-3K",
+         "description": "SURFACE DOWNLIGHT 12 INCH BLACK SURFACE 3000K - 3500K WARM WHITE",
+         "qty": 4,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FAN-GEN-CEILING",
+         "description": "FAN WITH LIGHT 56 INCH BLACK SURFACE",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROTECTION",
+         "description": "FLOORING PROTECTION CANVAS",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "PAINITNG",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "WALL PAINT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "BED",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "LIVING TV",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "WINDOW",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "KITCHEN",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "FEATURE WALL",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-FEATURE_WALL",
+         "description": "FLUTTED PANEL - TV WALL 3PCS (1 SET) BWM 09 (BOSS BUY)",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-FEATURE_WALL",
+         "description": "BED HEAD WALL PANEL 2 PCS (1 SET) 11FT X 5FT P031(JINNI BUY)",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-FEATURE_WALL",
+         "description": "LIGHTING AND PROFILE FOR FLUTED AND WALL PANEL ASK CK",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "SERVICES",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-DELIVERY",
+         "description": "DELIVERY DOOR TO DOOR",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-CLEANING",
+         "description": "DEEP CLEAN +SET UP",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-INSTALLATION",
+         "description": "INSTALLATION",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROJECT_MGMT",
+         "description": "PROJECT SUPERVISE",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PHOTOSHOOT",
+         "description": "PHOTOSHOOTING",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "AIRBNB SERVICES",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-AIRBNB_SETUP",
+         "description": "LINENS SET",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-AIRBNB_SETUP",
+         "description": "AIRBNB ITEM SET",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-STYLING",
+         "description": "DECORATION ITEM AND STYLING",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "ELECTRICAL ITEM",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "TV-HIS-43",
+         "description": "TV 43\" SMART/GOOGLE TV",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "WSH-MID-2IN1",
+         "description": "WASHING MACHINE 8.5K/6KGG WITH DRYER 2 IN",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "project": "ASTRUM R-52-29",
+   "projectId": 324,
+   "newProject": null,
+   "versions": [
+    {
+     "file": "ASTRUM_R-52-29.pdf (Google sheet JINNI UNIT PROGRESS)",
+     "docDate": null,
+     "lastAmended": null,
+     "preparedBy": "WILLIAM",
+     "to": "LIEW POH SIONG",
+     "payableSen": 0,
+     "linesSen": 0,
+     "sections": [
+      {
+       "heading": "BEDROOM SET",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "BED-HLM-655140",
+         "description": "BEDFRAME JAGER QUEEN 655140",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "AKEMI GALLENT MATT (Q)",
+         "description": "AKEMI HOTEL MATTRESS QUEEN GALLENT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-152010",
+         "description": "SIDE TABLE 152010",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-352024",
+         "description": "WARDROBE 352024",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-336047",
+         "description": "TV CONSOLE 336047",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "DINING",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-144078",
+         "description": "DINING TABLE 144078",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-241318",
+         "description": "DINING CHAIR 241318",
+         "qty": 2,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "CURTAIN",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "CUR-GEN-DOUBLE",
+         "description": "BLACKOUT CURTAIN DOUBLE LAYER MVP35",
+         "qty": 20,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "OTHERS",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "MIR-GEN-ROUND600",
+         "description": "TOILET MIRROR 600MM",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-ELECTRICAL",
+         "description": "TV BRACKET",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "DLT-GEN-SURF",
+         "description": "SURFACE DOWNLIGHT FOLLOW OWNER LINK",
+         "qty": 4,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FAN-GEN-CEILING",
+         "description": "FAN NO LIGHT FOLLOW OWNER LINK",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROTECTION",
+         "description": "FLOORING PROTECTION CANVAS",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "PAINITNG",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "WALL PAINT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "BED",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "LIVING TV",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "WINDOW",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "KITCHEN",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "FEATURE WALL",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-FEATURE_WALL",
+         "description": "LIGHTING FOR BED HEAD FLUTED PANEL ASK CK YELLOW",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "SERVICES",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-DELIVERY",
+         "description": "DELIVERY DOOR TO DOOR",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-CLEANING",
+         "description": "DEEP CLEAN +SET UP",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-INSTALLATION",
+         "description": "INSTALLATION",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROJECT_MGMT",
+         "description": "PROJECT SUPERVISE",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PHOTOSHOOT",
+         "description": "PHOTOSHOOTING",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "AIRBNB SERVICES",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-AIRBNB_SETUP",
+         "description": "LINENS SET",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-AIRBNB_SETUP",
+         "description": "AIRBNB ITEM SET",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-STYLING",
+         "description": "DECORATION ITEM AND STYLING",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "ELECTRICAL ITEM",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "TV-HIS-43",
+         "description": "TV 43\" SMART/GOOGLE TV",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "WSH-MID-2IN1",
+         "description": "WASHING MACHINE 8.5K/6KGG WITH DRYER 2 IN",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "project": "ASTRUM A-17-20",
+   "projectId": 313,
+   "newProject": null,
+   "versions": [
+    {
+     "file": "ASTRUM_A-17-20.pdf (Google sheet JINNI UNIT PROGRESS)",
+     "docDate": null,
+     "lastAmended": null,
+     "preparedBy": "WILLIAM",
+     "to": "YU KOK LOON",
+     "payableSen": 0,
+     "linesSen": 0,
+     "sections": [
+      {
+       "heading": "LIVING",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-336098",
+         "description": "TV CABINET 336098",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "SOF-GEN-PREMIUM-2.5S",
+         "description": "Sofa - 2.5 Seater PC151-01",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "BEDROOM SET",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "BED-HKA-1013-(Q)",
+         "description": "BEDFRAME JAGER QUEEN PC151-01 NO LEG",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "AKEMI GALLENT MATT (Q)",
+         "description": "AKEMI HOTEL MATTRESS QUEEN GALLENT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-151041",
+         "description": "SIDE TABLE 151041",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-353014",
+         "description": "SOFT CLOSE WARDROBE 353014",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-1349032",
+         "description": "WORKING TABLE 1349032",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-241717",
+         "description": "WORKING CHAIR 241717",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "DINING",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-144044",
+         "description": "DINING TABLE 144044",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-241507",
+         "description": "DINING CHAIR 241507",
+         "qty": 4,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "CURTAIN",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "CUR-GEN-DOUBLE",
+         "description": "BLACKOUT CURTAIN DOUBLE LAYER MVP-01",
+         "qty": 20,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "BLD-GEN-BLINDS",
+         "description": "BLIND",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "OTHERS",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "MIR-GEN-ROUND600",
+         "description": "TOILET MIRROR 600MM",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "HTR-GEN-HEATER",
+         "description": "WATER HEATER",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "TRK-GEN-12W-BK-4K",
+         "description": "TRACK LIGHT SPOT LIGHT 1 SET",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "DLT-GEN-SURF-12IN-24W-WH-4K",
+         "description": "SURFACE DOWNLIGHT 12 INCH WHITE",
+         "qty": 5,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FAN-GEN-CEILING",
+         "description": "FAN WITH LIGHT 56 INCH WHITE",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "SIG-0013",
+         "description": "DOOR BELL",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROTECTION",
+         "description": "FLOORING PROTECTION CANVAS",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "AIRCOND",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "ACU-HIS-15HP",
+         "description": "AIRCOND1.5 HP LIVING",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-AIRCON_INSTALL",
+         "description": "COPPER CASING FULL UNIT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "PAINITNG",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "WALL PAINT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "BED Pillar 40YY 67/087",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "LIVING TV",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "WINDOW",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "KITCHEN",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "FEATURE WALL",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-FEATURE_WALL",
+         "description": "SOFA 3PCS (1 SET) CODE",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "SERVICES",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-DELIVERY",
+         "description": "DELIVERY DOOR TO DOOR",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-CLEANING",
+         "description": "POST RENO",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-CLEANING",
+         "description": "DEEP CLEAN +SET UP",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-INSTALLATION",
+         "description": "INSTALLATION",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROJECT_MGMT",
+         "description": "PROJECT SUPERVISE",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "KITCHEN CABINET",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "Kitchen Base Unit - 860(H) x 600mm (w) COLOUR CODE",
+         "qty": 9,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-COUNTERTOP",
+         "description": "Kitchen Top - Quartz Stone CODE",
+         "qty": 9,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "FORM BOARD",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "NANO SINK - STAINLESS STELL",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "HOB-HET-2IN1",
+         "description": "INDUCTION COOKER (LOOSE)",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "ELECTRICAL ITEM",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "FRG-GEN-280L",
+         "description": "REFRIGERATOR 280L",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "WSH-MID-2IN1",
+         "description": "WASHING MACHINE 8.5K/6KGG WITH DRYER 2 IN 1",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
    "project": "ASTRUM S-24-29",
    "projectId": null,
    "newProject": {
     "building": "ASTRUM",
     "unitNo": "S-24-29",
     "customerName": "SUWARNARAJ CHINNIAH"
+   },
+   "versions": []
+  },
+  {
+   "project": "ASTRUM R-19-23",
+   "projectId": null,
+   "newProject": {
+    "building": "ASTRUM",
+    "unitNo": "R-19-23",
+    "customerName": "OWNER TO BE CONFIRMED"
    },
    "versions": []
   }
