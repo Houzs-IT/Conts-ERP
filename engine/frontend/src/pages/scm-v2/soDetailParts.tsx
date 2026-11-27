@@ -328,11 +328,11 @@ export function OrderTotalCard({
   const feeSen = totalSen - (subtotalSen - discountSen);
   const st = statusShown ?? displayStatusFor(header);
   return (
-    <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
-      <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
+    <div className="rounded-lg border border-border bg-surface px-5 py-5 text-ink shadow-stone">
+      <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
         {title}
       </div>
-      <div className="mt-1.5 font-money text-[30px] font-bold leading-none tracking-tight text-white">
+      <div className="mt-1.5 font-money text-[30px] font-bold leading-none tracking-tight text-ink">
         {fmtMoney(totalSen, header.currency)}
       </div>
       <div className="mt-3 flex items-center gap-2">
@@ -345,13 +345,13 @@ export function OrderTotalCard({
                 ? "bg-accent-bright"
                 : st.tone === "error"
                   ? "bg-err"
-                  : "bg-sidebar-ink-muted"
+                  : "bg-ink-muted"
           )}
         />
-        <span className="text-[12.5px] text-sidebar-ink-muted">{st.blurb}</span>
+        <span className="text-[12.5px] text-ink-muted">{st.blurb}</span>
       </div>
 
-      <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+      <div className="mt-4 space-y-2 border-t border-border-subtle pt-4">
         <TotalLine k="Subtotal" v={fmtMoney(subtotalSen, header.currency)} />
         <TotalLine k="Discount" v={fmtMoney(discountSen, header.currency)} />
         {feeSen > 0 && (
@@ -383,17 +383,17 @@ function TotalLine({
     <div className="flex items-center justify-between">
       <span
         className={cn(
-          "text-[12.5px] text-sidebar-ink-muted",
-          strong && "text-white font-semibold"
+          "text-[12.5px] text-ink-muted",
+          strong && "text-ink font-semibold"
         )}
       >
         {k}
       </span>
       <span
         className={cn(
-          "font-money text-[13px] font-semibold text-sidebar-ink",
-          muted && "text-sidebar-ink-muted",
-          strong && "text-[16px] font-bold text-accent-bright"
+          "font-money text-[13px] font-semibold text-ink",
+          muted && "text-ink-muted",
+          strong && "text-[16px] font-bold text-accent-ink"
         )}
       >
         {v}

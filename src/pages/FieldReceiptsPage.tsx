@@ -119,6 +119,11 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
     const left = (amountSen ?? 0) - first.reduce((n, r) => n + (r.amountSen ?? 0), 0);
     return [...first, { id: Math.max(...first.map(r => r.id)) + 1, target: '', amountSen: left > 0 ? left : null }];
   });
+  /* Split evenly (chew, 27 Nov 2026): the total over every line, the odd sen on the last (RM 100 over 3: 33.33, 33.33, 33.34). */
+  const splitEvenly = () => { if (!amountSen || amountSen <= 0) return; setProblem(null); setRows(rs => {
+    const each = Math.floor(amountSen / rs.length);
+    return rs.map((r, i) => ({ ...r, amountSen: i === rs.length - 1 ? amountSen - each * (rs.length - 1) : each }));
+  }); };
   const removeRow = (id: number) => setRows(rs => { const next = rs.filter(r => r.id !== id); return next.length === 1 ? [{ ...next[0], amountSen: null }] : next; });
   /* Petty Cash (Claim) is the default, and is not offered to someone with no petty cash. */
   const pettyCashOffered = me.route !== 'finance';
@@ -236,7 +241,10 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
       {split && amountSen != null && splitSen !== amountSen && (
         <span className={`text-meta ${splitSen > amountSen ? 'text-danger' : 'text-muted-ink'}`}>{splitSen > amountSen ? tr.overSplit(rm(splitSen - amountSen)) : tr.leftToSplit(rm(amountSen - splitSen))}</span>
       )}
-      {rows.length < 20 && <Button size="touch" variant="ghost" className="self-start" onClick={addRow}>{onProjects ? tr.addProject : tr.addUnit}</Button>}
+      <span className="flex flex-wrap gap-2">
+        {rows.length < 20 && <Button size="touch" variant="ghost" onClick={addRow}>{onProjects ? tr.addProject : tr.addUnit}</Button>}
+        {split && amountSen != null && amountSen > 0 && <Button size="touch" variant="ghost" onClick={splitEvenly}>{tr.splitEvenly}</Button>}
+      </span>
       {way === 'finance' && (
         <ClaimBankFields bank={bank} wrong={wrongBank} t={t} touch
           onChange={(k, v) => { setBank(b => ({ ...b, [k]: v })); if (wrongBank === k) setWrongBank(null); }} />

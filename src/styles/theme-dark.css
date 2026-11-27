@@ -45,6 +45,8 @@
   --color-meet-accent-hover: #1F7A63;
   --color-on-meet-accent: #FFFFFF;
   --color-meet-now: #5FB59A;
+  --color-meet-seg-on: var(--color-ink);
+  --color-on-meet-seg-on: var(--color-card);
 
   /* Same roles as root tokens.css: --color-{tone} is the TINT behind a badge, -fg its text, -line dots and borders.
      -bg is the Tailwind-side alias of the tint. */

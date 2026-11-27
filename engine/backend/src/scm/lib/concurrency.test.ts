@@ -81,8 +81,26 @@ describe('mapBounded', () => {
     })).rejects.toThrow('boom');
   });
 
+  test('starts no new item after a rejection, like a sequential loop', async () => {
+    const startedItems: number[] = [];
+    const items = Array.from({ length: 20 }, (_, i) => i);
+    await expect(mapBounded(items, 3, async (n) => {
+      startedItems.push(n);
+      await tick(2);
+      if (n === 0) throw new Error('boom');
+      return n;
+    })).rejects.toThrow('boom');
+    await tick(20);
+    expect(startedItems.sort((a, b) => a - b)).toEqual([0, 1, 2]);
+  });
+
   test('refuses a bound below 1 rather than silently running unbounded', async () => {
-    await expect(mapBounded([1], 0, async (n) => n)).rejects.toThrow(/limit must be >= 1/);
+    await expect(mapBounded([1], 0, async (n) => n)).rejects.toThrow(/limit must be an integer >= 1/);
+  });
+
+  test('refuses a NaN or fractional bound rather than returning empty slots', async () => {
+    await expect(mapBounded([1], Number.NaN, async (n) => n)).rejects.toThrow(/limit must be an integer >= 1/);
+    await expect(mapBounded([1], 2.5, async (n) => n)).rejects.toThrow(/limit must be an integer >= 1/);
   });
 });
 

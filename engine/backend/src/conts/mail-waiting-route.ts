@@ -8,7 +8,9 @@
 // mailbox. A person with no engine account, or with no mailbox of their own yet, gets `count: null` and opened: false
 // ("Mail Center not opened yet"); nothing is written. Only people who already have both are counted, with the same
 // query as GET /api/mail-center/waiting-count (open threads whose last message is inbound, assigned to them or
-// unassigned in their own mailbox).
+// unassigned in their own mailbox). With `?list=1` (AI Connector round 4b, 27 Nov 2026) it also lists those same
+// threads (at most 10, longest waiting first) with their newest message id, so the connector can show the person which
+// email they are answering and pass the reply guard's afterMessageId. Still read-only.
 import { Hono, type MiddlewareHandler } from "hono";
 import type { Env } from "../types";
 import type { AuthUser } from "../services/auth";
@@ -80,23 +82,60 @@ const caller: MiddlewareHandler<{ Bindings: ContsEnv; Variables: Vars }> = async
   await next();
 };
 
+/** At most this many waiting threads are listed (`?list=1`). */
+export const WAITING_LIST_LIMIT = 10;
+
+/** One waiting thread as `?list=1` returns it: what Mail Center's inbox row shows the same person, plus the newest
+ *  message id, which Property OS's AI Connector sends back as the reply guard's `afterMessageId` (AI Connector round 4b,
+ *  27 Nov 2026), so a reply proposed before a colleague answered is refused with 409 already_replied, never forced. */
+export interface WaitingThread {
+  id: string; subject: string; mailbox: string; fromEmail: string; fromName: string;
+  lastAt: string | null; snippet: string; newestMessageId: string | null; assignedToMe: boolean;
+}
+
+type WaitingRow = {
+  id: string; subject: string | null; mailbox_address: string | null; counterparty_email: string | null; counterparty_name: string | null;
+  last_message_at: string | null; last_snippet: string | null; assigned_to_user_id: number | null; newest_message_id: string | null;
+};
+
+/** A waiting-thread row in the shape above (pure, tested). The snippet is capped at 240 characters. */
+export function waitingThread(r: WaitingRow, me: number): WaitingThread {
+  return {
+    id: String(r.id), subject: r.subject?.trim() || "(no subject)", mailbox: (r.mailbox_address ?? "").toLowerCase(),
+    fromEmail: (r.counterparty_email ?? "").toLowerCase(), fromName: r.counterparty_name?.trim() ?? "",
+    lastAt: r.last_message_at ?? null, snippet: (r.last_snippet ?? "").replace(/\s+/g, " ").trim().slice(0, 240),
+    newestMessageId: r.newest_message_id ?? null, assignedToMe: r.assigned_to_user_id === me,
+  };
+}
+
 const app = new Hono<{ Bindings: ContsEnv; Variables: Vars }>();
 
 app.post("/", caller, companyContext as unknown as MiddlewareHandler<{ Bindings: ContsEnv; Variables: Vars }>, async (c) => {
   const me = c.get("mailWaitingUserId");
   // The same count as GET /api/mail-center/waiting-count (routes/mail-reply-guard.ts).
-  const row = await c.env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM email_threads t
-      WHERE t.status = 'open' AND t.trashed_at IS NULL AND t.last_direction = 'inbound'${activeCompanySql(c, "t.company_id")}
+  const where = `t.status = 'open' AND t.trashed_at IS NULL AND t.last_direction = 'inbound'${activeCompanySql(c, "t.company_id")}
         AND (t.assigned_to_user_id = ?
              OR (t.assigned_to_user_id IS NULL AND lower(t.mailbox_address) IN (
                  SELECT lower(a.address) FROM email_addresses a
-                  WHERE a.assigned_user_id = ? AND a.active = 1${activeCompanySql(c, "a.company_id")})))`,
-  )
+                  WHERE a.assigned_user_id = ? AND a.active = 1${activeCompanySql(c, "a.company_id")})))`;
+  const row = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM email_threads t WHERE ${where}`)
     .bind(me, me)
     .first<{ n: number | string }>();
   c.header("Cache-Control", "no-store");
-  return c.json({ count: Number(row?.n ?? 0), opened: true });
+  const count = Number(row?.n ?? 0);
+  // `?list=1` (AI Connector round 4b): also the threads themselves, longest waiting first, the same ones counted. Still a
+  // read: nothing is marked read, assigned or written.
+  if (c.req.query("list") !== "1" || count === 0) return c.json({ count, opened: true, ...(c.req.query("list") === "1" ? { threads: [] } : {}) });
+  const rows = await c.env.DB.prepare(
+    `SELECT t.id, t.subject, t.mailbox_address, t.counterparty_email, t.counterparty_name, t.last_message_at, t.last_snippet,
+            t.assigned_to_user_id,
+            (SELECT m.id FROM email_messages m WHERE m.thread_id = t.id ORDER BY m.created_at DESC LIMIT 1) AS newest_message_id
+       FROM email_threads t WHERE ${where}
+      ORDER BY t.last_message_at ASC LIMIT ${WAITING_LIST_LIMIT}`,
+  )
+    .bind(me, me)
+    .all<WaitingRow>();
+  return c.json({ count, opened: true, threads: rows.results.map((r) => waitingThread(r, me)) });
 });
 
 export default app;

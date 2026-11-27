@@ -1,0 +1,53 @@
+# One-off (owner, 27 Nov 2026): Jin Ni's SOs are brought to her Google-sheet quotations, and the ASTRUM SOs missing from
+# the system are created (engine/backend/scripts/so-jinni-update.mts, docs/so-import/jinni-quotes-2026-11-27.json). The production
+# database is reachable only through the PROD_DB_URL secret. Manual only. "dry-run" makes every change inside a
+# transaction, prints it and rolls it back; "apply" also needs the production project ref typed into confirm_ref.
+# Safe to run again: an SO that already matches its quotation is skipped. Delete this file once the update is done.
+name: Jin Ni SO update (one-off)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: dry-run or apply
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, apply]
+      confirm_ref:
+        description: production project ref, required for apply
+        required: false
+        default: ''
+      only:
+        description: one project name only (optional)
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency: so-jinni-update
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: engine/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Run the update
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DB_URL }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_REF: ${{ inputs.confirm_ref }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          set --
+          if [ -n "$ONLY" ]; then set -- "--only=$ONLY"; fi
+          if [ "$MODE" = "apply" ]; then
+            npx tsx scripts/so-jinni-update.mts --confirm-ref="$CONFIRM_REF" "$@"
+          else
+            npx tsx scripts/so-jinni-update.mts --dry-run "$@"
+          fi

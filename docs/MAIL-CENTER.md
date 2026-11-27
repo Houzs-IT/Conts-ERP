@@ -120,3 +120,11 @@ All additive and idempotent (`if not exists`); new tables owned by `scm_engine` 
   `GET /api/supply-chain/mail-waiting` (Mail access only; engine `POST /api/conts-mail-waiting` with an `aud:
   'mail-waiting'` statement, read-only: no account, session or mailbox is made; `count: null` = not opened yet),
   which the AI Connector's daily brief uses. The menu does not call it (it would sign on to the engine every minute).
+- **AI Connector replies (round 4b, 27 Nov 2026).** `GET /api/supply-chain/mail-waiting?list=1` (engine
+  `POST /api/conts-mail-waiting?list=1`, still read-only) also returns the waiting threads themselves (at most 10, longest
+  waiting first: subject, mailbox, from, last snippet, newest message id). `propose_mail_reply` answers only those, and
+  its confirmation signs on (`engine-session`) and calls Mail Center's own `POST /threads/:id/reply` with
+  `{ text, afterMessageId }`: never `force`, so the reply guard refuses when a colleague replied after the person saw the
+  email. Someone whose Mail Center was never opened is told to open it first; the connector never signs them on, so it
+  never makes their mailbox. Behind its own switch on System > AI Connector (default off) and migration 0396.
+  `functions/_lib/mcpWrite.ts`.

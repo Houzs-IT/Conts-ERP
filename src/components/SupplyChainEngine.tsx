@@ -4,7 +4,7 @@ import { RowsSkeleton } from './Loading';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { findNav } from '../lib/navigation';
-import { menuPathFor } from '../lib/scmEngine';
+import { engineAddress, menuPathFor } from '../lib/scmEngine';
 import { isResume, lastEnginePath, rememberEnginePath } from '../lib/enginePlaces';
 import { useSession } from '../lib/session';
 import { color } from '../theme';
@@ -66,19 +66,24 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   const frameLoaded = useRef(false);
   const site = useRef('');
   const location = useLocation();
+  // A record named in the address (?engine=) always wins over the one this tab remembers.
+  const isDeepLink = useRef(false);
+  isDeepLink.current = new URLSearchParams(location.search).has('engine');
   // Only for the load it was saved for: any later menu click or link goes where it says.
-  const restored = useRef(lastEnginePath(location.pathname));
+  const restored = useRef(isDeepLink.current ? null : lastEnginePath(location.pathname));
   const restoredFor = useRef(location.key);
   // A page tab goes back to the record its menu was left on; a menu click or a link opens what it names.
   if (location.key !== restoredFor.current) {
     restoredFor.current = location.key;
-    restored.current = isResume(location.state) ? lastEnginePath(location.pathname) : null;
+    restored.current = isResume(location.state) && !isDeepLink.current ? lastEnginePath(location.pathname) : null;
   }
   const wanted = useRef(enginePath);
   wanted.current = restored.current ?? enginePath;
   const navigate = useNavigate();
   const here = useRef(location.pathname);
   here.current = location.pathname;
+  const hereAddress = useRef(location.pathname + location.search);
+  hereAddress.current = location.pathname + location.search;
   // The menu address the frame moved to by itself: following it must not steer the frame back to the list.
   const followed = useRef<string | null>(null);
   const isActive = useRef(active);
@@ -132,9 +137,10 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   // watched too: an address typed or changed in the bar twice in a row keeps the same key ("default").
   useEffect(() => {
     if (!active) return;
-    if (followed.current === location.pathname) { followed.current = null; return; }
+    // Steering to the screen the frame is already on would reset its phone screens (engine conts/embed.ts).
+    if (followed.current === location.pathname + location.search) { followed.current = null; return; }
     steer();
-  }, [location.key, location.pathname, src, active]);
+  }, [location.key, location.pathname, location.search, src, active]);
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
@@ -142,19 +148,20 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
       if (e.data?.type === 'conts:ready') {
         frameLoaded.current = true;
         // The frame's own Refresh reloads it alone: it goes back to the record it was on, not to this menu's list.
-        const back = lastEnginePath(here.current);
+        const back = isDeepLink.current ? null : lastEnginePath(here.current);
         if (back) wanted.current = back;
         steer();
         tellTheme();
       }
       if (e.data?.type === 'conts:shown') setStarted(true);
-      // A link inside the frame moved it: the address and the menu follow, without a new history entry.
+      // A link inside the frame moved it: the address (with the open record) and the menu follow, without a new history entry.
       if (e.data?.type === 'conts:location' && typeof e.data.path === 'string' && isActive.current) {
         // A screen in both sidebars (Finance) resolves to the one open now, so the sidebar does not jump.
-        const to = menuPathFor(e.data.path, here.current);
-        rememberEnginePath(to ?? here.current, e.data.path);
+        const menu = menuPathFor(e.data.path, here.current) ?? here.current;
+        rememberEnginePath(menu, e.data.path);
+        const address = engineAddress(menu, e.data.path);
         // The frame can say so twice before the address changes: a second navigate would steer it back to the list.
-        if (to && to !== here.current && to !== followed.current) { followed.current = to; navigate(to, { replace: true }); }
+        if (address !== hereAddress.current && address !== followed.current) { followed.current = address; navigate(address, { replace: true }); }
       }
     };
     window.addEventListener('message', onMessage);

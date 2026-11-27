@@ -8,6 +8,7 @@ import { StatRow, StatTile } from '../components/Metric';
 import { Segmented } from '../components/Metric';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
+import { AiBriefSettings } from './AiBriefSettings';
 import { dateTimeShort, plural } from '../lib/format';
 
 type MyApp = { tokenId: string; app: string; connectedAt: string | null; lastUsedAt: string | null };
@@ -16,6 +17,7 @@ type Person = { userId: string; name: string; position: string };
 type Overview = {
   connectorUrl: string;
   actions?: { ready: boolean; enabled: boolean };
+  writeActions?: { ready: boolean; list: { key: string; label: string; enabled: boolean }[] };
   limits?: { perMinute: number; perDay: number };
   tools?: { name: string; title: string }[];
   stats: { connectedPeople: number; callsToday: number; refusedToday: number; waiting: number };
@@ -187,6 +189,28 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
         {!ov.actions?.ready && <Empty>Not available yet: its database update (migration 0380) has not been applied.</Empty>}
       </Section>
 
+      <Section title="AI write actions" sub="Each is off until you turn it on, and works only while Allow AI actions is on. The person always sees the exact change first and confirms it in the chat; their own ERP access decides whether it goes through, and it is logged in Recent lookups and in the record's history. Never payouts, invoices, statements, payments, stock or deletes.">
+        {!ov.writeActions?.ready ? <Empty>Not available yet: its database update (migration 0396) has not been applied.</Empty> : (
+          <div>
+            {ov.writeActions.list.map(w => (
+              <div key={w.key} className={ROW}>
+                <div className="min-w-0">
+                  <div className="text-copy font-medium text-ink">{w.label}</div>
+                  <div className="text-meta text-muted-ink">
+                    {w.key === 'mail_reply'
+                      ? "Replies to an email waiting for the person in Mail Center, from that email's mailbox. Not sent if a colleague replies first. Only for people whose Mail Center is already open."
+                      : "Adds one dated line with the person's name to a reservation's staff notes or a cleaning job's notes for the cleaner."}
+                    {w.enabled && !ov.actions?.enabled ? ' On, but Allow AI actions is off, so it does nothing yet.' : ''}
+                  </div>
+                </div>
+                <Switch label={w.label} checked={w.enabled} disabled={blocked}
+                  onChange={next => void act(`write-${w.key}`, () => api.post('/ai-connector/admin/settings', { action: w.key, enabled: next }), next ? `${w.label}: on` : `${w.label}: off`)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
       <Section title="Waiting for approval" sub="Staff who pressed Request access.">
         {ov.requests.length === 0 ? <Empty>No one is waiting.</Empty> : (
           <div>
@@ -332,7 +356,7 @@ export default function AiConnectorPage() {
 
   return (
     <div className="flex flex-col gap-5 max-w-[1080px]">
-      <PageHeader title="AI Connector" sub="Ask Claude or ChatGPT about the ERP, only what your own login can see. Read only, unless management allows AI actions (a meeting or an email, each confirmed by you first)."
+      <PageHeader title="AI Connector" sub="Ask Claude or ChatGPT about the ERP, only what your own login can see. Read only, unless management allows AI actions (a meeting, an email, a Mail Center reply or a note, each confirmed by you first)."
         actions={<Button live onClick={reload}>Refresh</Button>} />
 
       {error && <div role="alert" className="rounded-control border border-solid border-danger-line bg-danger-bg text-danger text-copy p-3">{error}</div>}
@@ -366,6 +390,8 @@ export default function AiConnectorPage() {
       )}
 
       {me?.allowed && <HowTo url={me.connectorUrl} />}
+
+      {me?.allowed && <AiBriefSettings key={tick} />}
     </div>
   );
 }

@@ -116,7 +116,8 @@ async function briefTool(c: ToolCtx): Promise<Outcome> {
     // The Maintenance screen's first view: open jobs only, its cheaper path.
     maintenance: c.read('/api/maintenance/issues', { view: 'open', limit: 200 }),
     // Mail Center's waiting-for-my-reply count, read server to server from the engine (round 4, C1).
-    mail: c.read('/api/supply-chain/mail-waiting'),
+    // list=1 (round 4b): the waiting threads too, each with its threadId for propose_mail_reply.
+    mail: c.read('/api/supply-chain/mail-waiting', { list: '1' }),
   };
   const keys = Object.keys(reads) as (keyof typeof reads)[];
   const got = await Promise.all(keys.map(k => reads[k]));

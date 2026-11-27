@@ -60,15 +60,16 @@ export function recallVerified<T>(token: string, now = Date.now()): T | null {
  * without the secret. */
 export const MCP_ACTION_HEADER = 'x-conts-mcp-action';
 const PERMIT_TTL_MS = 60_000;
-const permits = new Map<string, { userId: string; method: string; path: string; exp: number }>();
+const permits = new Map<string, { userId: string; method: string; path: string; exp: number; fence?: string }>();
 
-export function grantActionPermit(actionId: string, p: { userId: string; method: string; path: string }, now = Date.now()): void {
+/** `fence` (round 4b): the write kind whose body fence the middleware applies (mcpActions.ts BODY_FENCE). */
+export function grantActionPermit(actionId: string, p: { userId: string; method: string; path: string; fence?: string }, now = Date.now()): void {
   if (permits.size > 200) for (const [k, v] of permits) if (v.exp <= now) permits.delete(k);
   permits.set(actionId, { ...p, method: p.method.toUpperCase(), exp: now + PERMIT_TTL_MS });
 }
 
 /** The permit for an action id, removed as it is taken: a second write with the same id finds none. */
-export function takeActionPermit(actionId: string): { userId: string; method: string; path: string; exp: number } | null {
+export function takeActionPermit(actionId: string): { userId: string; method: string; path: string; exp: number; fence?: string } | null {
   const p = permits.get(actionId) ?? null;
   permits.delete(actionId);
   return p;

@@ -120,6 +120,9 @@ const PUBLIC = new Set([
   'GET /api/mcp', 'POST /api/mcp', 'POST /api/mcp/oauth/register', 'GET /api/mcp/oauth/authorize', 'POST /api/mcp/oauth/token',
   // A PDF the connector made (get_pdf), opened from the AI app's chat: the signed, 15-minute link is the credential.
   'GET /api/mcp/export',
+  // AI Connector round 4d: the cron worker's 15-minute tick (Conts's IT Hub key is the credential, checked by the handler)
+  // and the unsubscribe link in every brief / alert email (its random token is the credential; GET only shows a button).
+  'POST /api/mcp/proactive/tick', 'GET /api/mcp/proactive/unsubscribe', 'POST /api/mcp/proactive/unsubscribe',
 ]);
 
 /** What someone still on a temporary password (an invite, or management's Reset password) can reach: replacing it,
@@ -136,7 +139,8 @@ const SETUP_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(logout|chan
  * run exactly as for their browser. A token without the secret (copied out of an AI app and sent here directly) is
  * refused, and so is any write, with ONE exception (owner, 26 Nov 2026, "confirm first, then do"): the write
  * confirm_action is performing right now, for an action the person confirmed in the chat, on a method + path in
- * ACTION_ALLOWLIST (booking a meeting, the Mail Center sign-on), with the single-use permit confirm_action granted in
+ * ACTION_ALLOWLIST (booking a meeting, the Mail Center sign-on, round 4b's reservation / cleaning-job notes, whose body
+ * is fenced to the note field), with the single-use permit confirm_action granted in
  * this same request (functions/_lib/mcpActions.ts connectorDecision, mcpInner.ts). Null: not a connector request.
  */
 async function connectorRequest(request: Request, env: Env): Promise<Request | Response | null> {
@@ -155,7 +159,9 @@ async function connectorRequest(request: Request, env: Env): Promise<Request | R
   if (!who) return fail('UNAUTHENTICATED', 'This AI Connector sign-in has ended or was switched off. Connect the AI app again.', 401);
   // A write: the permit is taken (single use) whatever the outcome, then must match this person, method and path.
   const permit = write ? takeActionPermit(actionId) : null;
-  if (connectorDecision({ method: request.method, path, innerOk, actionId, permit, userId: who.user.id, now: Date.now() }) === 'refuse') return refused();
+  // A fenced write (round 4b notes): its body may carry only the keys the ERP screen sends for that action.
+  const body = permit?.fence ? await request.clone().json().catch(() => undefined) : undefined;
+  if (connectorDecision({ method: request.method, path, innerOk, actionId, permit, userId: who.user.id, now: Date.now(), body }) === 'refuse') return refused();
   // Five minutes is plenty for one read; the cookie never leaves this isolate.
   const cookieValue = await signSession(env.SESSION_SECRET, { userId: who.user.id, email: who.user.email, role: who.user.role, fullName: who.user.fullName }, 5 / 60, 1);
   const headers = new Headers(request.headers);

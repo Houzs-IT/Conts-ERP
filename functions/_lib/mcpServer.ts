@@ -29,6 +29,10 @@
  * Rate limit per person on tools/call only: 30 a minute, 600 a day, counted from mcp_calls (limitVerdict); over it the
  * AI app gets a normal tool result with isError, never a 500. The admin leak check reads through readEndpoint, never
  * callTool, so it is not counted or limited.
+ * Round 4b (owner, 26 Nov 2026; mcpWrite.ts): propose_mail_reply and propose_note, confirmed with confirm_action, each
+ * behind its own switch (default off) and the main one. Round 4c (mcpVisibility.ts): tools/list and prompts/list show
+ * only what the person can use (the session middleware's own module gate, accessFor); quick answers carry
+ * structuredContent + outputSchema, an ERP link and money in RM; heavy summaries are reused for 60 s per person.
  */
 import { type Env } from './db';
 import { MCP_INNER_HEADER, mcpInnerSecret } from './mcpInner';
@@ -37,13 +41,16 @@ import { logCall, type McpIdentity } from './mcpStore';
 import { dispatchGet } from './mcpDispatch';
 import { apiRoutes } from './apiRoutes.generated';
 import { originOf } from './mcpDiscovery';
-import { ACTION_TOOLS, runActionTool } from './mcpActionTools';
-import { actionsEnabled, mcpActionsReady, recentCallCounts } from './mcpStore';
+import { ACTION_TOOLS, gateFor, runActionTool } from './mcpActionTools';
+import { WRITE_TOOLS } from './mcpWrite';
+import { actionsEnabled, mcpActionsReady, recentCallCounts, writeKindsReady, writeSwitches } from './mcpStore';
+import { scmEngineConfigured } from './scmEngine';
+import { AnswerCache, QUICK_OUTPUT_SCHEMA, STRUCTURED_TOOLS, cacheKey, noAccessText, parseQuickText, readToolAllowed, withLinksAndRm } from './mcpVisibility';
 import { MORE_TOOLS, runMoreTool } from './mcpMoreTools';
 import { CONTS4_TOOLS, runConts4Tool } from './mcpConts4Tools';
 import { RATE_LIMITED_STATUS, limitVerdict, todayStays } from './mcpMore';
 import {
-  FETCH_SPECS, PROMPTS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
+  FETCH_SPECS, PROMPTS, PROMPT_TOOLS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
   searchResults, summariseReservations, summariseBusiness, summariseToday, validRange,
 } from './mcpQuick';
 
@@ -52,17 +59,17 @@ export { originOf };
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 /** erp_get's cap. Was 60k; quick answers and `fields` make most replies far smaller. */
 export const MAX_RESULT_CHARS = 30_000;
-const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.4.0' };
+const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.5.0' };
 
 /** The GET routes as list_modules and list_endpoints show them. */
 export const mcpRouteInfo = (): RouteInfo[] => apiRoutes().map(r => ({ method: r.method, path: r.path }));
 
-type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
+type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean; structuredContent?: Record<string, unknown> };
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
 
 const INSTRUCTIONS = `You are connected to The Conts ERP as the signed-in staff member. The Conts manages short-stay rental units for their owners: units and buildings, owners and their contracts, reservations from Airbnb, Booking.com and Agoda, guests, cleaning and maintenance jobs, owner statements and payouts, expenses and utility bills, pricing and reviews, HR for field staff; plus the Dream Crafter supply chain screens (sales orders, purchasing, stock, transport).
 Everything is limited to what this person may see and do in the ERP. Never guess figures a call did not return.
-READ-ONLY, with ONE exception, and only when management switched it on: propose_meeting / propose_email prepare a meeting or an email and return a summary and a confirmationId. Show the person that summary word for word and ask them to confirm; call confirm_action ONLY after they explicitly say yes in this conversation. Never confirm on your own, never for anything they did not ask for. Nothing else can be changed: no orders, money, stock, approvals or deletes.
+READ-ONLY, except the confirm-first actions management switched on (only those appear in your tool list): propose_meeting / propose_email prepare a meeting or an email; propose_mail_reply prepares a reply to a Mail Center email waiting for the person (thread_id from daily_brief); propose_note prepares a note on a reservation or a cleaning job. Each returns a summary and a confirmationId and changes NOTHING. Show the person that summary word for word and ask them to confirm; call confirm_action ONLY after they explicitly say yes in this conversation; if they say no or want changes, call cancel_action (and propose again). Never confirm on your own, never for anything they did not ask for. Nothing else can be changed: no orders, money, payouts, invoices, statements, stock, approvals or deletes.
 Document chains: document_flow {number_or_id} (a reservation's invoice, receipts, payments, owner and owner statement). PDFs: get_pdf {type, id}.
 ANSWER FAST: use a quick answer first. It is one call and already summarised:
 - Occupancy, reservation income, average nightly price, earnings per available night, income per unit, owner payout estimate, split by channel, against last month: business_summary {month: "YYYY-MM"} (default this month).
@@ -128,6 +135,7 @@ const TOOLS = [
   ...MORE_TOOLS,
   ...CONTS4_TOOLS,
   ...ACTION_TOOLS,
+  ...WRITE_TOOLS,
   {
     name: 'search', title: 'Search the ERP',
     description: 'Find reservations (by reference, guest name or phone), guests, units, buildings, owners, maintenance and cleaning jobs, expenses and utility bills, and supply chain records, by number or name. Returns ids to open with fetch.',
@@ -209,6 +217,61 @@ function quickResult(summary: () => unknown, needed: ReadValue[]): { result: Too
 /** Tool calls already made in this request (a JSON-RPC batch), per identity object (one per request). */
 const calledInRequest = new WeakMap<McpIdentity, number>();
 
+/* ---------- round 4c: who may use which tool (P1), the answer cache (P4), structured output + links (P3, P5) ---------- */
+
+const ACTION_NAMES = new Set(['propose_meeting', 'propose_email', 'confirm_action', 'cancel_action', 'propose_mail_reply', 'propose_note']);
+
+/** Which tools this person can use: read tools by the session middleware's own module gate on the endpoints they read
+ *  (mcpVisibility.ts TOOL_NEEDS), action tools by their switches and the gate on the write they make. Memoised per
+ *  call; nothing is read for a tool that needs no check. */
+async function toolAccess(env: Env, id: McpIdentity): Promise<(name: string) => Promise<boolean>> {
+  const gate = gateFor(env, id.user.id);
+  const memo = new Map<string, Promise<boolean>>();
+  const can = (method: string, path: string) => {
+    const k = `${method} ${path}`;
+    let v = memo.get(k);
+    if (!v) memo.set(k, (v = gate(method, path)));
+    return v;
+  };
+  // The switches are read only when an action tool is asked about (a read tool's call never reads them).
+  let state: Promise<{ main: boolean; writeReady: boolean; sw: { mail_reply: boolean; note: boolean } }> | null = null;
+  const actions = () => (state ??= (async () => {
+    const main = (await mcpActionsReady(env)) && (await actionsEnabled(env));
+    const writeReady = main && (await writeKindsReady(env));
+    return { main, writeReady, sw: writeReady ? await writeSwitches(env) : { mail_reply: false, note: false } };
+  })());
+  return async (name: string) => {
+    if (!ACTION_NAMES.has(name)) return readToolAllowed(name, p => can('GET', p));
+    const { main, writeReady, sw } = await actions();
+    if (name === 'propose_meeting' || name === 'confirm_action' || name === 'cancel_action') return main;
+    if (name === 'propose_email') return main && scmEngineConfigured(env) && (await can('POST', '/api/supply-chain/engine-session'));
+    if (name === 'propose_mail_reply') {
+      // The Mail Center area is checked by its handlers, not by path (GET /api/supply-chain/mail-waiting: levels.mail).
+      return writeReady && sw.mail_reply && scmEngineConfigured(env) && (await gate.level('mail')) !== 'none' && (await can('POST', '/api/supply-chain/engine-session'));
+    }
+    return writeReady && sw.note && ((await can('PATCH', '/api/reservations/x/details')) || (await can('PATCH', '/api/housekeeping/tasks/x')));
+  };
+}
+
+/** tools/list: only the tools this person can use; the quick answers with their open outputSchema. */
+async function visibleTools(env: Env, id: McpIdentity): Promise<Record<string, unknown>[]> {
+  const ok = await toolAccess(env, id);
+  const flags = await Promise.all(TOOLS.map(t => ok(t.name)));
+  return TOOLS.filter((_, i) => flags[i]).map(t => (STRUCTURED_TOOLS.has(t.name) ? { ...t, outputSchema: QUICK_OUTPUT_SCHEMA } : t));
+}
+
+/** Successful heavy summaries, reused for 60 s per person + role + tool + arguments (mcpVisibility.ts). */
+const answerCache = new AnswerCache<{ result: ToolResult; target: string; note: string }>();
+
+/** A quick answer also as structuredContent, with its ERP link and money in RM; the text carries the same JSON. */
+function structured(name: string, r: ToolResult, origin: string): ToolResult {
+  const raw = r.content[0]?.text ?? '';
+  const v = parseQuickText(raw);
+  if (!v) return { ...r, structuredContent: { text: raw } };
+  const value = withLinksAndRm(name, v, origin);
+  return { ...r, content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
+}
+
 async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, id: McpIdentity, token: string, name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const t0 = Date.now();
   let status = 200, note = '', target = '';
@@ -221,16 +284,31 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
     const base = id.recent ?? await recentCallCounts(env, id.user.id).catch(() => ({ minute: 0, day: 0 }));
     const over = limitVerdict({ minute: base.minute + (calledInRequest.get(id) ?? 0), day: base.day + (calledInRequest.get(id) ?? 0) });
     calledInRequest.set(id, (calledInRequest.get(id) ?? 0) + 1);
-    const acted = over ? null : (await runMoreTool(name, args, ctx)) ?? (await runConts4Tool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
+    // Round 4c P1: a read tool hidden from this person's tools/list answers "no access" when called directly (the same
+    // gate the list uses). Action tools keep their own plain refusals (switched off, the ERP's permission).
+    const hidden = !over && !ACTION_NAMES.has(name) && TOOLS.some(t => t.name === name) && !(await (await toolAccess(env, id))(name));
+    const key = over || hidden ? null : cacheKey(id.user.id, id.user.role, name, args);
+    const cached = key ? answerCache.get(key) : null;
+    const acted = over || hidden || cached ? null : (await runMoreTool(name, args, ctx)) ?? (await runConts4Tool(name, args, ctx)) ?? (await runActionTool(name, args, ctx));
     if (over) {
       result = text(over, true);
       status = RATE_LIMITED_STATUS;
       note = over.startsWith('Daily') ? 'daily limit' : 'rate limited';
+    } else if (hidden) {
+      result = text(noAccessText(name), true);
+      status = 403;
+      note = 'no access';
+      target = name;
+    } else if (cached) {
+      ({ result, target } = cached);
+      note = cached.note ? `cached,${cached.note}` : 'cached';
     } else if (acted) {
       ({ result, status, note, target } = acted);
     } else if (name === 'whoami') {
       const actions = (await mcpActionsReady(env)) && (await actionsEnabled(env));
-      result = text(JSON.stringify({ name: id.user.fullName, email: id.user.email, readOnly: !actions, actions: actions ? 'meetings and email, each confirmed by you first' : 'off' }));
+      const sw = actions && (await writeKindsReady(env)) ? await writeSwitches(env) : null;
+      const on = ['meetings', 'email', ...(sw?.mail_reply ? ['Mail Center replies'] : []), ...(sw?.note ? ['notes on reservations and cleaning jobs'] : [])];
+      result = text(JSON.stringify({ name: id.user.fullName, email: id.user.email, readOnly: !actions, actions: actions ? `${on.join(', ')}, each confirmed by you first, only where your ERP access allows` : 'off' }));
     } else if (name === 'list_modules') {
       result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Try a quick answer first (business_summary, reservations_summary, today_summary, occupancy_summary, arrears_summary, owner_statement_summary, attendance_today, payables_summary, daily_brief, unit_overview, leases_expiring, revenue_summary, housekeeping_today, booking_pace, channel_mix, cancellations_summary, reviews_summary, vacancy_summary, company_report, data_gaps, search). Else call list_endpoints with a prefix, then erp_get with "fields". A module your account cannot open answers "not available to your role".' }));
     } else if (name === 'list_endpoints') {
@@ -316,6 +394,9 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
     result = text('That lookup failed on the ERP side. Try again, or narrow the question.', true);
     status = 500;
   }
+  const ckey = cacheKey(id.user.id, id.user.role, name, args);
+  if (ckey && !note.startsWith('cached') && !result.isError && status === 200) answerCache.set(ckey, { result, target, note });
+  if (STRUCTURED_TOOLS.has(name) && !result.isError) result = structured(name, result, originOf(request));
   waitUntil(logCall(env, { tokenId: id.tokenId, userId: id.user.id, clientId: id.clientId, tool: name, target, status, ok: !result.isError, note, ms: Date.now() - t0 }));
   return result;
 }
@@ -333,10 +414,19 @@ export async function handleRpc(request: Request, env: Env, waitUntil: (p: Promi
       return reply({ protocolVersion, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
     }
     case 'ping': return reply({});
-    case 'tools/list': return reply({ tools: TOOLS });
+    // Round 4c P1: only the tools this person can use.
+    case 'tools/list': return reply({ tools: await visibleTools(env, id) });
     case 'tools/call': return reply(await callTool(request, env, waitUntil, id, token, String(m.params?.name ?? ''), (m.params?.arguments as Record<string, unknown> | undefined) ?? {}));
     case 'resources/list': return reply({ resources: [] });
-    case 'prompts/list': return reply({ prompts: PROMPTS });
+    case 'prompts/list': {
+      // Round 4c P2: a prompt shows when the person can use at least one of its tools.
+      const ok = await toolAccess(env, id);
+      const shown = await Promise.all(PROMPTS.map(async p => {
+        for (const t of PROMPT_TOOLS[p.name] ?? []) if (await ok(t)) return true;
+        return !(p.name in PROMPT_TOOLS);
+      }));
+      return reply({ prompts: PROMPTS.filter((_, i) => shown[i]) });
+    }
     case 'prompts/get': {
       const pname = String(m.params?.name ?? '');
       const ptext = promptText(pname, (m.params?.arguments as Record<string, unknown> | undefined) ?? {});
@@ -347,4 +437,23 @@ export async function handleRpc(request: Request, env: Env, waitUntil: (p: Promi
       if (m.id === undefined || m.id === null || (m.method ?? '').startsWith('notifications/')) return null;
       return { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: `Method not found: ${m.method ?? ''}` } };
   }
+}
+
+/* ---------- round 4d: the morning brief and urgent alerts (mcpProactiveRun.ts) ---------- */
+
+/** A tool call AS the person behind `token` (a real connector token issued for them, client mcpc_morning_brief), through
+ *  the same callTool a question from Claude takes: the tool gate, the in-process reads as the person, the redaction and
+ *  the mcp_calls log row. The brief's calls are not counted toward the person's rate limit (RATE_SQL). */
+export function runToolAs(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, id: McpIdentity, token: string, name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+  return callTool(request, env, waitUntil, id, token, name, args);
+}
+
+export type PersonRead = { ok: true; value: unknown } | { ok: false; status: number; message: string };
+
+/** One read AS the person, through the same readValue every tool uses (path gate, session middleware, the handler's own
+ *  checks, credential fields stripped). Not a tool call, so nothing is written to mcp_calls: the alert check runs every
+ *  15 minutes and only the emails it sends are logged. */
+export async function readAsPerson(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, token: string, path: string, query?: Record<string, unknown>): Promise<PersonRead> {
+  const r = await readValue(request, env, waitUntil, token, path, query);
+  return r.ok ? { ok: true, value: r.value } : { ok: false, status: r.status, message: r.message };
 }

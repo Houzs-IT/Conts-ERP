@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 // HOUZS VENDOR — Link lives on 'react-router-dom' in react-router v6 (the
 // version Houzs ships). Only the import specifier changed.
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Save, Trash2, X, ArrowRightLeft, Plus } from 'lucide-react';
+import { Save, Trash2, X, ArrowRightLeft, Plus, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { ItemPickerDialog, type ItemPickerRow } from '../../vendor/scm/components/ItemPickerDialog';
 import { Button } from '@2990s/design-system';
@@ -69,6 +69,8 @@ import { PageHeader } from '../../components/Layout';
 import { computeTotalHeight, isTotalHeightCategory, isTotalHeightPart } from '../../vendor/shared/total-height';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { PurchaseOrderHeaderCard, type PoHeaderDateKey } from './PurchaseOrderHeaderCard';
+import { PurchaseOrderReceiptPanel } from './PurchaseOrderReceiptPanel';
+import layout from './PurchaseOrderLayout.module.css';
 import { showsVariantEditor } from '../../vendor/scm/lib/variant-editor-groups';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
@@ -185,6 +187,7 @@ export const PurchaseOrderNew = () => {
 
   // ── Items state ─────────────────────────────────────────────────────
   const [lines, setLines] = useState<DraftLine[]>([]);
+  const [collapsedRids, setCollapsedRids] = useState<ReadonlySet<string>>(() => new Set());
 
   /* Commander 2026-05-29 (BUG 2) — in-app result dialog. Used to surface the
      "一张 PO 只能一个 supplier" guard when From-SO picks belong to a different
@@ -846,6 +849,24 @@ export const PurchaseOrderNew = () => {
     ),
     [lines],
   );
+  const receiptTotals = useMemo(() => {
+    const grossSen = lines.reduce((sum, line) => sum + line.qty * line.unitPriceSen, 0);
+    return {
+      totalUnits: lines.reduce((sum, line) => sum + line.qty, 0),
+      grossSen,
+      discountSen: grossSen - subtotalSen,
+      netSen: subtotalSen,
+    };
+  }, [lines, subtotalSen]);
+  const areAllLinesCollapsed = lines.length > 0 && lines.every((line) => collapsedRids.has(line.rid));
+  const toggleLineCollapsed = (rid: string): void =>
+    setCollapsedRids((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(rid)) next.add(rid);
+      return next;
+    });
+  const toggleAllLinesCollapsed = (): void =>
+    setCollapsedRids(areAllLinesCollapsed ? new Set() : new Set(lines.map((line) => line.rid)));
 
   // Draft/Confirmed — asDraft saves the PO as DRAFT (review queue; no MRP
   // supply, no SO-quota lock) instead of a live SUBMITTED PO. Omitted/false
@@ -995,7 +1016,7 @@ export const PurchaseOrderNew = () => {
   };
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4">
+    <div className={`${layout.page} mx-auto w-full max-w-7xl space-y-4`}>
       <PageHeader back
         eyebrow="Procurement"
         title="New purchase order"
@@ -1031,6 +1052,8 @@ export const PurchaseOrderNew = () => {
         }
       />
 
+      <div className={layout.columns}>
+      <div className="min-w-0 space-y-4">
       <PurchaseOrderHeaderCard
         supplierId={supplierId}
         creditorOptions={creditorOptions}
@@ -1112,18 +1135,26 @@ export const PurchaseOrderNew = () => {
       {/* Items card */}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Items ({lines.length})</h2>
+          <h2 className={styles.cardTitle} style={{ whiteSpace: 'nowrap' }}>Items ({lines.length})</h2>
           {/* "Pick any item from 0 SKUs" was printed while the catalogue was still loading or had failed (owner,
               19 Nov 2026), which reads as an empty catalogue. */}
-          {allSkus.isError ? (
-            <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-              The item list couldn't be loaded — refresh the page to try again.
-            </span>
-          ) : (
-            <Button variant="secondary" size="md" onClick={() => setItemPicker({ mode: 'add' })} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
-              <Plus {...ICON} /> {allSkus.isLoading ? 'Loading items…' : isSupplierScoped ? 'Add items from supplier' : 'Add items'}
-            </Button>
-          )}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {lines.length > 0 && (
+              <Button variant="ghost" size="md" onClick={toggleAllLinesCollapsed} style={{ minHeight: 44 }}>
+                {areAllLinesCollapsed ? <ChevronsUpDown {...ICON} /> : <ChevronsDownUp {...ICON} />}
+                {areAllLinesCollapsed ? 'Expand all' : 'Collapse all'}
+              </Button>
+            )}
+            {allSkus.isError ? (
+              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+                The item list couldn't be loaded — refresh the page to try again.
+              </span>
+            ) : (
+              <Button variant="secondary" size="md" onClick={() => setItemPicker({ mode: 'add' })} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
+                <Plus {...ICON} /> {allSkus.isLoading ? 'Loading items…' : isSupplierScoped ? 'Add items from supplier' : 'Add items'}
+              </Button>
+            )}
+          </div>
         </div>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {/* PR #129 — Card-per-line layout. Commander 2026-05-26: "其实有很
@@ -1173,6 +1204,63 @@ export const PurchaseOrderNew = () => {
               pickedSpecialCount: 0,
             });
 
+            const removeButton = (
+              <button
+                type="button"
+                onClick={() => dropLine(l.rid)}
+                title="Remove line"
+                aria-label={`Remove line ${idx + 1}`}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--c-festive-b, var(--c-festive-b))',
+                  minWidth: 44,
+                  minHeight: 44,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Trash2 {...ICON} />
+              </button>
+            );
+
+            if (collapsedRids.has(l.rid)) {
+              return (
+                <div
+                  key={l.rid}
+                  className="flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--c-paper)] pl-1"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleLineCollapsed(l.rid)}
+                    aria-expanded={false}
+                    aria-label={`Line ${idx + 1}, ${l.itemCode || 'no item'}. Expand to edit`}
+                    className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3 bg-transparent py-2 pl-2 text-left"
+                  >
+                    <ChevronRight {...SM_ICON} aria-hidden className="shrink-0 text-[color:var(--fg-muted)]" />
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="shrink-0 text-[length:var(--fs-12)] font-bold text-[color:var(--fg-muted)]">#{idx + 1}</span>
+                        <span className="truncate text-[length:var(--fs-13)] font-semibold" style={{ fontFamily: 'var(--font-mono)' }}>
+                          {l.itemCode || 'No item'}
+                        </span>
+                      </span>
+                      <span className="truncate text-[length:var(--fs-12)] text-[color:var(--fg-muted)]">
+                        {l.materialName || 'No description'}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-0.5">
+                      <span className={styles.previewPrice}>{fmtRm(lineTotalSen, currency)}</span>
+                      <span className="text-[length:var(--fs-12)] tabular-nums text-[color:var(--fg-muted)]">Qty {l.qty}</span>
+                    </span>
+                  </button>
+                  {removeButton}
+                </div>
+              );
+            }
+
             return (
               <div
                 key={l.rid}
@@ -1189,15 +1277,23 @@ export const PurchaseOrderNew = () => {
                 {/* Card header — Line N · category badge · line total · remove */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    <span style={{
-                      fontFamily: 'var(--font-button)',
-                      fontSize: 'var(--fs-12)',
-                      fontWeight: 700,
-                      letterSpacing: '0.10em',
-                      color: 'var(--fg-muted)',
-                    }}>
+                    <button
+                      type="button"
+                      onClick={() => toggleLineCollapsed(l.rid)}
+                      aria-expanded
+                      aria-label={`Collapse line ${idx + 1}`}
+                      className="-ml-2 inline-flex min-h-11 cursor-pointer items-center gap-2 bg-transparent px-2"
+                      style={{
+                        fontFamily: 'var(--font-button)',
+                        fontSize: 'var(--fs-12)',
+                        fontWeight: 700,
+                        letterSpacing: '0.10em',
+                        color: 'var(--fg-muted)',
+                      }}
+                    >
+                      <ChevronDown {...SM_ICON} aria-hidden />
                       LINE {idx + 1}
-                    </span>
+                    </button>
                     {l.category && (
                       <span style={{
                         fontFamily: 'var(--font-button)',
@@ -1215,21 +1311,7 @@ export const PurchaseOrderNew = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                     <span className={styles.previewPrice}>{fmtRm(lineTotalSen, currency)}</span>
-                    <button
-                      type="button"
-                      onClick={() => dropLine(l.rid)}
-                      title="Remove line"
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--c-festive-b, var(--c-festive-b))',
-                        padding: 4,
-                        display: 'inline-flex',
-                      }}
-                    >
-                      <Trash2 {...ICON} />
-                    </button>
+                    {removeButton}
                   </div>
                 </div>
 
@@ -1578,6 +1660,26 @@ export const PurchaseOrderNew = () => {
           <AddLineButton variant="block" onClick={addLine} />
         </div>
       </section>
+      </div>
+
+      <PurchaseOrderReceiptPanel
+        meta={{
+          creditorLabel: supplier ? `${supplier.code} · ${supplier.name}` : null,
+          poDate,
+          expectedAt,
+          purchaseLocationLabel: warehouseOptions.find((option) => option.value === purchaseLocationId)?.label ?? null,
+          currency,
+        }}
+        lines={lines.map((line) => ({
+          rid: line.rid,
+          itemCode: line.itemCode,
+          description: line.materialName,
+          qty: line.qty,
+          lineTotalSen: Math.max(0, line.qty * line.unitPriceSen - (line.discountSen ?? 0)),
+        }))}
+        totals={receiptTotals}
+      />
+      </div>
       {itemPicker && (
         <ItemPickerDialog
           mode={itemPicker.mode}
@@ -1591,29 +1693,6 @@ export const PurchaseOrderNew = () => {
           onClose={() => setItemPicker(null)}
         />
       )}
-
-      {/* Totals card aligned right — lg:pr-32 clears the fixed FAB cluster. */}
-      <div className="lg:pr-32" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <section className={styles.card} style={{ maxWidth: 360, width: '100%' }}>
-          <div className={styles.cardBody}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-14)', marginBottom: 'var(--space-2)' }}>
-              <span>Subtotal</span>
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{fmtRm(subtotalSen, currency)}</span>
-            </div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: 'var(--fs-16)',
-              fontWeight: 700,
-              borderTop: '1px solid var(--line)',
-              paddingTop: 'var(--space-2)',
-            }}>
-              <span>Total</span>
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{fmtRm(subtotalSen, currency)}</span>
-            </div>
-          </div>
-        </section>
-      </div>
 
       {/* BUG 2 — one-supplier-per-PO guard surfaced in-app (no window.alert). */}
       {dialog && (

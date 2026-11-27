@@ -143,7 +143,7 @@ test('fetch ids round-trip; anything else is refused; list kinds are picked out 
 });
 
 test('prompts expand to a question; unknown prompt is refused', () => {
-  assert.equal(Q.PROMPTS.length, 4);
+  assert.equal(Q.PROMPTS.length, 9); // round 4c added five role prompts (mcpWrite.test.mjs tests them)
   assert.match(Q.promptText('daily-brief', {}), /daily_brief/);
   assert.match(Q.promptText('monthly_review', { month: '2026-10' }), /2026-10.*business_summary/);
   assert.match(Q.promptText('monthly_review', { month: 'junk' }), /this month/);

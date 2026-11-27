@@ -16,16 +16,22 @@
  * permit is single use and lives 60 seconds (mcpInner.ts). Anything else stays 403.
  */
 
-/** The only writes a connector token can ever make, and only through confirm_action:
+/** The only writes a connector token can ever make, and only through confirm_action (`:ref` = one safe id segment):
  *  - booking a meeting: the Meetings page's own Book (functions/api/meetings/[[path]].ts -> the IT Hub);
  *  - the Mail Center sign-on: the engine session Mail Center opens with (functions/api/supply-chain/engine-session.ts),
- *    used once to send the confirmed email through Mail Center's own Compose (engine /api/mail-center/compose). */
+ *    used once to send the confirmed email through Mail Center's own Compose (engine /api/mail-center/compose), or
+ *    (round 4b) the confirmed reply through Mail Center's own Reply (engine /api/mail-center/threads/:id/reply);
+ *  - round 4b notes: the reservation drawer's "Staff notes" save (PATCH /api/reservations/:id/details, staffNotes only)
+ *    and a cleaning job's "Notes for the cleaner" (PATCH /api/housekeeping/tasks/:id, instructions only). The body a
+ *    permit allows is fenced too (BODY_FENCE): a note can never carry times, state, kind, amount or anything else. */
 export const ACTION_ALLOWLIST: readonly (readonly [string, string])[] = [
   ['POST', '/api/meetings/meetings'],
   ['POST', '/api/supply-chain/engine-session'],
+  ['PATCH', '/api/reservations/:ref/details'],
+  ['PATCH', '/api/housekeeping/tasks/:ref'],
 ];
 
-export const ACTION_KINDS = ['meeting', 'email'] as const;
+export const ACTION_KINDS = ['meeting', 'email', 'mail_reply', 'reservation_note', 'cleaning_note'] as const;
 export type ActionKind = typeof ACTION_KINDS[number];
 /** A proposal lapses after 10 minutes. */
 export const ACTION_TTL_MS = 10 * 60_000;
@@ -36,22 +42,43 @@ export const ACTIONS_SETTING_KEY = 'mcp.actionsEnabled';
 export const ACTIONS_OFF = 'AI actions are switched off by your admin. Management can turn on "Allow AI actions (meetings, email)" on System > AI Connector.';
 
 const norm = (p: string) => String(p ?? '').split('?')[0].replace(/\/+$/, '');
+const REF = '[A-Za-z0-9._-]{1,80}';
+// The allow-list paths hold only letters, "/", "-" and ":ref": nothing to escape.
+const ALLOW_RE = ACTION_ALLOWLIST.map(([m, p]) => [m, new RegExp(`^${p.replace(':ref', REF)}$`)] as const);
 
 export const isAllowlisted = (method: string, path: string) =>
-  ACTION_ALLOWLIST.some(([m, p]) => m === method.toUpperCase() && p === norm(path));
+  ALLOW_RE.some(([m, re]) => m === method.toUpperCase() && re.test(norm(path)));
 
-/** What confirm_action granted for one action: who, and the one method + path it may call. */
-export interface ActionPermit { userId: string; method: string; path: string; exp: number }
+/** The keys a fenced write's JSON body may carry, exactly what the ERP screen sends for that action, each a string.
+ *  mail_reply is the engine reply (checked in mcpWrite.ts before it is sent; it never passes the session middleware). */
+export const BODY_FENCE: Record<string, readonly string[]> = {
+  reservation_note: ['staffNotes'],
+  cleaning_note: ['instructions'],
+  mail_reply: ['text', 'afterMessageId'],
+};
+
+/** Whether a fenced write's body carries only its allowed keys (at least one, strings only). No fence: any body. */
+export function actionBodyAllowed(fence: string | undefined, body: unknown): boolean {
+  if (!fence) return true;
+  const keys = BODY_FENCE[fence];
+  if (!keys || !body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const b = body as Record<string, unknown>;
+  const ks = Object.keys(b);
+  return ks.length > 0 && ks.every(k => keys.includes(k) && typeof b[k] === 'string');
+}
+
+/** What confirm_action granted for one action: who, the one method + path it may call, and (round 4b) the body fence. */
+export interface ActionPermit { userId: string; method: string; path: string; exp: number; fence?: string }
 
 /**
  * The session middleware's decision for a request carrying a connector token (functions/api/_middleware.ts
  * connectorRequest). `permit` is what takeActionPermit returned for the action header (null when there was none), and
- * `userId` the token's person (null before it was resolved).
+ * `userId` the token's person (null before it was resolved). `body` is the write's parsed JSON body (fenced permits).
  *   'refuse'  403: no inner secret, or a write that is not a confirmed, allow-listed action of this person;
  *   'read'    a GET / HEAD from the connector's own tool runner;
  *   'write'   the one write confirm_action is performing right now.
  */
-export function connectorDecision(x: { method: string; path: string; innerOk: boolean; actionId: string; permit: ActionPermit | null; userId: string | null; now: number }): 'refuse' | 'read' | 'write' {
+export function connectorDecision(x: { method: string; path: string; innerOk: boolean; actionId: string; permit: ActionPermit | null; userId: string | null; now: number; body?: unknown }): 'refuse' | 'read' | 'write' {
   if (!x.innerOk) return 'refuse';
   const method = x.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD') return 'read';
@@ -59,6 +86,7 @@ export function connectorDecision(x: { method: string; path: string; innerOk: bo
   if (!isAllowlisted(method, x.path)) return 'refuse';
   const p = x.permit;
   if (p.exp <= x.now || p.userId !== x.userId || p.method !== method || norm(p.path) !== norm(x.path)) return 'refuse';
+  if (p.fence && !actionBodyAllowed(p.fence, x.body)) return 'refuse';
   return 'write';
 }
 
@@ -410,6 +438,9 @@ export const PENDING_SQL = {
       WHERE id = ? AND token_id = ? AND user_id = ? AND used_at IS NULL RETURNING id`,
   /** args: outcome, result, id */
   finish: 'UPDATE mcp_pending_actions SET outcome = ?, result = ? WHERE id = ?',
+  /** args: id, tokenId, userId, now. The kind of a proposal this connection may still confirm; claims nothing. */
+  peek: `SELECT kind FROM mcp_pending_actions
+      WHERE id = ? AND token_id = ? AND user_id = ? AND used_at IS NULL AND expires_at > ?`,
   /** args: userId, since */
   countDay: `SELECT count(*)::int AS n FROM mcp_pending_actions
       WHERE user_id = ? AND used_at > ? AND (outcome IS NULL OR outcome <> 'cancelled')`,

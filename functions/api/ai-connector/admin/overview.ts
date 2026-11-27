@@ -1,7 +1,8 @@
 import { type Env, all, json, nowIso, one } from '../../../_lib/db';
 import { connectorGate, connectorUrl } from '../../../_lib/aiConnector';
 import { appLabel } from '../../../_lib/mcpAccess';
-import { LEAK_CLIENT_ID, actionsEnabled, mcpActionsReady } from '../../../_lib/mcpStore';
+import { LEAK_CLIENT_ID, actionsEnabled, mcpActionsReady, writeKindsReady, writeSwitches } from '../../../_lib/mcpStore';
+import { WRITE_ACTION_LABELS } from '../../../_lib/mcpWrite';
 import { RATE_PER_DAY, RATE_PER_MINUTE } from '../../../_lib/mcpMore';
 import { MCP_TOOL_NAMES } from '../../../_lib/mcpServer';
 
@@ -52,10 +53,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   ]);
   const actionsReady = await mcpActionsReady(env);
   const actionsOn = actionsReady && await actionsEnabled(env);
+  // Round 4b: each write action's own switch (default off; works only while the main switch is on).
+  const writeReady = actionsReady && await writeKindsReady(env);
+  const switches = writeReady ? await writeSwitches(env) : null;
   const person = (r: Person) => ({ userId: r.user_id, name: r.full_name, position: r.place || '' });
   return json({
     connectorUrl: connectorUrl(request),
     actions: { ready: actionsReady, enabled: actionsOn },
+    writeActions: { ready: writeReady, list: Object.entries(WRITE_ACTION_LABELS).map(([key, label]) => ({ key, label, enabled: !!switches?.[key as keyof typeof WRITE_ACTION_LABELS] })) },
     // Read-only on the page: fixed in code (functions/_lib/mcpMore.ts).
     limits: { perMinute: RATE_PER_MINUTE, perDay: RATE_PER_DAY },
     tools: MCP_TOOL_NAMES,
