@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-  buildPickerPage, cleanSearch, compareKeys, decodeCursor, encodeCursor, facetValue, parseOutstandingSoPageQuery,
+  buildPickerGroups, buildPickerPage, cleanSearch, compareKeys, decodeCursor, encodeCursor, facetValue, parseOutstandingSoPageQuery,
   passesTopBar, readPickerLines, type OutstandingSoPageQuery, type PickerLine, type PickerSort,
 } from './outstanding-so-page';
 import poRouterSrc from '../routes/mfg-purchase-orders.ts?raw';
@@ -22,7 +22,7 @@ const line = (i: number, over: Partial<PickerLine> = {}): PickerLine => ({
 const lines = (n: number): PickerLine[] => Array.from({ length: n }, (_, i) => line(i));
 
 const pageOf = (over: Partial<OutstandingSoPageQuery> = {}): OutstandingSoPageQuery => ({
-  limit: 10, cursor: null, q: '', category: null, dateField: 'soDate', dateFrom: null, dateTo: null,
+  groups: false, limit: 10, cursor: null, q: '', category: null, dateField: 'soDate', dateFrom: null, dateTo: null,
   supplier: null, location: null, docNo: null, colFilters: {}, sort: null, ...over,
 });
 
@@ -82,6 +82,52 @@ describe('paging', () => {
     const p2 = buildPickerPage(all.filter((l) => !gone.has(l.id)), pageOf({ cursor: p1.nextCursor }));
     const full = walk(all, {}).seen;
     expect(p2.ids).toEqual(full.slice(10, 20));
+  });
+});
+
+describe('project groups', () => {
+  test('one group per project and customer, with matching and total counts, in heading order', () => {
+    const all = lines(60);
+    const res = buildPickerGroups(all, pageOf());
+    expect(res.groups.reduce((n, g) => n + g.total, 0)).toBe(60);
+    expect(res.groups.every((g) => g.matching === g.total)).toBe(true);
+    const headings = res.groups.map((g) => g.heading);
+    expect(headings).toEqual([...headings].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+    expect(headings).toContain('Project 0 - Customer 0');
+    expect(headings).toContain('P5 - Customer 2');
+  });
+
+  test("a group's two funnel texts read exactly its lines from the page endpoint", () => {
+    const all = lines(60);
+    for (const g of buildPickerGroups(all, pageOf()).groups) {
+      const page = buildPickerPage(all, pageOf({ limit: 200, colFilters: { project: [g.project], debtorName: [g.customer] } }));
+      expect(page.total).toBe(g.total);
+    }
+  });
+
+  test('filters narrow matching, keep total, and drop empty groups', () => {
+    const all = lines(60);
+    const res = buildPickerGroups(all, pageOf({ category: 'FURNITURE' }));
+    expect(res.groups.every((g) => g.matching <= g.total)).toBe(true);
+    expect(res.groups.reduce((n, g) => n + g.matching, 0)).toBe(30);
+    expect(buildPickerGroups(all, pageOf({ q: 'nothing at all' })).groups).toEqual([]);
+  });
+
+  test('supplier and category choices ignore their own filter', () => {
+    const all = lines(60);
+    const bySupplier = buildPickerGroups(all, pageOf({ supplier: 'SUP-A' }));
+    expect(bySupplier.suppliers).toEqual([['SUP-A', 'Supplier A', 30]]);
+    expect(bySupplier.categories).toEqual([['FURNITURE', 30]]);
+    const byCategory = buildPickerGroups(all, pageOf({ category: 'CURTAIN' }));
+    expect(byCategory.categories).toEqual([['CURTAIN', 30], ['FURNITURE', 30]]);
+    expect(byCategory.suppliers).toEqual([]);
+  });
+
+  test('groups=1 asks for groups without a limit; no limit and no groups is still the whole list', () => {
+    const r = parseOutstandingSoPageQuery({ groups: '1', category: 'SOFA' });
+    expect(r.ok && r.page?.groups).toBe(true);
+    expect(r.ok && r.page?.category).toBe('SOFA');
+    expect(parseOutstandingSoPageQuery({})).toEqual({ ok: true, page: null });
   });
 });
 

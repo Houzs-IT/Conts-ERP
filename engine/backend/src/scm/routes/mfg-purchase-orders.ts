@@ -47,7 +47,7 @@ import { VALID_CURRENCIES, VALID_KINDS } from '../lib/purchase-doc-vocab';
 import { resolveMaintenanceConfigForSupplier, poVariantPricingInput } from '../lib/po-pricing';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
 import { loadOutstandingSoLines, OUTSTANDING_SO_SELECT } from '../lib/outstanding-so-lines';
-import { parseOutstandingSoPageQuery, readPickerLines, buildPickerPage, encodeCursor } from '../lib/outstanding-so-page';
+import { parseOutstandingSoPageQuery, readPickerLines, buildPickerPage, buildPickerGroups, encodeCursor } from '../lib/outstanding-so-page';
 import { poHasDownstream } from '../lib/downstream-lock';
 import { cascadePoSupplierDate, recordedSupplierDate, supplierDatePatchGate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
 import { description2InputsChanged } from '../lib/po-line-description2';
@@ -696,9 +696,13 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
   const supabase = c.get('supabase');
   const parsed = parseOutstandingSoPageQuery(c.req.query());
   if (!parsed.ok) return c.json({ error: 'bad_cursor', reason: parsed.reason }, 400);
-  /* PAGED MODE (owner, 19 Nov 2026) — `?limit=` asks for one page. lib/outstanding-so-page.ts reads the light list of
-     every open line, and applies the search, the filters, the column funnels and the sort to it; the funnel counts come
-     from the same list (20 Nov 2026). Only the page's lines get the full row and the stock check. */
+  // Dates filter after the read so each group's total still counts all its open lines.
+  if (parsed.page?.groups) {
+    const page = parsed.page;
+    const index = await readPickerLines(supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), { ...page, dateFrom: null, dateTo: null });
+    if (index.error) return c.json({ error: 'load_failed', reason: index.error }, 500);
+    return c.json(buildPickerGroups(index.lines, page));
+  }
   if (parsed.page) {
     const page = parsed.page;
     const index = await readPickerLines(supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), page);
@@ -724,13 +728,7 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
       pageSize: page.limit,
     });
   }
-  /* The WHOLE LIST (no `limit`): the Production Order detail and From-SO pages.
-     PAGED READ — lib/outstanding-so-lines.ts. This read carried a `.limit(500)` with
-     all three of the filters that decide the answer running after it in JS, so
-     the picker offered at most 500 of the company's 15,050 live SO lines
-     (measured 2026-09-08, docs/bugs/0677) chosen by document number.
-     The pooled MRP compute needs nothing from these lines and is most of this request's time (measured on production
-     19 Nov 2026: ~3 s quiet, ~24 s under load), so it is started first and runs while the lines are read. */
+  // Start the slow pooled MRP compute before reading the lines.
   const mrpRun = startPickerMrp(c, null);
   const { data: items, error } = await loadOutstandingSoLines(
     supabase,

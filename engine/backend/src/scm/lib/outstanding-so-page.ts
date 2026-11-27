@@ -1,26 +1,5 @@
-// ----------------------------------------------------------------------------
-// ONE PAGE of the PO-from-SO picker (owner, 19 Nov 2026: "show what I search first, or by scrolling; no need to load
-// everything at once").
-//
-// `GET /mfg-purchase-orders/outstanding-so-items` without `limit` still answers the whole list
-// (lib/outstanding-so-lines.ts) for the mobile convert wizard and the PO detail page. With `limit` it answers one page.
-//
-// HOW A PAGE IS CHOSEN (20 Nov 2026). The column funnels (Project, Customer, Supplier, ...) only ever saw the loaded
-// page, so a project past the first pages could not be picked from its funnel. The server now reads ONE LIGHT LIST of
-// every open SO line in scope (no stock check: that is what made the whole list take 8 to 24 s) and a pure function
-// (`buildPickerPage`) takes it with the search, the top-bar filters, the column funnels and the sort, and returns the
-// funnel counts, the total and the page's ids. Funnels, total and pages come from the same list, so they cannot
-// disagree. Only the page's lines get the full row and the stock check (route).
-//
-// KEYSET, NOT OFFSET. The cursor is the (sort value, doc_no, id) of the last line handed out: a line that a PO
-// converts between two scrolls cannot shift the next page and skip a line.
-//
-// COUNTS AND TOTAL ARE UPPER BOUNDS. They are taken before the stock check. On production (19 Nov 2026) 4,993 of
-// 5,121 live lines passed it, so they are close, but never offered as the count of lines still to order.
-//
-// FUNNEL VALUES ARE THE GRID'S OWN TEXT. The grid re-applies each funnel to the rows it holds, so `facetValue` must
-// give the exact string the page's column hands the grid (PurchaseOrderFromSo.tsx), or a ticked row vanishes.
-// ----------------------------------------------------------------------------
+// Counts are taken before the stock check, so they are upper bounds.
+// facetValue must return the exact text the grid column shows, or the grid's own funnel hides a ticked row.
 
 import { paginateAll, chunkIn } from './paginate-all';
 import { readMfgProductBindings } from './supplier-bindings';
@@ -44,6 +23,7 @@ export type PickerFacets = Record<PickerFacetCol, Array<[string, number]>>;
 export interface PageCursor { d: string; i: string; s?: string | number }
 
 export interface OutstandingSoPageQuery {
+  groups: boolean;
   limit: number;
   cursor: PageCursor | null;
   q: string;
@@ -125,7 +105,8 @@ function parseSort(raw: string | undefined): PickerSort | null {
  */
 export function parseOutstandingSoPageQuery(query: Record<string, string | undefined>):
   { ok: true; page: OutstandingSoPageQuery | null } | { ok: false; reason: string } {
-  if (query.limit == null || query.limit === '') return { ok: true, page: null };
+  const groups = query.groups === '1';
+  if (!groups && (query.limit == null || query.limit === '')) return { ok: true, page: null };
   const n = Number(query.limit);
   const limit = Number.isFinite(n) && n > 0 ? Math.min(PAGE_LIMIT_MAX, Math.floor(n)) : PAGE_LIMIT_DEFAULT;
   const cursor = decodeCursor(query.cursor);
@@ -138,7 +119,7 @@ export function parseOutstandingSoPageQuery(query: Record<string, string | undef
   return {
     ok: true,
     page: {
-      limit, cursor, q: cleanSearch(query.q),
+      groups, limit, cursor, q: cleanSearch(query.q),
       category: query.category && query.category !== 'all' ? query.category : null,
       dateField, dateFrom: date(query.dateFrom), dateTo: date(query.dateTo),
       supplier: text(query.supplier), location: text(query.location), docNo: text(query.docNo),
@@ -268,6 +249,60 @@ export function buildPickerPage(lines: readonly PickerLine[], page: OutstandingS
     ? (last.s === undefined ? { d: last.d, i: last.i } : { d: last.d, i: last.i, s: last.s })
     : null;
   return { ids: slice.map((k) => k.id), nextCursor, total: matched.length, facets };
+}
+
+// Must match frontend lib/projectCustomerHeading.ts.
+export function groupHeading(l: PickerLine): string {
+  const p = projectTitle(l);
+  const c = l.debtorName?.trim();
+  if (p) return c ? `${p} - ${c}` : p;
+  return c ? `No project - ${c}` : 'No project, no customer';
+}
+
+export interface PickerGroup {
+  project: string;
+  customer: string;
+  heading: string;
+  matching: number;
+  total: number;
+}
+
+export interface PickerGroups {
+  groups: PickerGroup[];
+  suppliers: Array<[string, string, number]>;
+  categories: Array<[string, number]>;
+}
+
+export function buildPickerGroups(lines: readonly PickerLine[], page: OutstandingSoPageQuery): PickerGroups {
+  const byKey = new Map<string, PickerGroup>();
+  const suppliers = new Map<string, [string, string, number]>();
+  const categories = new Map<string, number>();
+  const noSupplier = { ...page, supplier: null };
+  const noCategory = { ...page, category: null };
+  for (const l of lines) {
+    const project = facetValue(l, 'project');
+    const customer = facetValue(l, 'debtorName');
+    const key = JSON.stringify([project, customer]);
+    let g = byKey.get(key);
+    if (!g) { g = { project, customer, heading: groupHeading(l), matching: 0, total: 0 }; byKey.set(key, g); }
+    g.total += 1;
+    if (passesTopBar(l, page)) g.matching += 1;
+    if (l.mainSupplierCode && passesTopBar(l, noSupplier)) {
+      const s = suppliers.get(l.mainSupplierCode) ?? [l.mainSupplierCode, l.mainSupplierName ?? l.mainSupplierCode, 0];
+      s[2] += 1;
+      suppliers.set(l.mainSupplierCode, s);
+    }
+    if (l.itemGroup && passesTopBar(l, noCategory)) {
+      const c = l.itemGroup.toUpperCase();
+      categories.set(c, (categories.get(c) ?? 0) + 1);
+    }
+  }
+  const byText = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
+  return {
+    groups: [...byKey.values()].filter((g) => g.matching > 0).sort((a, b) => byText(a.heading, b.heading)),
+    suppliers: [...suppliers.values()].sort((a, b) => byText(a[1], b[1])),
+    categories: [...categories.entries()].sort((a, b) => byText(a[0], b[0])),
+  };
 }
 
 const INDEX_SELECT = `
