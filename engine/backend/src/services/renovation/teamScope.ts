@@ -27,12 +27,40 @@ export async function teamPersonIds(db: Db, userId: number | null | undefined, e
   }
 }
 
-/** A WHERE fragment on `projects p`: one of these people handles a step of the project. The ids are inlined (integers
+/** The scm.staff ids of the caller and of everyone under them in the reporting line: the salesperson vocabulary of a
+    sales order (salesperson_id) and of a project (salesperson_staff_id). A person sees the projects they sell
+    (owner, 27 Nov 2026: "销售看到自己的项目"). */
+export async function teamStaffIds(db: Db, email: string | null | undefined): Promise<string[]> {
+  if (!email) return [];
+  try {
+    const rows = (await db.prepare(
+      `WITH RECURSIVE team AS (
+         SELECT s.id::text AS id, lower(s.email) AS email FROM conts_staff s WHERE lower(s.email) = lower(?)
+         UNION
+         SELECT s.id::text, lower(s.email) FROM conts_staff s JOIN team t ON to_jsonb(s)->>'manager_id' = t.id
+       )
+       SELECT st.id::text AS id FROM scm.staff st JOIN users u ON u.id = st.user_id WHERE lower(u.email) IN (SELECT email FROM team)`,
+    ).bind(email).all<{ id: string }>()).results ?? [];
+    return [...new Set(rows.map((r) => String(r.id)))];
+  } catch {
+    return [];
+  }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A WHERE fragment on `projects p`: one of these people handles a step of the project, or (staffIds) sells it. The ids are inlined (integers
     only) so the fragment can join the board's scope, which every one of its queries reuses without binds. */
-export function teamProjectSql(ids: readonly number[]): string {
+export function teamProjectSql(ids: readonly number[], staffIds: readonly string[] = []): string {
   const list = ids.filter((id) => Number.isSafeInteger(id)).join(",");
-  if (!list) return "FALSE";
-  return `(p.designer_person_id IN (${list}) OR p.reno_pic_person_id IN (${list})
+  const staff = staffIds.filter((id) => UUID_RE.test(id)).map((id) => `'${id}'`).join(",");
+  const sold = staff
+    ? `p.salesperson_staff_id::text IN (${staff})
+    OR EXISTS (SELECT 1 FROM scm.mfg_sales_orders tso WHERE tso.project_id = p.id AND tso.salesperson_id::text IN (${staff}))`
+    : "";
+  if (!list) return sold ? `(${sold})` : "FALSE";
+  return `(${sold ? `${sold}
+    OR ` : ""}p.sales_person_id IN (${list}) OR p.designer_person_id IN (${list}) OR p.reno_pic_person_id IN (${list})
     OR EXISTS (SELECT 1 FROM project_beta_design tsd WHERE tsd.project_id = p.id
       AND (tsd.person_3d_ids && ARRAY[${list}]::bigint[] OR tsd.person_2d_ids && ARRAY[${list}]::bigint[]
            OR tsd.person_3d_id IN (${list}) OR tsd.person_2d_id IN (${list})))

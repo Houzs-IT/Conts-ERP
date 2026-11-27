@@ -21,7 +21,8 @@ vi.mock("../../api/client", async (importOriginal) => {
   };
   return { ...actual, api: { ...actual.api, get, put, post, postBinary, fetchBlobUrl: async () => "blob:x" } };
 });
-vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
+const auth = vi.hoisted(() => ({ procurement: "full" as string }));
+vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true, pageAccess: (page: string) => (page === "scm.procurement" ? auth.procurement : "full") }) }));
 
 import { DialogProvider } from "../../hooks/useDialog";
 import { RenovationBetaWorkspace } from "./RenovationBetaWorkspace";
@@ -296,6 +297,18 @@ describe("Beta project workspace", () => {
     expect(await screen.findByText("Contractor's turn")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Drawings" }));
     expect(await screen.findByRole("group", { name: "Drawing type" })).toBeTruthy();
+  });
+
+  it("leaves the goods received tab out for someone without Procurement", async () => {
+    auth.procurement = "none";
+    try {
+      open("/beta/projects/7?tab=gr");
+      await screen.findByRole("heading", { name: "Payments" });
+      expect(screen.queryByRole("button", { name: "GR" })).toBeNull();
+      expect(screen.getByRole("button", { name: "DO" })).toBeTruthy();
+    } finally {
+      auth.procurement = "full";
+    }
   });
 
   it("shows the defect pipeline with overdue in red and opens a ticket", async () => {

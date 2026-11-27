@@ -397,7 +397,8 @@ async function postNoteAfterCommit(c: C, actor: RenoActor, creditNoteId: string)
   }
 }
 
-renovation.get('/sales-orders/:docNo/po-split', handle(null, async (c, { sqlRead }) =>
+/* The PO split preview prices each PO at cost: only for whoever raises the POs (owner, 27 Nov 2026: sales see no costs). */
+renovation.get('/sales-orders/:docNo/po-split', handle(PERM.poSplit, async (c, { sqlRead }) =>
   c.json(await previewPoSplit(sqlRead, param(c, 'docNo'), actorOf(c).companyId))));
 
 renovation.post('/sales-orders/:docNo/po-split', handle(PERM.poSplit, async (c, { tx }) => {
@@ -572,7 +573,8 @@ async function runQuickVo(
   return { voNo: out.voNo, netSen: out.netSen, revisedContractSen: out.revisedContractSen, flags: out.flags, posting };
 }
 
-renovation.get('/sales-orders/:docNo/po-flags', handle(null, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));
+/* PO lines to amend or cancel name the POs: for whoever handles them, not for sales (owner, 27 Nov 2026). */
+renovation.get('/sales-orders/:docNo/po-flags', handle(PERM.poSplit, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));
 
 renovation.post('/po-flags/:id/resolve', handle(PERM.poSplit, async (c, { tx }) => {
   await tx((db) => resolvePoFlag(db, actorOf(c), param(c, 'id')));

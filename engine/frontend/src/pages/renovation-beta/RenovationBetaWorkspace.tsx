@@ -57,7 +57,7 @@ export function RenovationBetaWorkspace(): ReactElement {
 function WorkspaceScreen(): ReactElement {
   const id = Number(useParams().id);
   const [params, setParams] = useSearchParams();
-  const tab = tabFromParam(params.get("tab"));
+  const asked = tabFromParam(params.get("tab"));
   const valid = Number.isInteger(id) && id > 0;
   const q = useQuery(["renovation-beta", "detail", id], () => simpleApi.detail(id), [id], { enabled: valid });
   const queryClient = useQueryClient();
@@ -70,7 +70,10 @@ function WorkspaceScreen(): ReactElement {
   });
   const ws = useQuery(["renovation-beta", "workspace", id], () => betaApi.workspace(id), [id], { enabled: valid });
   const rec = useQuery(["renovation-beta", "records", id], () => simpleApi.designRecords(id), [id], { enabled: valid });
-  const { can } = useAuth();
+  const { can, pageAccess } = useAuth();
+  /* Goods received belongs to Procurement: sales see their project without it (owner, 27 Nov 2026). */
+  const tabs = pageAccess("scm.procurement") === "none" ? BETA_TABS.filter((t) => t.key !== "gr") : BETA_TABS;
+  const tab: BetaTabKey = tabs.some((t) => t.key === asked) ? asked : tabs[0].key;
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [dialog, setDialog] = useState<BetaDialog | null>(null);
   const d = q.data;
@@ -102,7 +105,7 @@ function WorkspaceScreen(): ReactElement {
 
   const today = mytDay(new Date().toISOString());
   const { project: p } = d;
-  const current = BETA_TABS.find((t) => t.key === tab) ?? BETA_TABS[0];
+  const current = tabs.find((t) => t.key === tab) ?? tabs[0];
   // Home and Calendar read the same board, so every write refreshes all of Beta, not only this page.
   /* One refresh of every Beta query (detail, board, workspace, records and the open tab's are all under
      "renovation-beta"). Reloading them one by one as well sent each read twice in the same instant, and the burst filled
@@ -146,7 +149,7 @@ function WorkspaceScreen(): ReactElement {
       <BetaWsStepper items={items} hold={hold} layers={layers} />
 
       <nav ref={tabsRef} aria-label="Project sections" className="tabs">
-        {BETA_TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -163,7 +166,7 @@ function WorkspaceScreen(): ReactElement {
       <label className="tab-pick">
         <span className="sr">Project section</span>
         <select value={tab} onChange={(e) => { setNotice(null); openTab(tabFromParam(e.target.value)); }}>
-          {BETA_TABS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+          {tabs.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
         <ChevronDown size={18} aria-hidden="true" />
       </label>

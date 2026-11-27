@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, pdf: [] as unknown[] }));
+const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, pdf: [] as unknown[], procurement: "full" }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
@@ -38,7 +38,7 @@ vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
 });
 vi.mock("../scm-v2/soPdfDownload", () => ({ downloadSoPdfs: async (orders: unknown) => { h.pdf.push(orders); } }));
 vi.mock("../scm-v2/ProductionOrderChips", () => ({ ProductionOrderChips: () => null }));
-vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
+vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true, pageAccess: (page: string) => (page === "scm.procurement" ? h.procurement : "full") }) }));
 /* The SO line's pickers have their own test (renovationVariantPicker.test.tsx); here a pick is one button. */
 vi.mock("../../vendor/scm/components/renovationVariantPicker", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../vendor/scm/components/renovationVariantPicker")>();
@@ -185,6 +185,22 @@ describe("PO tab", () => {
     expect(await screen.findByText("READY")).toBeTruthy();
     h.coverage = [];
     h.furniture = false;
+  });
+
+  it("shows no supplier, PO or goods received to someone without Procurement", async () => {
+    h.procurement = "none";
+    try {
+      renderTab();
+      await screen.findAllByText("Lines");
+      expect(screen.queryByText("Need a PO")).toBeNull();
+      expect(screen.queryByText("Goods received")).toBeNull();
+      expect(screen.queryByRole("columnheader", { name: "Supplier" })).toBeNull();
+      expect(screen.queryByRole("columnheader", { name: "PO" })).toBeNull();
+      expect(screen.queryByRole("columnheader", { name: "GR" })).toBeNull();
+      expect(screen.getAllByText("Delivered (DO)").length).toBeGreaterThan(0);
+    } finally {
+      h.procurement = "full";
+    }
   });
 
   it("moves a column by dragging its header, and Reset columns puts it back", async () => {
