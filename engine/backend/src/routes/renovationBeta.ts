@@ -9,11 +9,12 @@ import { eventTypeKnown, listWorkTypes } from "../services/renovation/workTypes"
 import { Hono, type Context } from "hono";
 import { TRANSIENT_CONN_RE } from "../db/d1-compat";
 import type { Env } from "../types";
+import type { AuthUser } from "../services/auth";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { todayMyt } from "../scm/lib/my-time";
 import { builtinPosOf, poDrawings, projectDrawings, recordDrawingAmendments } from "../services/renovation/betaBuiltinPo";
-import { financeHiddenForUser } from "../services/pmsAccess";
+import { financeHiddenForUser, isProductCostViewer } from "../services/pmsAccess";
 import { keepVisiblePos, loadCategoryScope, type CategoryScope } from "../services/categoryAccess";
 import { setChecklistStatus } from "../services/projects";
 import { calendarMePersonIds } from "../services/renovation/calendarItems";
@@ -34,7 +35,7 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, notRawMaterials, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding, withoutProcurement } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, notRawMaterials, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding, withoutCost } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { saveMaterialsAndFollow } from "../scm/lib/renovation-line-materials";
@@ -58,15 +59,12 @@ import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFile
 import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
-/** Procurement is open to this person: the wildcard, or Procurement at view or above on their page levels. A role with no
-    page levels at all (an older account) keeps what it always saw. Sales see their projects without POs or supplier
-    prices (owner, 27 Nov 2026). */
-function procurementVisible(user: { permissions_set?: Set<string>; permissions?: string[]; page_access?: Record<string, string> } | undefined): boolean {
-  if (!user) return false;
-  if (user.permissions_set?.has("*") || user.permissions?.includes("*")) return true;
-  if (!user.page_access) return true;
-  const level = user.page_access["scm.procurement"] ?? "none";
-  return level !== "none";
+
+/** Selling prices and the customer's payments on a project: whoever may see project money, and a salesperson, who quotes
+    and collects them (owner, 27 Nov 2026: sales never see costs, but they see what they sell). */
+function sellingMoneyVisible(user: AuthUser | undefined): boolean {
+  if (!financeHiddenForUser(user)) return true;
+  return (user?.page_access["scm.sales"] ?? "none") !== "none";
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -124,7 +122,7 @@ async function designFileOf(c: Ctx, fileId: number): Promise<DesignFileRow | nul
 const TS = (col: string): string => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
 
 async function paymentsFor(c: Ctx, projectId: number, companyId: number): Promise<BetaPayments> {
-  if (financeHiddenForUser(c.get("user"))) return { state: "hidden" };
+  if (!sellingMoneyVisible(c.get("user"))) return { state: "hidden" };
   try {
     const so = await db(c).prepare(PROJECT_SO_SQL("so.project_id = ?")).bind(projectId, companyId).first<ProjectSoRow>();
     if (!so) return { state: "none" };
@@ -393,7 +391,6 @@ app.post("/design-files/:fileId/approval", requirePermission("projects.write"), 
 
 /* The Built-in POs of a project: the 2D tab downloads the latest of each. */
 app.get("/projects/:id/builtin-pos", requirePageAccess("projects.list"), async (c) => {
-  if (!procurementVisible(c.get("user"))) return c.json({ pos: [] });
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const co = await projectCompany(c, id);
@@ -411,7 +408,6 @@ app.get("/projects/:id/approved-2d", requirePageAccess("projects.list"), async (
 
 /* The approved 2D set a Built-in PO's PDF carries. */
 app.get("/po-drawings/:poId", requirePageAccess("projects.list"), async (c) => {
-  if (!procurementVisible(c.get("user"))) return c.json({ error: "forbidden", message: "Purchase orders are not open to your role." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   return readOr(c, "PO drawing", async () => poDrawings(db(c), c.req.param("poId"), co.companyId));
@@ -549,7 +545,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const brandSql = brandVisibleSql(await loadBrandSide(db(c), user));
   const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}${brandSql}`;
   const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR e.person_ids && ARRAY[${[0, ...team].join(",")}]::bigint[] OR (e.project_id IS NOT NULL${teamSql}))`}${brandSql ? ` AND (e.project_id IS NULL OR (TRUE${brandSql}))` : ""}`;
-  const hidden = financeHiddenForUser(user);
+  const hidden = !sellingMoneyVisible(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
     const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds, workTypes, designEvents, soLines] = await Promise.all([
@@ -893,11 +889,10 @@ app.get("/projects/:id/vo", requirePageAccess("projects.list"), async (c) => {
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
-  return readOr(c, "VO list", async () => loadProjectVos(db(c), id, co, !financeHiddenForUser(c.get("user")), await categoryScope(c)));
+  return readOr(c, "VO list", async () => loadProjectVos(db(c), id, co, sellingMoneyVisible(c.get("user")), await categoryScope(c)));
 });
 
 app.get("/projects/:id/po", requirePageAccess("projects.list"), async (c) => {
-  if (!procurementVisible(c.get("user"))) return c.json({ error: "forbidden", message: "Purchase orders are not open to your role." }, 403);
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const co = await projectCompany(c, id);
@@ -927,8 +922,8 @@ app.get("/projects/:id/lines", requirePageAccess("projects.list"), async (c) => 
     const scope = await categoryScope(c);
     const vo = await loadProjectVos(db(c), id, co, false, scope);
     const labels = new Map(vo.vos.filter((v) => v.key.startsWith("a:")).map((v) => [v.key.slice(2), v.label] as const));
-    const answer = await loadProjectLines(db(c), id, co, !financeHiddenForUser(c.get("user")), labels, scope);
-    return procurementVisible(c.get("user")) ? answer : withoutProcurement(answer);
+    const answer = await loadProjectLines(db(c), id, co, sellingMoneyVisible(c.get("user")), labels, scope);
+    return isProductCostViewer(c.get("user")) ? answer : withoutCost(answer);
   });
 });
 
@@ -1308,7 +1303,7 @@ app.patch("/defects/:defectId", requirePermission("projects.write"), async (c) =
     and site receipts. */
 async function betaTimelineExtras(c: Ctx, projectId: number, companyId: number): Promise<TimelineEntry[]> {
   const q = (sql: string) => projectDocSql(sql, projectId, companyId);
-  const hidden = financeHiddenForUser(c.get("user"));
+  const hidden = !sellingMoneyVisible(c.get("user"));
   const safe = (p: Promise<Row[]>): Promise<Row[]> => p.catch((e: unknown) => { if (isMissingRelation(e)) return []; throw e; });
   const [quotes, sos, orders, invoices, pays, vos, dos, grs] = await Promise.all([
     safe(rowsOf(c, q(`SELECT q.id::text AS id, q.quote_no, q.status::text AS status, q.current_rev, ${TS("q.created_at")} AS created_at,
@@ -1414,9 +1409,7 @@ app.get("/projects/:id/timeline", requirePageAccess("projects.list"), async (c) 
       readProjectTimeline(db(c), id, co, { docsReady, notesReady }),
       docsReady ? betaTimelineExtras(c, id, co) : Promise.resolve([] as TimelineEntry[]),
     ]);
-    /* POs, production orders and goods receipts belong to Procurement: sales read the timeline without them (owner, 27 Nov 2026). */
-    const seen = procurementVisible(c.get("user")) ? [...base, ...extra] : [...base, ...extra].filter((e) => !/^(po|prod|gr|grsite):/.test(e.id));
-    const entries = chainTimeline(seen.map((e) => ({ ...e, category: betaCategory(e) }))).map(plainEntry);
+    const entries = chainTimeline([...base, ...extra].map((e) => ({ ...e, category: betaCategory(e) }))).map(plainEntry);
     return c.json({ entries });
   } catch (e) {
     console.error("[renovation-beta] timeline read failed", e);

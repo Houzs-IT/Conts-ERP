@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { teamProjectSql } from "../src/services/renovation/teamScope";
-import { withoutProcurement, type LinesAnswer } from "../src/services/renovation/betaLines";
+import { withoutCost, type LinesAnswer } from "../src/services/renovation/betaLines";
 import { financeHiddenForUser } from "../src/services/pmsAccess";
 import type { AuthUser } from "../src/services/auth";
 
@@ -28,7 +28,7 @@ describe("a salesperson's projects", () => {
   });
 });
 
-describe("the SO tab without Procurement", () => {
+describe("the SO tab for someone who may not see costs", () => {
   const answer = {
     finance: true, plansReady: true, categoryRestricted: false,
     sos: [{ docNo: "TC-SO-1", status: "RENO_CONFIRMED", voLocked: true, renovation: true }],
@@ -38,26 +38,22 @@ describe("the SO tab without Procurement", () => {
     lines: [{
       id: "l1", qty: 2, unitPriceSen: 10000, amountSen: 20000, supplierName: "HIN LIM", supplierId: "s1",
       supplierChoices: [{ id: "s1", code: "400-H004", name: "HIN LIM", main: true, priceSen: 6195 }],
-      pos: [{ poId: "po1", poNumber: "TC-PO-1" }], gr: { total: 2, done: 2 }, materials: [{ code: "RAW" }],
+      pos: [{ poId: "po1", poNumber: "TC-PO-1" }], gr: "yes", materials: [],
     }],
   } as unknown as LinesAnswer;
 
-  test("no PO, receipt, PO change, supplier or supplier price leaves the server; the lines and their selling price stay", () => {
-    const out = withoutProcurement(answer);
-    expect(out.suppliers).toEqual([]);
-    expect(out.pendingPoChanges).toEqual([]);
-    const [line] = out.lines;
-    expect(line.pos).toEqual([]);
-    expect(line.supplierChoices).toEqual([]);
-    expect(line.supplierName).toBeNull();
-    expect(line.materials).toEqual([]);
+  test("POs, goods received and suppliers stay for follow-up; only the supplier price goes (owner, 27 Nov 2026)", () => {
+    const out = withoutCost(answer);
     expect(JSON.stringify(out)).not.toContain("6195");
-    expect(JSON.stringify(out)).not.toContain("TC-PO-1");
+    const [line] = out.lines;
+    expect(line.pos).toHaveLength(1);
+    expect(line.supplierName).toBe("HIN LIM");
+    expect(line.supplierChoices[0]?.name).toBe("HIN LIM");
+    expect(line.supplierChoices[0]?.priceSen).toBeNull();
+    expect(out.pendingPoChanges).toHaveLength(1);
     expect(line.amountSen).toBe(20000);
-    expect(out.warehouses).toHaveLength(1);
   });
 });
-
 
 describe("money on the wire for a Conts account with no engine position", () => {
   const conts = (page_access: Record<string, string>, perms: string[] = []): AuthUser => ({

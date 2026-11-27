@@ -573,8 +573,7 @@ async function runQuickVo(
   return { voNo: out.voNo, netSen: out.netSen, revisedContractSen: out.revisedContractSen, flags: out.flags, posting };
 }
 
-/* PO lines to amend or cancel name the POs: for whoever handles them, not for sales (owner, 27 Nov 2026). */
-renovation.get('/sales-orders/:docNo/po-flags', handle(PERM.poSplit, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));
+renovation.get('/sales-orders/:docNo/po-flags', handle(null, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));
 
 renovation.post('/po-flags/:id/resolve', handle(PERM.poSplit, async (c, { tx }) => {
   await tx((db) => resolvePoFlag(db, actorOf(c), param(c, 'id')));
