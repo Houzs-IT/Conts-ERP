@@ -272,7 +272,49 @@ export const PROMPTS = [
     description: 'Your tasks, approvals, deliveries, purchase orders and repairs that are overdue or due soon, and what else is waiting for you.',
     arguments: [],
   },
+  // Round 4c P2 (owner, 26 Nov 2026): one prompt per role. prompts/list shows each only when the person can use one of
+  // its tools (PROMPT_TOOLS, mcpServer.ts), so the list itself follows their ERP access.
+  {
+    name: 'owner_morning_report', title: 'Owner morning report',
+    description: 'The day at a glance for management: occupancy tonight, check-ins and checkouts, money owed to us, what we owe, reviews and what needs a decision.',
+    arguments: [],
+  },
+  {
+    name: 'operations_review', title: 'Operations and cleaning',
+    description: 'Cleaning and repairs today and overdue, check-ins and checkouts, units empty tonight and units not ready.',
+    arguments: [],
+  },
+  {
+    name: 'reservations_revenue_review', title: 'Reservations and earnings',
+    description: 'Earnings, average nightly price and earnings per available night, channel mix, pace for the next 90 days and cancellations, against the period before.',
+    arguments: [{ name: 'period', description: 'month | last_month | quarter | year (default month)', required: false }],
+  },
+  {
+    name: 'finance_review', title: 'Finance review',
+    description: 'Money owed to us (aged), what we owe suppliers and contractors, owner statements still to send and the management report against the period before.',
+    arguments: [{ name: 'month', description: 'YYYY-MM (default this month)', required: false }],
+  },
+  {
+    name: 'owner_relations_review', title: 'Owner relations',
+    description: "Owner statements and payouts, contracts ending soon, owners missing bank details or a contract, and one owner's account when named.",
+    arguments: [{ name: 'owner', description: "an owner's name (optional)", required: false }],
+  },
 ];
+
+/** The tools behind each prompt: a prompt is listed only when the person can use at least one of them (round 4c). */
+export const PROMPT_TOOLS: Record<string, string[]> = {
+  monthly_review: ['business_summary', 'reservations_summary'],
+  today_at_a_glance: ['today_summary'],
+  find_reservation: ['search'],
+  'daily-brief': ['daily_brief'],
+  owner_morning_report: ['daily_brief', 'occupancy_summary', 'today_summary', 'arrears_summary', 'payables_summary', 'reviews_summary'],
+  operations_review: ['housekeeping_today', 'today_summary', 'vacancy_summary'],
+  reservations_revenue_review: ['revenue_summary', 'channel_mix', 'booking_pace', 'cancellations_summary'],
+  finance_review: ['arrears_summary', 'payables_summary', 'owner_statement_summary', 'company_report'],
+  owner_relations_review: ['owner_statement_summary', 'leases_expiring', 'data_gaps'],
+};
+
+const ROLE_TAIL = ' If a tool says I do not have access, say so in one line and carry on with the rest. Lead with the numbers (RM), give each item\'s ERP link, keep it short and in plain language.';
 
 /** The message a prompt expands to (prompts/get). Unknown name -> null. */
 export function promptText(name: string, a: Record<string, unknown>): string | null {
@@ -289,6 +331,24 @@ export function promptText(name: string, a: Record<string, unknown>): string | n
   }
   if (name === 'daily-brief') {
     return 'What do I need to look at today? Use daily_brief. Start with what is overdue, then what is due soon, then the rest. For each section give the count and the items with their links. If something is not available to my account, say so in one line. Short.';
+  }
+  if (name === 'owner_morning_report') {
+    return 'Give me my morning report. Use daily_brief first, then occupancy_summary (tonight by building), today_summary (check-ins, checkouts, what needs someone now), arrears_summary (who owes us, oldest first), payables_summary (what we owe, due this week) and reviews_summary {period: "week"} (bad reviews, not replied). Start with what needs a decision today.' + ROLE_TAIL;
+  }
+  if (name === 'operations_review') {
+    return 'Operations review for today: housekeeping_today (cleaning today and overdue, repairs due), today_summary (check-ins and checkouts, cleaning pending, unread guest messages) and vacancy_summary {days: 7} (empty tonight and the week ahead). Flag any check-in today whose unit is not cleaned yet.' + ROLE_TAIL;
+  }
+  if (name === 'reservations_revenue_review') {
+    const p = ['month', 'last_month', 'quarter', 'year'].includes(v('period')) ? v('period') : 'month';
+    return `Reservations and earnings for ${p.replace('_', ' ')}: revenue_summary {period: "${p}"} (earnings, average nightly price, earnings per available night by building, against the period before), channel_mix {period: "${p}"}, booking_pace (next 30 / 60 / 90 days against last month and last year) and cancellations_summary {period: "${p}"}.` + ROLE_TAIL;
+  }
+  if (name === 'finance_review') {
+    const m = MONTH.test(v('month')) ? v('month') : '';
+    return `Finance review${m ? ` for ${m}` : ''}: arrears_summary (money owed to us, aged), payables_summary (suppliers and contractor claims, due this week), owner_statement_summary${m ? ` {month: "${m}"}` : ''} (still draft, waiting to send, sent, paid) and company_report {period: "month"${m ? `, month: "${m}"` : ''}} against the month before.` + ROLE_TAIL;
+  }
+  if (name === 'owner_relations_review') {
+    const o = v('owner');
+    return `Owner relations: owner_statement_summary${o ? ` {owner: "${o}"}` : ''} (statements to send, owners in the negative${o ? `, and ${o}'s statements and payouts month by month` : ''}), leases_expiring {days: 60} (owner contracts ending) and data_gaps (owners without bank details or a contract, units without an owner).` + ROLE_TAIL;
   }
   return null;
 }

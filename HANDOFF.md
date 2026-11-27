@@ -370,6 +370,59 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   - Skipped: none of C1-C11 / D4. Limits said in the answers: pace "booked by then" uses the reservation's created date
     (imported ones carry their import date) and cannot see later cancellations; company_report year is this year to
     date only (Performance's own range); revenue_summary takes a month or quarter (Portfolio's own periods).
+- **Round 4b, write actions (owner, 26 Nov 2026, "那些也ok"; branch `feat/mcp-4bc`).** Code:
+  `functions/_lib/mcpWrite.ts` (propose -> confirm, pure apart from its deps), the fence in `mcpActions.ts`
+  (`ACTION_ALLOWLIST` patterns + `BODY_FENCE` + `connectorDecision` body check), the permit's `fence` in `mcpInner.ts`,
+  the dispatch routes in `mcpDispatch.ts`, the real deps in `mcpActionTools.ts writeDeps`. Tests `src/lib/mcpWrite.test.mjs`.
+  - **Needs migration `0396_mcp_write_actions.sql` (NOT applied; Actions > Apply migrations to production, `only=0396`).**
+    Why: 0380 created `mcp_pending_actions.kind` with `CHECK (kind IN ('meeting','email'))`; 0396 only widens that list.
+    Until applied: the two tools are hidden and answer "not set up (migration 0396)", their switches stay disabled.
+  - Same mechanism as meetings / email: `propose_*` stores ONE pending action (10 minutes, single use, same token +
+    person) and writes nothing; `confirm_action` -> main switch -> the action's own switch (peeked first, so a switched-off
+    action is refused without using up the confirmation) -> 30-a-day cap -> single-use claim -> body fence -> ONE
+    in-process call to the ERP's own route as the person. The route's own permission check, validation and audit decide.
+    Every proposal / confirmation is a row in `mcp_calls` (target = kind + record, never the text) and, when done, one
+    `audit_log` row `ai_connector.<kind>` (source `ai_connector`, record id + recipient / length, never the text).
+  - **Switches:** System > AI Connector > "AI write actions", one per action, default OFF (settings `mcp.action.mail_reply`,
+    `mcp.action.note`), management only (`POST /api/ai-connector/admin/settings {action, enabled}`), effective only while
+    "Allow AI actions" (the main switch) is on.
+
+  | Tool (args) | ERP endpoint it calls (existing) | What gates it (the ERP's own RBAC) | Switch |
+  | --- | --- | --- | --- |
+  | `propose_mail_reply {thread_id, body}` | Mail Center sign-on `POST /api/supply-chain/engine-session`, then engine `POST /api/mail-center/threads/:id/reply` with `{text, afterMessageId}` only; `force` is never sent, so the reply guard refuses (409) if a colleague replied after the proposal | the Mail Center area not closed (`levels.mail`, checked by `GET /api/supply-chain/mail-waiting`) + no field / owner accounts (`mayUseScmEngine`, also on the sign-on); the engine's Mail access and mailbox scope (`getMailScope`); only threads in `GET /api/supply-chain/mail-waiting?list=1` (waiting for this person: assigned to them, or unassigned in their own mailbox) | `mcp.action.mail_reply` |
+  | `propose_note {target_type: reservation, number_or_id, note}` | `PATCH /api/reservations/:id/details` with `{staffNotes}` only (the drawer's Staff notes save); one `[Note <date> <name> (via AI Connector): ...]` line appended to the notes read at confirm time | area `reservations` at edit or above (middleware `accessFor` / `refusalFor`) + the handler's no-field-roles check | `mcp.action.note` |
+  | `propose_note {target_type: cleaning_job, number_or_id, note}` | `PATCH /api/housekeeping/tasks/:id` with `{instructions}` only ("Notes for the cleaner"); same append | area `cleaning` at edit or above + no field roles | `mcp.action.note` |
+
+  - **Mail Center, no new mailbox:** the engine sign-on gives a first-time person a mailbox (`conts/sso.ts`), so both
+    propose AND confirm first read `GET /api/supply-chain/mail-waiting` (read-only; never signs on) and refuse with "Open
+    Mail Center in the ERP first" when it says not opened; only then does confirm sign on. **Engine change:** the
+    read-only `POST /api/conts-mail-waiting` takes `?list=1` and also returns the waiting threads (at most 10, longest
+    waiting first, with the newest message id for the reply guard); `daily_brief` lists them with their `threadId`. The
+    engine deploys by its own workflow (`deploy-engine-production.yml`, on push to main touching `engine/`); until then
+    propose_mail_reply answers "the engine needs its update" and the brief shows only the count.
+  - **Skipped:** notes on maintenance jobs (no note / comment endpoint: the only free text is the job description in the
+    general `PATCH /api/maintenance/issues/:id`, which also re-derives the job state; no screen edits it); anything
+    financial (payouts, invoices, statements). The cleaning job's `instructions` are set by the Cleaning page at creation
+    ("Notes for the cleaner") and the PATCH documents them as editable; no current screen edits them after creation.
+  - **Untested live:** every write against production through a real client (the unit tests use a stand-in ERP that
+    applies the middleware's gate); the engine `?list=1` on production; migration 0396 on production.
+- **Round 4c, platform quality (same branch).** Code `functions/_lib/mcpVisibility.ts` (pure), wiring in `mcpServer.ts`.
+  - **P1 role-aware tools/list:** each read tool lists the endpoints it reads (`TOOL_NEEDS`); it is listed only when the
+    person passes the session middleware's own module gate for those GETs (`accessFor` + `refusalFor`, with role, side,
+    department and position read as the middleware reads them: `mcpActionTools.ts gateFor`). Action tools: listed only
+    while the main switch is on (write actions: also their own switch, migration 0396 and the gate on the write). A hidden
+    read tool called directly answers "Not available to your role ..." (status 403, note `no access`).
+  - **P2 prompts per role:** `owner_morning_report`, `operations_review`, `reservations_revenue_review`, `finance_review`,
+    `owner_relations_review` (plus the four before); `prompts/list` shows a prompt when one of its tools is listed
+    (`mcpQuick.ts PROMPT_TOOLS`).
+  - **P3:** the 20 quick answers (`STRUCTURED_TOOLS`) carry an open `outputSchema`; their results `structuredContent`
+    (the same JSON as the text, which stays).
+  - **P4:** a 60 s in-isolate cache per person + role + tool + arguments (`AnswerCache`, `CACHEABLE_TOOLS`: the 16 heavy
+    summaries; today / cleaning / attendance / one unit stay live). A cached answer is logged with note `cached`.
+  - **P5:** every quick answer gets `erpLink` (its ERP page); a row naming a record (`reservationId`, `unitId`, `ownerId`,
+    `statementId`, `guestId`, `taskId`, `issueId`) without a link gets `url`; any `...Sen` left becomes `...Rm` (a hidden
+    figure stays null).
+  - **Untested live:** the filtered tools/list and `structuredContent` in Claude / ChatGPT.
 - **FAQ (owner, 26 Nov 2026): each answered in ONE tool call.**
 
   | # | Question | Tool | Reads |
@@ -394,11 +447,14 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   | C14 | What did owner X get paid? | `owner_statement_summary {owner}` | their statements by month + payouts (finance) |
   | R1 | Monthly / quarterly / yearly management report | `company_report` | The Conts or Dream Crafter, vs the period before |
   | D4 | What data is missing? | `data_gaps` | units without owner, owners without bank / contract, ... |
+  | A1 | Reply to that guest's email for me | `propose_mail_reply` -> `confirm_action` | an email waiting for you (threadId from `daily_brief`); sent only after your yes, not if a colleague replied first |
+  | A2 | Note on reservation X / this cleaning job: ... | `propose_note` -> `confirm_action` | one dated line in the reservation's staff notes or the job's notes for the cleaner |
 - Files: `functions/_lib/mcp*.ts`, `functions/_lib/aiConnector.ts`, `functions/api/mcp/`, `functions/api/ai-connector/`,
   `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests
   `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`, `src/lib/mcpMore.test.mjs`,
   `src/lib/mcpConts4.test.mjs`; round 4: `functions/_lib/mcpConts4.ts`, `mcpConts4Tools.ts`,
-  `functions/api/supply-chain/mail-waiting.ts`.
+  `functions/api/supply-chain/mail-waiting.ts`; round 4b / 4c: `functions/_lib/mcpWrite.ts`, `mcpVisibility.ts`,
+  `migrations-pg/0396_mcp_write_actions.sql`, `src/lib/mcpWrite.test.mjs`.
 
 ## Mail Center re-synced with Houzs, 26 Nov 2026
 

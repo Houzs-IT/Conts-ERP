@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mailWaitingCaller, verifyMailWaitingAssertion, type MailWaitingDb } from "./mail-waiting-route";
+import { WAITING_LIST_LIMIT, mailWaitingCaller, verifyMailWaitingAssertion, waitingThread, type MailWaitingDb } from "./mail-waiting-route";
 import { CONTS_AREAS } from "./access";
 
 // AI Connector round 4 (27 Nov 2026): the daily brief's Mail Center count is read-only. A person with no engine account
@@ -69,5 +69,20 @@ describe("mailWaitingCaller (read-only)", () => {
     expect(none.seen).toEqual([]);
     const off = fakeDb({ id: 7, status: "disabled" }, true);
     expect((await mailWaitingCaller(off.db, { email: "a@x.com", access: MAIL })).kind).toBe("refused");
+  });
+});
+
+describe("waitingThread (?list=1, AI Connector round 4b)", () => {
+  it("shapes one waiting thread: lower-cased addresses, capped one-line snippet, newest message id, mine or not", () => {
+    const row = {
+      id: "th1", subject: "  Late check-in? ", mailbox_address: "Hello@TheConts.com", counterparty_email: "Guest@X.com", counterparty_name: " Ann ",
+      last_message_at: "2026-11-27T01:00:00Z", last_snippet: `Hi\n\nwe arrive ${"late ".repeat(80)}`, assigned_to_user_id: 7, newest_message_id: "m9",
+    };
+    const t = waitingThread(row, 7);
+    expect(t).toMatchObject({ id: "th1", subject: "Late check-in?", mailbox: "hello@theconts.com", fromEmail: "guest@x.com", fromName: "Ann", newestMessageId: "m9", assignedToMe: true });
+    expect(t.snippet.length).toBeLessThanOrEqual(240);
+    expect(t.snippet).not.toMatch(/\n/);
+    expect(waitingThread({ ...row, subject: null, assigned_to_user_id: null, newest_message_id: null }, 7)).toMatchObject({ subject: "(no subject)", assignedToMe: false, newestMessageId: null });
+    expect(WAITING_LIST_LIMIT).toBe(10);
   });
 });

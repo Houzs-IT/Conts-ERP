@@ -7,7 +7,9 @@
  * stripping). The only writes are confirm_action's, through the ERP's own endpoints as the person, fenced by
  * ACTION_ALLOWLIST and a single-use permit (mcpActions.ts, mcpInner.ts, functions/api/_middleware.ts).
  */
-import { type Env, mytToday } from './db';
+import { type Env, audit, mytToday } from './db';
+import { sessionState } from './auth';
+import { accessFor, levelAt, refusalFor } from './access';
 import { MCP_ACTION_HEADER, MCP_INNER_HEADER, grantActionPermit, mcpInnerSecret } from './mcpInner';
 import { dispatchRequest } from './mcpDispatch';
 import { scmEngineConfigured } from './scmEngine';
@@ -18,8 +20,9 @@ import {
 import { parseFetchId } from './mcpQuick';
 import {
   actionsEnabled, cancelPendingAction, confirmedInLastDay, consumePendingAction, createPendingAction, finishPendingAction, mcpActionsReady,
-  randomToken, type McpIdentity,
+  peekPendingKind, randomToken, writeKindsReady, writeSwitches, type McpIdentity,
 } from './mcpStore';
+import { confirmWrite, proposeWrite, type WriteDeps } from './mcpWrite';
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
@@ -36,14 +39,14 @@ export interface ToolCtx {
   read: (path: string, q?: Record<string, unknown>) => Promise<ReadValue>;
 }
 
-export const ACTION_TOOL_NAMES = ['propose_meeting', 'propose_email', 'confirm_action', 'cancel_action', 'document_flow', 'get_pdf'];
+export const ACTION_TOOL_NAMES = ['propose_meeting', 'propose_email', 'confirm_action', 'cancel_action', 'document_flow', 'get_pdf', 'propose_mail_reply', 'propose_note'];
 
 const CONFIRM_NOTE = 'Show this summary to the person and ask them to confirm. Only call confirm_action after they explicitly say yes. It lapses in 10 minutes.';
 const enc = encodeURIComponent;
 
 /** One request through the API in-process as the person (mcpDispatch.ts). A write carries the action id the middleware
  *  needs a permit for; nothing else can make one. */
-async function inner(c: ToolCtx, method: 'GET' | 'POST', path: string, o: { body?: unknown; actionId?: string } = {}): Promise<Response> {
+async function inner(c: ToolCtx, method: 'GET' | 'POST' | 'PATCH', path: string, o: { body?: unknown; actionId?: string } = {}): Promise<Response> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${c.token}`, [MCP_INNER_HEADER]: mcpInnerSecret(), accept: 'application/json', 'user-agent': 'Conts AI Connector',
   };
@@ -135,10 +138,92 @@ async function sendEmail(c: ToolCtx, actionId: string, mail: EmailPayload): Prom
   }
 }
 
+/* ---------- round 4b write actions (mcpWrite.ts) ---------- */
+
+/** The session middleware's own module gate (access.ts accessFor + refusalFor) for one person, any method + path:
+ *  what a request of theirs would be refused with before its handler runs; and one area's level (levelAt), for the
+ *  handlers that check an area themselves (Mail Center: GET /api/supply-chain/mail-waiting checks levels.mail). Built
+ *  once per tool call; the person's role, side, department and position are read as the middleware reads them. */
+export function gateFor(env: Env, userId: string): ((method: string, path: string) => Promise<boolean>) & { level: (area: string) => Promise<string> } {
+  let actor: Promise<Parameters<typeof accessFor>[1] | null> | null = null;
+  const who = () => (actor ??= sessionState(env, userId).then(s => (s.user?.active ? { userId, role: s.user.role, side: s.user.side, departmentId: s.user.departmentId, positionId: s.user.positionId, kind: s.user.kind } : null)));
+  const can = async (method: string, path: string) => {
+    const a = await who();
+    if (!a) return false;
+    return refusalFor(await accessFor(env, a, path, method), method) === null;
+  };
+  return Object.assign(can, { level: async (area: string) => { const a = await who(); return a ? levelAt(env, a, area) : 'none'; } });
+}
+
+/** Mail Center's own Reply as the person: the Mail Center sign-on (engine-session, single-use permit, the same one
+ *  propose_email's confirmation uses), then engine POST /api/mail-center/threads/:id/reply (the engine checks the
+ *  person's mailbox scope and the reply guard), then sign out. Never `force`. */
+async function engineReply(c: ToolCtx, actionId: string, threadId: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  if (!scmEngineConfigured(c.env)) return { status: 501, body: { error: 'Mail Center is not set up on this system.' } };
+  grantActionPermit(actionId, { userId: c.id.user.id, method: 'POST', path: '/api/supply-chain/engine-session' });
+  const s = await inner(c, 'POST', '/api/supply-chain/engine-session', { actionId });
+  const sb = await s.json().catch(() => null) as { token?: string; sessionPass?: string | null } | null;
+  if (!s.ok || !sb?.token) return { status: s.status === 200 ? 502 : s.status, body: { error: `Mail Center did not open for your account (${errorOf(sb, s.status)})` } };
+  const api = c.env.SCM_ENGINE_API!.replace(/\/+$/, '');
+  const auth: Record<string, string> = { authorization: `Bearer ${sb.token}`, ...(sb.sessionPass ? { 'x-session-pass': sb.sessionPass } : {}) };
+  try {
+    const res = await fetch(`${api}/api/mail-center/threads/${enc(threadId)}/reply`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25_000),
+    });
+    return { status: res.status, body: await res.json().catch(() => null) };
+  } catch {
+    return { status: 504, body: { error: 'Mail Center could not be reached, so it is not known whether the reply went. Check the email thread in Mail Center before trying again' } };
+  } finally {
+    c.waitUntil(fetch(`${api}/api/auth/logout`, { method: 'POST', headers: auth, signal: AbortSignal.timeout(10_000) }).catch(() => undefined));
+  }
+}
+
+/** The real I/O behind mcpWrite.ts: reads as the person, the ERP's own gate, the store, the ONE permitted write. */
+export function writeDeps(c: ToolCtx): WriteDeps {
+  const uid = c.id.user.id;
+  const gate = gateFor(c.env, uid);
+  return {
+    userName: c.id.user.fullName,
+    origin: c.origin,
+    read: async (path, q) => {
+      const r = await c.read(path, q);
+      return r.ok ? { ok: true, status: r.status, value: r.value } : { ok: false, status: r.status, message: r.message };
+    },
+    canWrite: gate,
+    ready: async () => (await mcpActionsReady(c.env)) && (await writeKindsReady(c.env)),
+    mainOn: () => actionsEnabled(c.env),
+    switches: () => writeSwitches(c.env),
+    createPending: (kind, payload, summary) => createPendingAction(c.env, { tokenId: c.id.tokenId, userId: uid, kind, payload, summary }),
+    peekPending: id => peekPendingKind(c.env, id, c.id.tokenId, uid),
+    consumePending: id => consumePendingAction(c.env, id, c.id.tokenId, uid),
+    finishPending: (id, outcome, result) => finishPendingAction(c.env, id, outcome, result),
+    confirmedToday: () => confirmedInLastDay(c.env, uid),
+    write: async (actionId, req) => {
+      grantActionPermit(actionId, { userId: uid, method: req.method, path: req.path, fence: req.fence });
+      const res = await inner(c, req.method, req.path, { body: req.body, actionId });
+      return { status: res.status, body: await res.json().catch(() => null) };
+    },
+    engineReply: (actionId, threadId, body) => engineReply(c, actionId, threadId, body),
+    audit: (action, entityTable, entityId, after) => audit(c.env, { actorId: uid, actorLabel: c.id.user.fullName, action, entityTable, entityId, after, source: 'ai_connector' }),
+    now: () => Date.now(),
+  };
+}
+
+async function proposeWriteTool(c: ToolCtx, name: 'propose_mail_reply' | 'propose_note', args: Record<string, unknown>): Promise<Outcome> {
+  if (!(await mcpActionsReady(c.env))) return refuse('AI actions are not set up on this system yet (its database update, migration 0380, has not been applied).', 503, name, 'not set up');
+  const o = await proposeWrite(writeDeps(c), name, args);
+  return o.ok ? done(o.body, o.target) : refuse(o.message, o.status, o.target);
+}
+
 async function confirmTool(c: ToolCtx, args: Record<string, unknown>): Promise<Outcome> {
   const cid = String(args.confirmationId ?? '').trim();
   const target = `confirm ${cid.slice(0, 40)}`;
   if (!validConfirmationId(cid)) return refuse('Give the confirmationId a propose_ tool returned.', 400, target, 'invalid');
+  // A write action (round 4b): its own path, switches and fence (mcpWrite.ts). Null: a meeting or an email.
+  if (await mcpActionsReady(c.env)) {
+    const w = await confirmWrite(writeDeps(c), cid);
+    if (w) return w.ok ? done({ done: true, message: w.message }, w.target) : refuse(w.message, w.status, w.target, w.status === 403 ? 'action off' : 'action failed');
+  }
   const blocked = await actionsBlocked(c, target);
   if (blocked) return blocked;
   if ((await confirmedInLastDay(c.env, c.id.user.id)) >= MAX_CONFIRMED_PER_DAY) {
@@ -307,6 +392,7 @@ export async function runActionTool(name: string, args: Record<string, unknown>,
     case 'cancel_action': return cancelTool(c, args);
     case 'document_flow': return documentFlowTool(c, args);
     case 'get_pdf': return getPdfTool(c, args);
+    case 'propose_mail_reply': case 'propose_note': return proposeWriteTool(c, name, args);
     default: return null;
   }
 }
@@ -352,13 +438,13 @@ export const ACTION_TOOLS = [
   },
   {
     name: 'confirm_action', title: 'Do a confirmed action',
-    description: 'Book the meeting or send the email a propose_ tool prepared. ONLY call this after the person has seen the summary and explicitly said yes in this conversation. Works once; lapses 10 minutes after the proposal.',
+    description: 'Do what a propose_ tool prepared (book the meeting, send the email or the Mail Center reply, add the note). ONLY call this after the person has seen the summary and explicitly said yes in this conversation. Works once; lapses 10 minutes after the proposal.',
     inputSchema: { type: 'object', properties: { confirmationId: { type: 'string' } }, required: ['confirmationId'], additionalProperties: false },
     annotations: ACT,
   },
   {
     name: 'cancel_action', title: 'Cancel a proposed action',
-    description: 'Drop a proposal the person does not want. Nothing is booked or sent.',
+    description: 'Drop a proposal the person does not want. Nothing is done.',
     inputSchema: { type: 'object', properties: { confirmationId: { type: 'string' } }, required: ['confirmationId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },

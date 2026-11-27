@@ -40,8 +40,10 @@ test('write fence: reads from the tool runner pass; a write needs the action id,
   }
 });
 
-test('the allow-list is exactly booking a meeting and the Mail Center sign-on', () => {
-  assert.deepEqual(A.ACTION_ALLOWLIST.map(([m, p]) => `${m} ${p}`), ['POST /api/meetings/meetings', 'POST /api/supply-chain/engine-session']);
+test('the allow-list is exactly booking a meeting, the Mail Center sign-on and the two round 4b note saves', () => {
+  assert.deepEqual(A.ACTION_ALLOWLIST.map(([m, p]) => `${m} ${p}`), [
+    'POST /api/meetings/meetings', 'POST /api/supply-chain/engine-session', 'PATCH /api/reservations/:ref/details', 'PATCH /api/housekeeping/tasks/:ref',
+  ]);
   assert.equal(A.isAllowlisted('post', '/api/meetings/meetings?x=1'), true);
   assert.equal(A.isAllowlisted('GET', '/api/meetings/meetings'), false);
 });

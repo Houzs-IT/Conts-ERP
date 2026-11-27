@@ -12,7 +12,8 @@
  */
 import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
-import { ACTIONS_SETTING_KEY, ACTION_TTL_MS, PENDING_SQL, type ActionKind } from './mcpActions';
+import { ACTIONS_SETTING_KEY, ACTION_KINDS, ACTION_TTL_MS, PENDING_SQL, type ActionKind } from './mcpActions';
+import { WRITE_ACTIONS, writeSettingKey, type WriteAction } from './mcpWrite';
 import { RATE_COUNT_SQL, RATE_SQL } from './mcpMore';
 
 export const MCP_TOKEN_PREFIX = 'ctmcp_';
@@ -220,6 +221,44 @@ export async function actionsEnabled(env: Env): Promise<boolean> {
 export async function setActionsEnabled(env: Env, on: boolean): Promise<void> {
   await run(env, 'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at',
     ACTIONS_SETTING_KEY, on ? '1' : '0', nowIso());
+}
+
+/* ---------- round 4b write actions (migration 0396; functions/_lib/mcpWrite.ts) ---------- */
+
+/** Whether migration 0396 widened mcp_pending_actions.kind for the write actions. Found: remembered for the life of the
+ *  worker; not found: looked for again after a minute (as hasColumn), so applying it takes effect soon. */
+let writeKindsSeen: true | number | undefined;
+export async function writeKindsReady(env: Env): Promise<boolean> {
+  if (writeKindsSeen === true) return true;
+  if (typeof writeKindsSeen === 'number' && Date.now() - writeKindsSeen < 60_000) return false;
+  if (!(await mcpActionsReady(env))) { writeKindsSeen = Date.now(); return false; }
+  const r = await one<{ n: number }>(env, `
+    SELECT count(*) AS n FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace s ON s.oid = t.relnamespace
+     WHERE s.nspname = 'pos' AND t.relname = 'mcp_pending_actions' AND c.contype = 'c' AND pg_get_constraintdef(c.oid) LIKE '%reservation_note%'`);
+  const found = Number(r?.n ?? 0) > 0;
+  writeKindsSeen = found ? true : Date.now();
+  return found;
+}
+
+/** One write action's own switch (settings mcp.action.<name>, '1' = on). Off unless management turned it on. It does
+ *  NOT include the main "Allow AI actions" switch: callers check both. */
+export async function writeSwitches(env: Env): Promise<Record<WriteAction, boolean>> {
+  const rows = await all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN (${WRITE_ACTIONS.map(() => '?').join(', ')})`, ...WRITE_ACTIONS.map(writeSettingKey));
+  const on = new Set(rows.filter(r => r.value === '1').map(r => r.key));
+  return Object.fromEntries(WRITE_ACTIONS.map(a => [a, on.has(writeSettingKey(a))])) as Record<WriteAction, boolean>;
+}
+
+export async function setWriteSwitch(env: Env, a: WriteAction, on: boolean): Promise<void> {
+  await run(env, 'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at',
+    writeSettingKey(a), on ? '1' : '0', nowIso());
+}
+
+/** The kind of a proposal this connection may still confirm, or null. Reads only: nothing is claimed, so an action that
+ *  is switched off is refused without using up its confirmation. */
+export async function peekPendingKind(env: Env, id: string, tokenId: string, userId: string): Promise<ActionKind | null> {
+  const r = await one<{ kind: string }>(env, PENDING_SQL.peek, id, tokenId, userId, nowIso());
+  const k = r?.kind as ActionKind | undefined;
+  return k && (ACTION_KINDS as readonly string[]).includes(k) ? k : null;
 }
 
 export interface PendingAction { id: string; kind: ActionKind; payload: unknown; summary: string; expiresAt: string }

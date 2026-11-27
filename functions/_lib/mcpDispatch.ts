@@ -14,6 +14,8 @@ import { matchRoute, type ApiRoute, type RouteHandler } from './mcpRoutes';
 import { handleApiRequest } from '../api/_middleware';
 import { onRequest as meetingsHandler } from '../api/meetings/[[path]]';
 import { onRequestPost as engineSessionPost } from '../api/supply-chain/engine-session';
+import { onRequestPatch as reservationDetailsPatch } from '../api/reservations/[id]/details';
+import { onRequestPatch as cleaningTaskPatch } from '../api/housekeeping/tasks/[id]';
 
 /** The only handlers a dispatched WRITE can reach: those behind mcpActions.ts ACTION_ALLOWLIST (the middleware refuses
  *  anything else first; this is the second wall). Built on first use, as apiRoutes. */
@@ -21,6 +23,9 @@ let writeRoutes: ApiRoute[] | undefined;
 const actionRoutes = (): ApiRoute[] => (writeRoutes ??= [
   { path: '/api/supply-chain/engine-session', method: '', handler: engineSessionPost as unknown as RouteHandler },
   { path: '/api/meetings/:path*', method: '', handler: meetingsHandler as unknown as RouteHandler },
+  // Round 4b notes (PATCH only; the middleware already refused any other method or body).
+  { path: '/api/reservations/:id/details', method: '', handler: reservationDetailsPatch as unknown as RouteHandler },
+  { path: '/api/housekeeping/tasks/:id', method: '', handler: cleaningTaskPatch as unknown as RouteHandler },
 ]);
 
 type Ctx = Parameters<PagesFunction<Env>>[0];
