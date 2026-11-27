@@ -101,7 +101,8 @@ import { unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { supabaseAuth } from '../middleware/auth';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange } from '../lib/entity-audit';
 import { PO_LINE_AUDIT_FIELDS, PO_LINE_AUDIT_SELECT } from '../lib/entity-audit-fields';
-import { computeMrp } from './mrp';
+import { computeMrp, mrpLineCoverage } from './mrp';
+import { lineStockOf } from './renovation-doc-trail';
 import { eager } from '../lib/concurrency';
 import { provenanceNote } from '../shared/transfer-vocabulary';
 import type { Env, Variables } from '../env';
@@ -611,6 +612,7 @@ async function outstandingSoRows(c: PoCtx, items: unknown[] | null, mrpRun: Prom
   const shortageBySoItem = new Map<string, number>();
   let pooledOk = true;
   const mrpOutcome = await mrpRun;
+  const coverage = mrpOutcome.ok ? mrpLineCoverage(mrpOutcome.res) : null;
   if (mrpOutcome.ok) {
     for (const sku of mrpOutcome.res.skus) {
       for (const l of sku.lines) shortageBySoItem.set(l.soItemId, l.shortageQty);
@@ -671,6 +673,7 @@ async function outstandingSoRows(c: PoCtx, items: unknown[] | null, mrpRun: Prom
         qty:             r.qty,
         poQtyPicked:     r.po_qty_picked,
         remainingQty:    remaining,
+        lineStock:       coverage ? lineStockOf(coverage.get(r.id)) : null,
         unitPriceSen:  r.unit_price_sen,
         variants:        r.variants,
         lineSuffix:      r.line_suffix,

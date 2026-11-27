@@ -12,7 +12,8 @@ export interface LineStatus { stock: "stock" | "po" | "shortage" | null; incomin
 /* Asked page by page, in the order the rows are listed, one page after the other: the first rows fill in at once and
    a picker of thousands of lines never waits for all of them (owner, 8 Nov 2026: 5,076 lines on production). */
 const PAGE = 150;
-export function useSoLineStatus(ids: readonly string[]): Record<string, LineStatus> {
+// withStock false: the caller has each line's stock already and needs only the documents.
+export function useSoLineStatus(ids: readonly string[], { withStock = true }: { withStock?: boolean } = {}): Record<string, LineStatus> {
   const pages = useMemo(() => {
     const seen = new Set<string>(); const list: string[] = [];
     for (const id of ids) if (!seen.has(id)) { seen.add(id); list.push(id); }
@@ -23,9 +24,9 @@ export function useSoLineStatus(ids: readonly string[]): Record<string, LineStat
   const [answered, setAnswered] = useState(0);
   const results = useQueries({
     queries: pages.map((page, n) => ({
-      queryKey: ["so-line-status", page.join(",")],
+      queryKey: ["so-line-status", withStock, page.join(",")],
       staleTime: 30_000,
-      queryFn: () => authedFetch<{ lines: Record<string, LineStatus> }>(`/renovation-doc-trail/lines?ids=${page.join(",")}`).then((r) => r.lines),
+      queryFn: () => authedFetch<{ lines: Record<string, LineStatus> }>(`/renovation-doc-trail/lines?ids=${page.join(",")}${withStock ? "" : "&stock=0"}`).then((r) => r.lines),
       // Each page waits for the one before it, so the server is never asked for every page at once.
       enabled: n <= answered,
       retry: 1,

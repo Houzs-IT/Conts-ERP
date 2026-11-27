@@ -683,7 +683,15 @@ function ProjectGroupSection({
   });
   const lines = useMemo(() => linesQ.data?.filter(isShown) ?? null, [linesQ.data, isShown]);
   const lineIds = useMemo(() => (isOpen ? (lines ?? []).map((r) => r.soItemId) : []), [isOpen, lines]);
-  const lineStatus = useSoLineStatus(lineIds);
+  const trails = useSoLineStatus(lineIds, { withStock: false });
+  const lineStatus = useMemo(() => {
+    const merged: Record<string, LineStatus> = {};
+    for (const r of lines ?? []) {
+      const stock = r.lineStock ?? { stock: null, incomingPo: null, eta: null };
+      merged[r.soItemId] = { ...stock, steps: trails[r.soItemId]?.steps ?? [] };
+    }
+    return merged;
+  }, [lines, trails]);
   const columns = useMemo(() => buildColumns(lineStatus), [buildColumns, lineStatus]);
 
   const pickedHere = lines ? lines.filter((r) => pickedIds.has(r.soItemId)).length : rememberedPickCount;

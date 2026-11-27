@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lineStatuses, stepOf, trailOf, type TrailRow } from './renovation-doc-trail';
+import { lineStatuses, lineStockOf, stepOf, trailOf, type TrailRow } from './renovation-doc-trail';
 
 const row = (over: Partial<TrailRow>): TrailRow => ({ kind: 'po', id: '1', no: 'TC-PO-1', status: 'SUBMITTED', on_hold: false, expected: '2026-11-20', started: null, done: null, who: null, ...over });
 
@@ -40,5 +40,15 @@ describe('lineStatuses', () => {
   });
   it('an unknown stock word reads as no stock information', () => {
     expect(lineStatuses(['a'], [], new Map([['a', { source: 'odd' }]])).a.stock).toBeNull();
+  });
+});
+
+describe('lineStockOf', () => {
+  it('the picker row and the column read one plan result the same way', () => {
+    expect(lineStockOf({ source: 'po', po: 'PO-7', eta: '2026-12-01' })).toEqual({ stock: 'po', incomingPo: 'PO-7', eta: '2026-12-01' });
+    expect(lineStockOf({ source: 'stock', po: 'PO-7', eta: '2026-12-01' })).toEqual({ stock: 'stock', incomingPo: null, eta: null });
+    expect(lineStockOf(undefined)).toEqual({ stock: null, incomingPo: null, eta: null });
+    const cover = new Map([['a', { source: 'shortage' }]]);
+    expect(lineStatuses(['a'], [], cover).a).toEqual({ ...lineStockOf(cover.get('a')), steps: [] });
   });
 });

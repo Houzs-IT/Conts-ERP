@@ -67,16 +67,19 @@ export type LineStock = 'stock' | 'po' | 'shortage' | null;
 export interface LineStatus { stock: LineStock; incomingPo: string | null; eta: string | null; steps: TrailStep[] }
 type LineRow = TrailRow & { line: string };
 
+export type LineCover = { source?: string | null; po?: string | null; eta?: string | null };
+export type LineStockStatus = Omit<LineStatus, 'steps'>;
+
+export function lineStockOf(c: LineCover | undefined): LineStockStatus {
+  const source = c?.source === 'stock' || c?.source === 'po' || c?.source === 'shortage' ? c.source : null;
+  return { stock: source, incomingPo: source === 'po' ? c?.po ?? null : null, eta: source === 'po' ? c?.eta ?? null : null };
+}
+
 export function lineStatuses(
-  ids: readonly string[], rows: readonly LineRow[],
-  cover: ReadonlyMap<string, { source?: string | null; po?: string | null; eta?: string | null }>,
+  ids: readonly string[], rows: readonly LineRow[], cover: ReadonlyMap<string, LineCover>,
 ): Record<string, LineStatus> {
   const out: Record<string, LineStatus> = {};
-  for (const id of ids) {
-    const c = cover.get(id);
-    const source = c?.source === 'stock' || c?.source === 'po' || c?.source === 'shortage' ? c.source : null;
-    out[id] = { stock: source, incomingPo: source === 'po' ? c?.po ?? null : null, eta: source === 'po' ? c?.eta ?? null : null, steps: trailOf(rows.filter((r) => r.line === id)) };
-  }
+  for (const id of ids) out[id] = { ...lineStockOf(cover.get(id)), steps: trailOf(rows.filter((r) => r.line === id)) };
   return out;
 }
 
@@ -107,8 +110,10 @@ renovationDocTrail.get('/lines', async (c) => {
   // Stock is best effort: when the stock count fails the documents still show.
   /* The picker asks in pages; the whole-company stock count is the same for each page, so it is worked out once and
      reused for a few seconds (as the list screens do) instead of once per page. */
+  // stock=0: the caller already has each line's stock from its own run of the same plan.
+  if (c.req.query('stock') === '0') return c.json({ lines: lineStatuses(ids, results ?? [], new Map()) });
   const cov = await withListMemo(`doc-trail-lines:${co.companyId}`, () => soCoverage(c, c.get('supabase')));
-  return c.json({ lines: lineStatuses(ids, results ?? [], cov.coverage as ReadonlyMap<string, { source?: string | null; po?: string | null; eta?: string | null }>) });
+  return c.json({ lines: lineStatuses(ids, results ?? [], cov.coverage as ReadonlyMap<string, LineCover>) });
 });
 
 renovationDocTrail.get('/', async (c) => {
