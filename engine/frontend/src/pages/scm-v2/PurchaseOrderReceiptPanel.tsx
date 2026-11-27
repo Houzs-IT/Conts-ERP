@@ -64,7 +64,7 @@ export const PurchaseOrderReceiptPanel = ({ meta, lines, totals }: PurchaseOrder
       className={`${styles.card} ${layout.receipt} flex flex-col`}
     >
       <div className="shrink-0 space-y-2 p-4">
-        <h2 className={styles.cardTitle}>Order TL;DR</h2>
+        <h2 className={styles.cardTitle}>Order details</h2>
         <MetaRow label="Creditor" value={meta.creditorLabel} />
         <MetaRow label="PO date" value={meta.poDate} />
         <MetaRow label="Expected delivery" value={meta.expectedAt} />
@@ -75,7 +75,7 @@ export const PurchaseOrderReceiptPanel = ({ meta, lines, totals }: PurchaseOrder
       {/* Phone and tablet already list every line in full right above this card. */}
       <div className={`${layout.receiptItems} min-h-0 flex-1 flex-col border-t border-[rgb(var(--eng-border))]`}>
         <div className="shrink-0 px-4 pb-2 pt-3" style={LABEL_STYLE}>Items summary ({lines.length})</div>
-        <ul className="min-h-0 flex-1 overflow-y-auto pb-2 pl-4 pr-1">
+        <ul tabIndex={0} aria-label="Items summary" className="min-h-0 flex-1 overflow-y-auto pb-2 pl-4 pr-1">
           {lines.length === 0 && (
             <li className="py-2 text-[length:var(--fs-13)] text-[color:var(--fg-muted)]">No lines yet.</li>
           )}
@@ -95,7 +95,7 @@ export const PurchaseOrderReceiptPanel = ({ meta, lines, totals }: PurchaseOrder
         </ul>
       </div>
 
-      <div className="shrink-0 space-y-1.5 border-t border-[rgb(var(--eng-border))] p-4">
+      <div className="shrink-0 space-y-2 border-t border-[rgb(var(--eng-border))] p-4">
         <TotalRow label="Total Lines" value={String(lines.length)} />
         <TotalRow label="Total Units" value={String(totals.totalUnits)} />
         <TotalRow label="Subtotal" value={money(totals.grossSen)} />

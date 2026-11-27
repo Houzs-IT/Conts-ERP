@@ -1282,7 +1282,7 @@ export const PurchaseOrderNew = () => {
                       onClick={() => toggleLineCollapsed(l.rid)}
                       aria-expanded
                       aria-label={`Collapse line ${idx + 1}`}
-                      className="-ml-2 inline-flex min-h-11 cursor-pointer items-center gap-1.5 bg-transparent px-2"
+                      className="-ml-2 inline-flex min-h-11 cursor-pointer items-center gap-2 bg-transparent px-2"
                       style={{
                         fontFamily: 'var(--font-button)',
                         fontSize: 'var(--fs-12)',
