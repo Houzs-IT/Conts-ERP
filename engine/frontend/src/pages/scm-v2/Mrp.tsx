@@ -211,6 +211,8 @@ const stockWhereText = (skus: ReadonlyArray<{ stockWhere?: Array<{ code: string;
   return [...at].sort((a, b) => b[1] - a[1]).map(([code, qty]) => `${code} ${qty}`).join(' · ');
 };
 
+const DRAFT_NOTE = '\n\nOpen each draft under Purchase Orders to check it and Confirm. Until then MRP still shows these lines as short.';
+
 export const Mrp = () => {
   const navigate = useNavigate();
   const { staff, canWriteScmConfig } = useAuth();
@@ -463,6 +465,7 @@ export const Mrp = () => {
     picks: Array<{ soItemId: string; qty: number; supplierId: string | null }>,
     _orderedCodes: Set<string>,
     expectedAt?: string,
+    asDraft = false,
   ) => {
     if (picks.length === 0) {
       setDialog({ kind: 'info', title: 'Nothing to order', body: 'No uncovered (shortage) lines in the current selection / window.' });
@@ -474,14 +477,14 @@ export const Mrp = () => {
     if (materialPicks.length > 0) {
       /* Safe to re-key on a retry: the server orders only what a material has no PO for yet. */
       void createMaterialPos({
-        idempotencyKey: newIdempotencyKey(), mode: poMode, ...(expectedAt ? { expectedAt } : {}),
+        idempotencyKey: newIdempotencyKey(), mode: poMode, ...(expectedAt ? { expectedAt } : {}), ...(asDraft ? { asDraft: true } : {}),
         picks: materialPicks.map((p) => ({ materialId: p.soItemId, qty: p.qty, supplierId: p.supplierId })),
       }).then((res) => {
         setSelected(new Set());
         /* The page reads a stored plan: regenerate it, or the lines just ordered still read short. */
         regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
         setDialog(res.total > 0
-          ? { kind: 'created', title: `Successfully created ${res.total} PO${res.total === 1 ? '' : 's'}`, body: res.created.map((p) => p.poNumber).join(', ') }
+          ? { kind: 'created', title: `${asDraft ? 'Saved' : 'Successfully created'} ${res.total} ${asDraft ? 'draft ' : ''}PO${res.total === 1 ? '' : 's'}`, body: res.created.map((p) => p.poNumber).join(', ') + (asDraft ? DRAFT_NOTE : '') }
           : { kind: 'info', title: 'Already ordered', body: 'These materials are already on a PO. The list has been refreshed.' });
       }).catch((err: unknown) => {
         const raw = err instanceof Error ? err.message : 'Something went wrong.';
@@ -499,7 +502,8 @@ export const Mrp = () => {
        never locks the source SO line (infinite-convert). */
     const soDocOf = new Map([...(data?.skus ?? []), ...viewSkus].flatMap((s) => s.lines.map((l) => [l.soItemId, l.soDocNo] as const)));
     const batches = poRequestBatches(picks, (id) => soDocOf.get(id), poMode);
-    const body = { mode: poMode, fromMrp: true, ...(expectedAt ? { expectedAt } : {}) };
+    /* A draft PO is saved for review and sent later (owner, 27 Nov 2026); it is not supply, so MRP keeps the line short. */
+    const body = { mode: poMode, fromMrp: true, ...(expectedAt ? { expectedAt } : {}), ...(asDraft ? { asDraft: true } : {}) };
     const created: Array<{ poNumber: string }> = [];
     void (async () => {
       try {
@@ -528,8 +532,11 @@ export const Mrp = () => {
         regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
         setDialog({
           kind: 'created',
-          title: `Successfully created ${created.length} PO${created.length === 1 ? '' : 's'}`,
-          body: created.map((p) => p.poNumber).join(', '),
+          title: asDraft
+            ? `Saved ${created.length} draft PO${created.length === 1 ? '' : 's'}`
+            : `Successfully created ${created.length} PO${created.length === 1 ? '' : 's'}`,
+          body: created.map((p) => p.poNumber).join(', ')
+            + (asDraft ? DRAFT_NOTE : ''),
         });
       } catch (err) {
         const raw = err instanceof Error ? err.message : 'Something went wrong.';
@@ -1189,6 +1196,19 @@ export const Mrp = () => {
             </label>
             <div className={styles.dialogActions}>
               <Button type="button" variant="secondary" onClick={() => setDialog(null)}>Cancel</Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={createPos.isPending}
+                title="Save the POs as drafts to check before they are sent"
+                onClick={() => {
+                  const { picks, orderedCodes } = dialog;
+                  setDialog(null);
+                  runCreatePos(picks, orderedCodes, proceedExpectedAt || undefined, true);
+                }}
+              >
+                Save as Draft
+              </Button>
               <Button
                 type="button"
                 variant="primary"

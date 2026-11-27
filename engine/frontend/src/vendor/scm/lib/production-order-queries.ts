@@ -919,7 +919,7 @@ export function useProductionHoursAction(id: string) {
 
 /** MRP's Proceed PO for raw materials. A repeat press finds nothing left to order and answers total 0. */
 export const createMaterialPos = ({ idempotencyKey, ...body }: {
-  idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string;
+  idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string; asDraft?: boolean;
 }) => authedFetch<{ total: number; created: Array<{ id: string; poNumber: string }>; alreadyOrdered?: boolean }>(
   `/production-orders/material-pos`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }));
 
