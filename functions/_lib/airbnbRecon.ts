@@ -7,7 +7,7 @@
  *  as on the owner statement), added up over the units a code covers. */
 import type { AirbnbTxn } from './airbnbCsv';
 
-export type Rule = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10' | 'R11' | 'R12' | 'R13' | 'R99';
+export type Rule = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10' | 'R11' | 'R12' | 'R13' | 'R14' | 'R99';
 export const RULES: Record<Rule, string> = {
   R1: 'Equal',
   R2: 'Additional charge inside the reservation',
@@ -23,6 +23,9 @@ export const RULES: Record<Rule, string> = {
   R12: 'In the system, not paid in these files',
   // Not in chew's spec: October had 14 bookings with only an AirCover or resolution line, their stay paid earlier.
   R13: 'Paid before these files',
+  // chew, 27 Nov 2026 (D-49-03A, 58 nights): a long stay's earlier instalment is already in the system under the same
+  // booking number, from the owner workbook, so its month's file need not be uploaded.
+  R14: 'Paid in parts, earlier part already in the system',
   R99: 'Reason not known',
 };
 export const RULE_ORDER = Object.keys(RULES) as Rule[];
@@ -48,7 +51,11 @@ export type ReconTxn = Pick<AirbnbTxn, 'txnDate' | 'type' | 'code' | 'startDate'
 /** `gross` and `fee` (the guest total and Airbnb's fee, sen) are what confirming changes; the rules read `net` only. */
 export interface Stay { id: string; code: string; unitId: string; unit: string; guest: string | null; checkIn: string; checkOut: string; state: string; net: number; gross?: number; fee?: number }
 export interface Income { kind: IncomeKind; amount: number; date: string; txnIds: string[]; note: string; details: string | null }
-export interface Payment { id: string; date: string; amount: number; inMonth: boolean }
+/** `recorded`: a payment the system already held for the booking (an owner workbook payout line), not an uploaded line. */
+export interface Payment { id: string; date: string; amount: number; inMonth: boolean; recorded?: boolean }
+/** A payout the system already holds for a booking, by its confirmation code: an owner workbook payout line (one per
+ *  Airbnb monthly instalment), which a file uploaded here may not carry. */
+export interface Recorded { id: string; code: string; amount: number; date: string }
 
 export interface Line {
   code: string; rule: Rule;
@@ -83,9 +90,24 @@ export const dayText = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Numbe
 export const monthText = (month: string) => `${MON[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 
 /** One confirmation code: its Airbnb lines (any month) against its stays in the system. */
-export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { month: string; today: string }): Line {
+export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { month: string; today: string }, recorded: readonly Recorded[] = []): Line {
   const sorted = [...rows].sort((a, b) => a.txnDate.localeCompare(b.txnDate) || a.id.localeCompare(b.id));
-  const res = sorted.filter(t => t.type === 'Reservation');
+  const uploaded = sorted.filter(t => t.type === 'Reservation');
+  // The booking's instalments the system already holds (chew, 27 Nov 2026: "认 booking number"), each counted unless an
+  // uploaded payment is the same money (under RM 0.05 apart, one for one).
+  const unmatched = [...uploaded];
+  const earlier = [...recorded].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).filter(p => {
+    const i = unmatched.findIndex(t => near(t.amount, p.amount));
+    if (i < 0) return true;
+    unmatched.splice(i, 1);
+    return false;
+  });
+  const earlierIds = new Set(earlier.map(p => `recorded:${p.id}`));
+  const res: ReconTxn[] = [...earlier.map((p): ReconTxn => ({
+    id: `recorded:${p.id}`, txnDate: p.date, type: 'Reservation', code, startDate: uploaded[0]?.startDate ?? null, endDate: uploaded[0]?.endDate ?? null,
+    nights: uploaded[0]?.nights ?? null, guest: uploaded[0]?.guest ?? null, listing: uploaded[0]?.listing ?? null, details: 'Already in the system (owner workbook payout line)', amount: p.amount, paidOut: 0,
+  })), ...uploaded];
+  const early = sum(earlier);
   const adjRows = sorted.filter(t => t.type === 'Adjustment');
   const resAdj = sorted.filter(t => t.type === 'Resolution Adjustment');
   const air = sorted.filter(isAirCover);
@@ -97,7 +119,7 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
   const active = stays.filter(s => COUNTED_STATES.includes(s.state));
   const found = stays.length > 0, cancelled = found && !active.length;
   const systemNet = found ? active.reduce((n, s) => n + s.net, 0) : null;
-  const facts = res[0] ?? sorted[0];
+  const facts = uploaded[0] ?? sorted[0] ?? res[0];
   const nights = facts?.nights ?? null;
   const monthStart = `${ctx.month}-01`;
 
@@ -118,7 +140,9 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
       needsConfirm: action === 'set_amount' || action === 'cancel' || action === 'check' || income.length > 0 || rule === 'R5',
       guest: facts?.guest ?? null, listing: facts?.listing ?? null, startDate: facts?.startDate ?? null, endDate: facts?.endDate ?? null, nights,
       stays, found, cancelled, systemNet,
-      payments: res.map(t => ({ id: t.id, date: t.txnDate, amount: t.amount, inMonth: t.txnDate.slice(0, 7) === ctx.month })),
+      payments: res.map(t => (earlierIds.has(t.id)
+        ? { id: t.id, date: t.txnDate, amount: t.amount, inMonth: false, recorded: true }
+        : { id: t.id, date: t.txnDate, amount: t.amount, inMonth: t.txnDate.slice(0, 7) === ctx.month })),
       reservation, adjustment, extra, aircover,
       difference: systemNet != null && !cancelled && res.length ? systemNet - kept : null,
     };
@@ -192,6 +216,12 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
   // than the system for, with nothing taken back, waits for the rest.
   if ((nights ?? 0) >= 28 && adjustment === 0 && kept < sys) {
     return line('R6', 'wait', `A long stay (${nights} nights) Airbnb has paid ${rmText(kept)} of ${rmText(sys)} for so far. Nothing to change; the rest should come in a later file.`);
+  }
+
+  // R14: part of the booking was paid before these files and the system already holds it; the whole is what Airbnb paid.
+  if (early) {
+    return line('R14', 'set_amount', `Paid in parts: ${rmText(early)} already in the system (an earlier payout of this booking) and ${rmText(kept - early)} in these files${adjustment ? ` after ${rmText(-adjustment)} taken back` : ''}, ${rmText(kept)} in all. Set the reservation to ${rmText(kept)}.${units}`,
+      { newAmount: kept });
   }
 
   if (res.length >= 2) {
@@ -281,7 +311,7 @@ export interface MonthRecon {
 /** The month's reconciliation: every code with a line dated in the month (compared whole, with its lines from other
  *  months), then the month's check-ins nobody paid for yet. `txns` holds those codes' lines in every month plus the
  *  month's own; `stays` the system's stays for those codes plus the month's Airbnb check-ins. */
-export function reconcileMonth(month: string, txns: ReconTxn[], stays: Stay[], today: string): MonthRecon {
+export function reconcileMonth(month: string, txns: ReconTxn[], stays: Stay[], today: string, recorded: readonly Recorded[] = []): MonthRecon {
   const inMonth = (t: ReconTxn) => t.txnDate.slice(0, 7) === month;
   const monthRows = txns.filter(inMonth);
   const byCode = new Map<string, ReconTxn[]>();
@@ -289,8 +319,10 @@ export function reconcileMonth(month: string, txns: ReconTxn[], stays: Stay[], t
   const staysByCode = new Map<string, Stay[]>();
   for (const s of stays) staysByCode.set(s.code, [...(staysByCode.get(s.code) ?? []), s]);
   const codes = [...new Set(monthRows.filter(t => t.code).map(t => t.code!))];
-  const lines = codes.map(c => classify(c, byCode.get(c) ?? [], staysByCode.get(c) ?? [], { month, today }));
-  const paid = new Set(txns.filter(t => t.type === 'Reservation' && t.code).map(t => t.code!));
+  const recordedByCode = new Map<string, Recorded[]>();
+  for (const p of recorded) recordedByCode.set(p.code, [...(recordedByCode.get(p.code) ?? []), p]);
+  const lines = codes.map(c => classify(c, byCode.get(c) ?? [], staysByCode.get(c) ?? [], { month, today }, recordedByCode.get(c) ?? []));
+  const paid = new Set([...txns.filter(t => t.type === 'Reservation' && t.code).map(t => t.code!), ...recorded.map(p => p.code)]);
   lines.push(...notPaidLines(stays, paid, new Set(codes), month));
   lines.sort((a, b) => RULE_ORDER.indexOf(a.rule) - RULE_ORDER.indexOf(b.rule) || a.code.localeCompare(b.code));
 
