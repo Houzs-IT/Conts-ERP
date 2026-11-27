@@ -136,7 +136,8 @@ const SETUP_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(logout|chan
  * run exactly as for their browser. A token without the secret (copied out of an AI app and sent here directly) is
  * refused, and so is any write, with ONE exception (owner, 26 Nov 2026, "confirm first, then do"): the write
  * confirm_action is performing right now, for an action the person confirmed in the chat, on a method + path in
- * ACTION_ALLOWLIST (booking a meeting, the Mail Center sign-on), with the single-use permit confirm_action granted in
+ * ACTION_ALLOWLIST (booking a meeting, the Mail Center sign-on, round 4b's reservation / cleaning-job notes, whose body
+ * is fenced to the note field), with the single-use permit confirm_action granted in
  * this same request (functions/_lib/mcpActions.ts connectorDecision, mcpInner.ts). Null: not a connector request.
  */
 async function connectorRequest(request: Request, env: Env): Promise<Request | Response | null> {
@@ -155,7 +156,9 @@ async function connectorRequest(request: Request, env: Env): Promise<Request | R
   if (!who) return fail('UNAUTHENTICATED', 'This AI Connector sign-in has ended or was switched off. Connect the AI app again.', 401);
   // A write: the permit is taken (single use) whatever the outcome, then must match this person, method and path.
   const permit = write ? takeActionPermit(actionId) : null;
-  if (connectorDecision({ method: request.method, path, innerOk, actionId, permit, userId: who.user.id, now: Date.now() }) === 'refuse') return refused();
+  // A fenced write (round 4b notes): its body may carry only the keys the ERP screen sends for that action.
+  const body = permit?.fence ? await request.clone().json().catch(() => undefined) : undefined;
+  if (connectorDecision({ method: request.method, path, innerOk, actionId, permit, userId: who.user.id, now: Date.now(), body }) === 'refuse') return refused();
   // Five minutes is plenty for one read; the cookie never leaves this isolate.
   const cookieValue = await signSession(env.SESSION_SECRET, { userId: who.user.id, email: who.user.email, role: who.user.role, fullName: who.user.fullName }, 5 / 60, 1);
   const headers = new Headers(request.headers);

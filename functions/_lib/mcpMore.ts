@@ -253,7 +253,7 @@ export function todayStays(origin: string, reply: unknown) {
 
 /* ---------- daily_brief ---------- */
 
-export type BriefLine = { title: string; detail: string; due?: string; link: string };
+export type BriefLine = { title: string; detail: string; due?: string; link: string; threadId?: string };
 export type BriefSection = { section: string; count: number; top: BriefLine[]; more?: string };
 
 const SO_DONE = ['DELIVERED', 'INVOICED', 'CLOSED', 'CANCELLED'];
@@ -321,7 +321,12 @@ export function buildBrief(i: BriefInput) {
   const mailNotOpened = !!i.mail && obj(i.mail).count === null;
   if (i.mail && !mailNotOpened) {
     const n = num(obj(i.mail).count);
-    add('Mail Center: emails waiting for your reply', [{ title: `${n} email thread${n === 1 ? '' : 's'} waiting for your reply`, detail: 'Assigned to you, or unassigned in your own mailbox.', link: `${origin}/mail` }], n, `${origin}/mail`);
+    // With the waiting threads listed (round 4b, `?list=1`): each one, longest waiting first, with its threadId (what
+    // propose_mail_reply takes). An engine from before that lists only the count.
+    const threads = arr(obj(i.mail).threads);
+    add('Mail Center: emails waiting for your reply', threads.length
+      ? threads.map(t => ({ title: str(t.subject) || '(no subject)', detail: `from ${str(t.fromName) || str(t.fromEmail)} · ${str(t.mailbox)}`.trim(), due: t.lastAt ? `since ${ymd(t.lastAt)}` : undefined, threadId: str(t.id), link: `${origin}/mail` }))
+      : [{ title: `${n} email thread${n === 1 ? '' : 's'} waiting for your reply`, detail: 'Assigned to you, or unassigned in your own mailbox.', link: `${origin}/mail` }], n, `${origin}/mail`);
   }
   // The side menu's bell: everything else waiting for this person's role (each already limited to what they may open).
   const alerts = arr(obj(i.badges).alerts).filter(a => a.key !== 'approvals' || !i.approvals);
