@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Link2, Plus, Users } from "lucide-react";
+import { Plus } from "lucide-react";
 import { api, openLoadedTab } from "./kit-api";
 import { refreshMeetingsUnread } from "../../lib/meetingsUnread";
 import { TabStrip } from "./kit";
 import { useElementWidth } from "./useElementWidth";
 import { MeetingsToolbar } from "./MeetingsToolbar";
+import { MeetingsFilters, MeetingsFilterSheet } from "./MeetingsFilters";
 import { cx as cn } from "../../lib/design-tokens";
 import {
   DAY, MONTH_NAMES, addDays, atHour, draftBody, draftFrom, emptyDraft, fmtDay, fmtDayLong, isMeetingsTab, isoDay, isView, VIEWS, ms, nextStart, peopleOf, readConflict, startOfDay, startOfWeek,
-  companyColor, meetingColor, INVITED_COLOR, OTHERS_COLOR, type Bootstrap, type CalView, type ColorBy, type ConflictReply, type Draft, type GuestLink, type Meeting, type MeetingsTab, type Notice, type Room, bestRoom } from "../../lib/meetings";
+  meetingColor, type Bootstrap, type CalView, type ColorBy, type ConflictReply, type Draft, type GuestLink, type Meeting, type MeetingsTab, type Notice, type Room, bestRoom } from "../../lib/meetings";
 import { ListView, MiniMonth, MonthView, RoomsTimeline, TimeGrid } from "./MeetingsCalendar";
-import { ConflictDialog, MeetingDetail, MeetingEditor, PersonSearch, QuickBook, ScopeQuestion, type MeetingFile } from "./MeetingsDialogs";
-import { BOOK_CTA, BTN, SEG_ITEM, SEG_OFF, SEG_ON, SEG_TRACK, roomForm, type RoomForm } from "./ui";
+import { ConflictDialog, MeetingDetail, MeetingEditor, QuickBook, ScopeQuestion, type MeetingFile } from "./MeetingsDialogs";
+import { BOOK_CTA, BTN, roomForm, type RoomForm } from "./ui";
 import { EmailPage, LinkDialog, LinksPage, LogPage, MyMeetings, RoomDialog, RoomsPage, type LinkForm } from "./MeetingsAdmin";
 
 /**
@@ -76,6 +77,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
   const [onlyMine, setOnlyMine] = useState(false);
   const [overlay, setOverlay] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<{ m: Meeting; x: number; y: number; history: { at: string; who: string; text: string }[] | null; files: MeetingFile[] } | null>(null);
@@ -250,6 +252,10 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
   };
   const title = view === "day" || view === "rooms" ? (isCompact ? fmtDay(anchor) : fmtDayLong(anchor)) : `${MONTH_NAMES[new Date(view === "week" ? startOfWeek(anchor) + 3 * DAY : anchor).getMonth()]} ${new Date(anchor).getFullYear()}`;
   const days = view === "day" ? [startOfDay(anchor)] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
+  const filterProps = {
+    rooms, roomFilter, onRoomFilter: setRoomFilter, colorBy, onColorBy: setColorBy, companies, onlyMine, onOnlyMine: setOnlyMine,
+    overlay, onOverlay: setOverlay, me, people, peopleList: boot?.people ?? [], onGuestLinks: () => patch({ tab: "links" }),
+  };
   const cal = { meetings: shown, rooms, people, colorOf, now, onOpen: (m: Meeting, x: number, y: number) => void openMeeting(m, x, y) };
 
   if (bootError && !boot) {
@@ -267,7 +273,8 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
         <div className="flex min-h-0 flex-1 flex-col">
           <MeetingsToolbar isCompact={isCompact} title={title} view={view} views={shownViews} query={query} unread={unread}
             onToday={() => setAnchor(startOfDay(Date.now()))} onStep={step} onView={(v) => patch({ view: v })}
-            onQuery={(q) => { setQuery(q); if (q) patch({ view: "list" }); }} onInbox={() => patch({ tab: "mine" })} />
+            onQuery={(q) => { setQuery(q); if (q) patch({ view: "list" }); }} onInbox={() => patch({ tab: "mine" })}
+            activeFilterCount={rooms.filter((r) => r.active && roomFilter[r.id] === false).length + overlay.length + (onlyMine && !overlay.length ? 1 : 0)} onFilters={() => setIsFilterSheetOpen(true)} />
           {calError && <div className="bg-danger-bg px-4 py-2 text-[13px] text-danger">The calendar could not be loaded: {calError}</div>}
           <div className="flex min-h-0 flex-1">
             <aside className="meet-scroll hidden w-[248px] flex-none flex-col gap-3.5 overflow-y-auto px-3.5 pb-3.5 pt-1 lg:flex">
@@ -275,34 +282,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
                 <Plus size={18} aria-hidden="true" />Book a room
               </button>
               <MiniMonth key={`${new Date(anchor).getFullYear()}-${new Date(anchor).getMonth()}`} anchor={anchor} week={view === "week"} onPick={setAnchor} />
-              <div>
-                <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Rooms</div>
-                {rooms.filter((r) => r.active).map((r) => (
-                  <label key={r.id} className="flex min-h-[30px] cursor-pointer items-center gap-2.5 text-[13px]">
-                    <input type="checkbox" checked={roomFilter[r.id] !== false} onChange={(e) => setRoomFilter({ ...roomFilter, [r.id]: e.target.checked })} style={{ accentColor: r.color }} />
-                    <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                    <span title={`${r.seats} seats`} className="inline-flex flex-none items-center gap-1 text-[12px] tabular-nums text-faint">
-                      <Users size={13} aria-hidden="true" />{r.seats}<span className="sr-only"> seats</span>
-                    </span>
-                  </label>
-                ))}
-                {rooms.length === 0 && <p className="text-[12.5px] text-faint">No rooms yet.</p>}
-              </div>
-              <div>
-                <div className="mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Colours show</div>
-                <div className={SEG_TRACK} role="group" aria-label="Colours show">
-                  {([["room", "Room"], ["company", "Company"], ["me", "Me"]] as const).map(([k, l]) => <button key={k} type="button" aria-pressed={colorBy === k} onClick={() => setColorBy(k)} className={cn(SEG_ITEM, "h-7 flex-1 text-[12.5px]", colorBy === k ? SEG_ON : SEG_OFF)}>{l}</button>)}
-                </div>
-                {colorBy === "me" && <div className="mt-1.5 flex flex-col gap-0.5 text-[12.5px]"><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-primary" />I organise</span><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full " style={{ background: INVITED_COLOR }} />I'm invited</span><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full " style={{ background: OTHERS_COLOR }} />Others (room taken)</span></div>}
-                {colorBy === "company" && <div className="mt-1.5 flex flex-col gap-0.5 text-[12.5px]">{companies.map((c) => <span key={c}><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: companyColor(c, companies) }} />{c}</span>)}</div>}
-              </div>
-              <div>
-                <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Show</div>
-                <label className="flex min-h-[30px] cursor-pointer items-center gap-2.5 text-[13px]"><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />Only my meetings</label>
-                {overlay.map((o) => <label key={o} className="flex min-h-[30px] cursor-pointer items-center gap-2.5 text-[13px]"><input type="checkbox" checked onChange={() => setOverlay(overlay.filter((x) => x !== o))} />{people.get(o)?.name ?? o}'s meetings</label>)}
-                <PersonSearch people={boot?.people ?? []} exclude={[me, ...overlay]} placeholder="Add a colleague's calendar" onPick={(k) => { setOverlay([...overlay, k]); setOnlyMine(true); }} />
-              </div>
-              <button type="button" className={cn(BTN, "justify-center")} onClick={() => patch({ tab: "links" })}><Link2 size={15} />Make a guest booking link</button>
+              <MeetingsFilters density="rail" {...filterProps} />
               <p className="text-[12px] leading-[17px] text-faint">Drag across empty time to book. Drag a meeting to move it, drag its bottom edge to change the length.</p>
             </aside>
             <section className="mx-2 mb-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-card lg:ml-0" aria-label="Calendar">
@@ -342,6 +322,10 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
           onEdit={() => { setPendingFiles([]); setEditor({ draft: draftFrom(detail.m), isNew: false }); setDetail(null); }}
           onCancel={() => (detail.m.seriesId ? setScopeAsk({ act: "cancel", draft: draftFrom(detail.m), m: detail.m }) : void act(detail.m, "cancel"))}
           onStart={() => void act(detail.m, "start")} onEnd={() => void act(detail.m, "end")} />
+      )}
+      {isFilterSheetOpen && tab === "calendar" && (
+        <MeetingsFilterSheet {...filterProps} onClose={() => setIsFilterSheetOpen(false)}
+          monthPicker={<MiniMonth key={`${new Date(anchor).getFullYear()}-${new Date(anchor).getMonth()}`} anchor={anchor} week={view === "week"} onPick={(d) => { setAnchor(d); setIsFilterSheetOpen(false); }} />} />
       )}
       {quick && <QuickBook draft={quick} rooms={rooms} people={boot?.people ?? []} busyRooms={busyRoomsFor(quick)} saving={saving} onClose={() => setQuick(null)} onMore={(d) => { setQuick(null); setPendingFiles([]); setEditor({ draft: d, isNew: true }); }} onSave={(d) => void save(d, true)} />}
       {editor && (

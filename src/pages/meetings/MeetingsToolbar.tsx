@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
 import { cx as cn } from "../../lib/design-tokens";
 import type { CalView } from "../../lib/meetings";
 import { BTN, ICON_BTN, SEG_ITEM, SEG_OFF, SEG_ON, SEG_TRACK } from "./ui";
@@ -16,6 +16,9 @@ export interface MeetingsToolbarProps {
   onView: (view: CalView) => void;
   onQuery: (query: string) => void;
   onInbox: () => void;
+  /** Rooms hidden plus colleagues added; shown on the Filters button. */
+  activeFilterCount: number;
+  onFilters: () => void;
 }
 
 /* Compact (phone, or a narrow window): a date row with a search button, then a full-width view switcher; search
@@ -39,6 +42,13 @@ export function MeetingsToolbar(p: MeetingsToolbarProps): JSX.Element {
       <h2 className={cn("ml-1 min-w-0 truncate font-medium text-ink", p.isCompact ? "text-[17px]" : "text-[18px]")}>{p.title}</h2>
     </span>
   );
+  // The sidebar holds the filters from lg up; below that this button opens them in a sheet.
+  const filtersButton = (
+    <button type="button" aria-label={p.activeFilterCount ? `Filters, ${p.activeFilterCount} on` : "Filters"} className={cn(iconButton, "relative lg:hidden")} onClick={p.onFilters}>
+      <SlidersHorizontal size={18} aria-hidden="true" />
+      {p.activeFilterCount > 0 && <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-on-primary">{p.activeFilterCount}</span>}
+    </button>
+  );
   const switcher = (
     <div className={cn(SEG_TRACK, p.isCompact && "w-full sm:w-auto sm:self-start")} role="group" aria-label="View">
       {p.views.map((v) => (
@@ -61,6 +71,7 @@ export function MeetingsToolbar(p: MeetingsToolbarProps): JSX.Element {
             <>
               {dateNav}
               <button type="button" aria-label="Search meetings" className={iconButton} onClick={() => setIsSearchOpen(true)}><Search size={18} aria-hidden="true" /></button>
+              {filtersButton}
             </>
           )}
         </div>
@@ -74,6 +85,7 @@ export function MeetingsToolbar(p: MeetingsToolbarProps): JSX.Element {
       <div className="ml-auto flex items-center gap-2">
         {searchField}
         {switcher}
+        {filtersButton}
         <button type="button" aria-label={`My meetings, ${p.unread} unread`} className={cn(iconButton, "relative")} onClick={p.onInbox}>
           <Bell size={18} aria-hidden="true" />
           {p.unread > 0 && <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-line px-1 text-[10px] font-bold text-on-primary">{p.unread}</span>}

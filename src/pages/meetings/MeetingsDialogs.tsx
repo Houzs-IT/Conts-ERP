@@ -36,12 +36,12 @@ function popStyle(x: number, y: number, w = 440, h = 470): CSSProperties {
   return { left: l, top: Math.min(Math.max(12, y - 60), Math.max(12, H - h - 12)), width: w };
 }
 
-export function PersonSearch({ people, exclude, onPick, placeholder }: { people: Person[]; exclude: string[]; onPick: (key: string) => void; placeholder: string }) {
+export function PersonSearch({ people, exclude, onPick, placeholder, inputClassName }: { people: Person[]; exclude: string[]; onPick: (key: string) => void; placeholder: string; inputClassName?: string }) {
   const [t, setT] = useState("");
   const hits = t ? people.filter((p) => !exclude.includes(p.key) && `${p.name} ${p.company} ${p.department} ${p.email ?? ""}`.toLowerCase().includes(t.toLowerCase())).slice(0, 8) : [];
   return (
     <div className="relative">
-      <input className={cn(CONTROL, "border-0 bg-muted")} placeholder={placeholder} aria-label={placeholder} value={t} onChange={(e) => setT(e.target.value)} />
+      <input className={cn(CONTROL, "border-0 bg-muted", inputClassName)} placeholder={placeholder} aria-label={placeholder} value={t} onChange={(e) => setT(e.target.value)} />
       {hits.length > 0 && (
         <div className="absolute inset-x-0 top-11 z-30 overflow-hidden rounded-card border border-line bg-card shadow-lg">
           {hits.map((p) => (
