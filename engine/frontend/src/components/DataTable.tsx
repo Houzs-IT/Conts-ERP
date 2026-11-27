@@ -2468,7 +2468,9 @@ function DataTableInner<T, L>({
                 the frozen header on scroll-down — the header's own corner showed
                 a data row where its heading should be. Lifting the whole thead
                 above z-20 keeps the frozen header on top on both axes. */}
-            <thead className="sticky top-0 z-30">
+            {/* The band above: while the page scrolls, useFrozenTableHeader moves this header a frame late, so rows
+                scrolled past showed in a strip above it. The table box clips the band, so it only ever covers those rows. */}
+            <thead className="sticky top-0 z-30 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-screen before:bg-surface-dim">
               <tr>
                 {selection && (
                   <th
