@@ -470,7 +470,7 @@ export const PurchaseOrderFromSo = () => {
     },
     {
       key: 'soDocNo', label: 'SO Doc No', width: 150, sortable: true,
-      accessor: (r) => <span className={styles.codeCell}>{r.soDocNo}</span>,
+      accessor: (r) => <span className={styles.codeCell} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{r.soDocNo}</span>,
       searchValue: (r) => r.soDocNo,
     },
     {
@@ -698,7 +698,7 @@ export const PurchaseOrderFromSo = () => {
           placeholder="All suppliers"
           ariaLabel="Main supplier filter"
           clearable
-          className="h-7 w-full rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--c-paper)] px-2 text-[length:var(--fs-12)] text-[color:var(--c-ink)]"
+          className="h-9 w-full rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--c-paper)] px-2 text-[16px] text-[color:var(--c-ink)] sm:h-7 sm:text-[length:var(--fs-12)]"
         />
       </div>
 
