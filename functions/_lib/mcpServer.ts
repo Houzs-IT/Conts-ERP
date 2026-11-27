@@ -438,3 +438,22 @@ export async function handleRpc(request: Request, env: Env, waitUntil: (p: Promi
       return { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: `Method not found: ${m.method ?? ''}` } };
   }
 }
+
+/* ---------- round 4d: the morning brief and urgent alerts (mcpProactiveRun.ts) ---------- */
+
+/** A tool call AS the person behind `token` (a real connector token issued for them, client mcpc_morning_brief), through
+ *  the same callTool a question from Claude takes: the tool gate, the in-process reads as the person, the redaction and
+ *  the mcp_calls log row. The brief's calls are not counted toward the person's rate limit (RATE_SQL). */
+export function runToolAs(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, id: McpIdentity, token: string, name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+  return callTool(request, env, waitUntil, id, token, name, args);
+}
+
+export type PersonRead = { ok: true; value: unknown } | { ok: false; status: number; message: string };
+
+/** One read AS the person, through the same readValue every tool uses (path gate, session middleware, the handler's own
+ *  checks, credential fields stripped). Not a tool call, so nothing is written to mcp_calls: the alert check runs every
+ *  15 minutes and only the emails it sends are logged. */
+export async function readAsPerson(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, token: string, path: string, query?: Record<string, unknown>): Promise<PersonRead> {
+  const r = await readValue(request, env, waitUntil, token, path, query);
+  return r.ok ? { ok: true, value: r.value } : { ok: false, status: r.status, message: r.message };
+}

@@ -120,6 +120,9 @@ const PUBLIC = new Set([
   'GET /api/mcp', 'POST /api/mcp', 'POST /api/mcp/oauth/register', 'GET /api/mcp/oauth/authorize', 'POST /api/mcp/oauth/token',
   // A PDF the connector made (get_pdf), opened from the AI app's chat: the signed, 15-minute link is the credential.
   'GET /api/mcp/export',
+  // AI Connector round 4d: the cron worker's 15-minute tick (Conts's IT Hub key is the credential, checked by the handler)
+  // and the unsubscribe link in every brief / alert email (its random token is the credential; GET only shows a button).
+  'POST /api/mcp/proactive/tick', 'GET /api/mcp/proactive/unsubscribe', 'POST /api/mcp/proactive/unsubscribe',
 ]);
 
 /** What someone still on a temporary password (an invite, or management's Reset password) can reach: replacing it,

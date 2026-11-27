@@ -23,6 +23,9 @@ export interface Send {
   /** Rendered subject and body. Copy lives in copy.md, not here. */
   subject?: string;
   body: string;
+  /** Optional HTML part for an email (AI Connector morning brief / alerts). Sent with the plain-text body when the send
+   *  happens now; it is not stored, so a retry by the scheduled job sends the plain text only. */
+  html?: string;
   entityTable?: string;
   entityId?: string;
   /** Overrides quiet hours. Check-in risk and payout failure only. */
@@ -56,7 +59,7 @@ async function key(s: Send) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 
-export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queued' | 'failed'; reason?: string }> {
+export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queued' | 'failed'; reason?: string; id?: string }> {
   // A phone sign-in account's placeholder address (migration 0143) can never receive mail.
   if (s.channel === 'email' && !hasRealEmail(s.recipient)) return { state: 'failed', reason: 'This account has no email address.' };
   const idem = await key(s);
@@ -76,27 +79,27 @@ export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queu
     id, s.template, s.recipient, s.channel, s.entityTable ?? null, s.entityId ?? null, idem, nowIso(), s.subject ?? null, s.body, ...(lease ? [sendLeaseUntil()] : []));
 
   // Demo mode records the message (in the demo store) and never sends it: nothing leaves for a guest or owner.
-  if (inDemo() && s.channel !== 'in_app' && s.channel !== 'push') return { state: 'queued', reason: 'Demo: not sent' };
+  if (inDemo() && s.channel !== 'in_app' && s.channel !== 'push') return { state: 'queued', reason: 'Demo: not sent', id };
 
   if (queued) {
     // The scheduled Worker (worker/scheduled.ts) actually sends these at 08:00 using the
     // subject/body just stored above — it must call deliver() below, not just flip the state,
     // or the message is silently never delivered.
-    return { state: 'queued', reason: `Quiet hours. Sending at ${nextSendTime().slice(11, 16)} MYT.` };
+    return { state: 'queued', reason: `Quiet hours. Sending at ${nextSendTime().slice(11, 16)} MYT.`, id };
   }
 
   try {
     const providerId = await deliver(env, s);
     await run(env, `UPDATE notification_log SET state = 'sent', sent_at = ?, provider_message_id = ?${lease ? ', sending_until = NULL' : ''} WHERE id = ?`,
       nowIso(), providerId, id);
-    return { state: 'sent' };
+    return { state: 'sent', id };
   } catch (e) {
     const reason = e instanceof Error ? e.message : 'Unknown delivery error';
     // A failed send is a visible state on the related record, never a silent drop.
     await run(env, `UPDATE notification_log SET state = 'failed', error = ?${lease ? ', sending_until = NULL' : ''} WHERE id = ?`, reason, id);
     // The scheduled job retries it (worker/scheduled.ts); separate so a database without migration 0095 still records the failure.
     await run(env, 'UPDATE notification_log SET attempts = 1, next_attempt_at = ? WHERE id = ?', retryAt(1), id).catch(() => {});
-    return { state: 'failed', reason };
+    return { state: 'failed', reason, id };
   }
 }
 
@@ -133,6 +136,7 @@ export async function deliver(env: Env, s: Send): Promise<string> {
         to: s.recipient,
         subject: s.subject ?? 'The Conts',
         text: s.body,
+        ...(s.html ? { html: s.html } : {}),
       }),
     });
     if (!res.ok) throw new Error(`Mail provider returned ${res.status}`);
