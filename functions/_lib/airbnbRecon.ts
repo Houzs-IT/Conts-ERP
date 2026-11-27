@@ -220,7 +220,7 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
 
   // R14: part of the booking was paid before these files and the system already holds it; the whole is what Airbnb paid.
   if (early) {
-    return line('R14', 'set_amount', `Paid in parts: ${rmText(early)} already in the system (an earlier payout of this booking) and ${rmText(kept - early)} in these files${adjustment ? ` after ${rmText(-adjustment)} taken back` : ''}, ${rmText(kept)} in all. Set the reservation to ${rmText(kept)}.${units}`,
+    return line('R14', 'set_amount', `Paid in parts: ${rmText(early)} already in the system (an earlier payout of this reservation) and ${rmText(kept - early)} in these files${adjustment ? ` after ${rmText(-adjustment)} taken back` : ''}, ${rmText(kept)} in all. Set the reservation to ${rmText(kept)}.${units}`,
       { newAmount: kept });
   }
 
