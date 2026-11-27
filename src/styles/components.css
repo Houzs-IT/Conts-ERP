@@ -182,7 +182,7 @@
 }
 
 /* Meetings surfaces: a warm canvas behind the calendar card and one green for the booking action and the now line.
-   Dark keeps the CTA green (white text 7:1) but lifts the now line, as #196754 is under 3:1 on the dark card.
+   Dark keeps the CTA green (white text passes AA) but lifts the now line, as #196754 is under 3:1 on the dark card.
    ds-allow-hardcode: these lines define the page's own tokens. */
 .meetings-ui { --meet-canvas: #F4F1EA; --meet-accent: #196754; --meet-accent-hover: #145443; --meet-now: #196754; background: var(--meet-canvas); }
 :root[data-theme="theconts-dark"] .meetings-ui, :root[data-theme="dark"] .meetings-ui { --meet-canvas: #1C1B17; --meet-now: var(--color-primary); }

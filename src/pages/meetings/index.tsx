@@ -324,7 +324,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
               {view === "list" && <ListView {...cal} query={query} />}
             </section>
           </div>
-          <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(BOOK_CTA, "fixed bottom-5 right-4 z-30 h-12 px-5 shadow-lg lg:hidden")}><Plus size={18} aria-hidden="true" />Book a room</button>
+          <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(BOOK_CTA, "fixed bottom-[calc(92px+env(safe-area-inset-bottom))] right-4 z-30 h-12 px-5 shadow-lg lg:hidden")}><Plus size={18} aria-hidden="true" />Book a room</button>
         </div>
       )}
       {tab !== "calendar" && (

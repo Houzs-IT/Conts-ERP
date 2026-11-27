@@ -184,7 +184,7 @@ export function TimeGrid(p: CalProps & {
         ))}
       </div>
       <div ref={scroller} className="meet-scroll relative flex-1 overflow-auto">
-        <div className="relative grid" style={{ gridTemplateColumns: template, height: (GRID_TO - GRID_FROM) * HH, backgroundImage: `repeating-linear-gradient(to bottom, rgba(226,221,216,0.8) 0, rgba(226,221,216,0.8) 1px, transparent 1px, transparent ${HH}px)` }}>
+        <div className="relative grid" style={{ gridTemplateColumns: template, height: (GRID_TO - GRID_FROM) * HH, backgroundImage: `repeating-linear-gradient(to bottom, var(--color-line-soft) 0, var(--color-line-soft) 1px, transparent 1px, transparent ${HH}px)` }}>
           <div className="pr-2 text-right text-[10px] text-faint">
             {Array.from({ length: GRID_TO - GRID_FROM }, (_, i) => GRID_FROM + i).map((h) => (
               <div key={h} style={{ height: HH, transform: "translateY(-6px)" }}>{h === GRID_FROM ? "" : `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`}</div>
@@ -242,9 +242,9 @@ export function TimeGrid(p: CalProps & {
                   const s = atHour(d, 0) + hoverSlot.startMin * MIN;
                   if (evs.some((x) => x.start < s + HOUR && s < x.end)) return null;
                   return (
-                    <div aria-hidden="true" className="pointer-events-none absolute left-0.5 right-1.5 z-[2] rounded-control border border-dashed border-[var(--meet-now)] bg-primary-soft/60 px-1.5 py-0.5 text-[11.5px] leading-[15px] text-primary-ink"
+                    <div aria-hidden="true" className="pointer-events-none absolute left-0.5 right-1.5 z-[2] overflow-hidden rounded-control border border-dashed border-[var(--meet-now)] bg-primary-soft/60 px-1.5 py-0.5 text-[11.5px] leading-[15px] text-primary-ink"
                       style={{ top: ((hoverSlot.startMin - GRID_FROM * 60) / 60) * HH, height: HH - 2 }}>
-                      <b className="block font-semibold">+ Quick book</b>{fmtRange(s, s + HOUR)}
+                      <b className="block truncate font-semibold">+ Quick book</b><span className="block truncate">{fmtRange(s, s + HOUR)}</span>
                     </div>
                   );
                 })()}
@@ -332,7 +332,7 @@ export function RoomsTimeline(p: CalProps & { day: number; onCreate: (s: number,
               <div className="mt-0.5 text-[12px] text-faint">{[r.floor, `${r.seats} seats`].filter(Boolean).join(" · ")}</div>
             </div>
             <div className="relative h-[84px] border-t border-line-soft" onPointerDown={(e) => begin(e, r)}
-              style={{ backgroundImage: `repeating-linear-gradient(to right, rgba(226,221,216,0.8) 0, rgba(226,221,216,0.8) 1px, transparent 1px, transparent ${100 / (GRID_TO - GRID_FROM)}%)` }}>
+              style={{ backgroundImage: `repeating-linear-gradient(to right, var(--color-line-soft) 0, var(--color-line-soft) 1px, transparent 1px, transparent ${100 / (GRID_TO - GRID_FROM)}%)` }}>
               {p.meetings.filter((m) => m.roomId === r.id && startOfDay(ms(m.start)) === p.day).map((m) => {
                 const org = p.people.get(m.organizer);
                 return (
