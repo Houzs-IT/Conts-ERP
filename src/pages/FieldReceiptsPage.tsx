@@ -109,7 +109,17 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
   /* Renovation staff put a cost on its project (chew, 18 Nov 2026: CK 1's bill for ASTRUM R-13-03 went to Company). */
   const onProjects = me.lineDepartment === 'supply';
   const projects = useApi<{ projects: { id: number; code: string | null; name: string; side: string }[] }>(onProjects ? '/claims/projects' : null);
-  const [projectId, setProjectId] = useState('');
+  /* One bill over several units or projects (chew, 27 Nov 2026): a line each, with its amount once there is more than one. */
+  const [rows, setRows] = useState<{ id: number; target: string; amountSen: number | null }[]>([{ id: 1, target: '', amountSen: null }]);
+  const split = rows.length > 1;
+  const splitSen = rows.reduce((n, r) => n + (r.amountSen ?? 0), 0);
+  const setRow = (id: number, patch: Partial<{ target: string; amountSen: number | null }>) => setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patch } : r)));
+  const addRow = () => setRows(rs => {
+    const first = rs.length === 1 && rs[0].amountSen == null ? [{ ...rs[0], amountSen: amountSen ?? null }] : rs;
+    const left = (amountSen ?? 0) - first.reduce((n, r) => n + (r.amountSen ?? 0), 0);
+    return [...first, { id: Math.max(...first.map(r => r.id)) + 1, target: '', amountSen: left > 0 ? left : null }];
+  });
+  const removeRow = (id: number) => setRows(rs => { const next = rs.filter(r => r.id !== id); return next.length === 1 ? [{ ...next[0], amountSen: null }] : next; });
   /* Petty Cash (Claim) is the default, and is not offered to someone with no petty cash. */
   const pettyCashOffered = me.route !== 'finance';
   const [chosen, setChosen] = useState<Way>(pettyCashOffered ? 'float' : 'finance');
@@ -123,7 +133,6 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
   const [vendorName, setVendorName] = useState('');
   const [payeeName, setPayeeName] = useState('');
   const [wantedOn, setWantedOn] = useState('');
-  const [unitId, setUnitId] = useState('');
   const [note, setNote] = useState('');
   // The saved details fill the empty bank fields once, when Direct Claim to Me is first chosen.
   const [bank, setBank] = useSavedBank(way === 'finance');
@@ -164,9 +173,11 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
     setProblem(null);
     if (files.length === 0) return setProblem(way === 'supplier' ? tr.needBill : tr.needPhoto);
     if (!amountSen || amountSen <= 0) return setProblem(tr.needAmount);
-    if (onProjects && !projectId) return setProblem(tr.needProject);
-    const line = { department: me.lineDepartment, amountSen, description: note.trim() || undefined,
-      ...(onProjects ? { projectId: Number(projectId) } : unitId ? { unitId } : {}) };
+    if (onProjects && rows.some(r => !r.target)) return setProblem(split ? tr.needLineProject : tr.needProject);
+    if (split && rows.some(r => !r.amountSen || r.amountSen <= 0)) return setProblem(tr.needLineAmount);
+    if (split && splitSen !== amountSen) return setProblem(tr.needSplit);
+    const lines = rows.map(r => ({ department: me.lineDepartment, amountSen: split ? r.amountSen! : amountSen, description: note.trim() || undefined,
+      ...(onProjects ? { projectId: Number(r.target) } : r.target ? { unitId: r.target } : {}) }));
     if (way === 'supplier' && !payeeName.trim()) return setProblem(tr.needPayee);
     const badBank = way === 'finance' ? bankProblem(bank) : null;
     if (badBank) return setWrongBank(badBank);
@@ -175,12 +186,12 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
       if (way === 'supplier') {
         // A field worker names the supplier as on the bill; finance matches it to the list when it pays.
         const asked = await postWithFiles<{ renoReview: boolean }>('/claims/requests', {
-          id: requestId, type: 'PAYMENT', payeeName: payeeName.trim(), amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: [line],
+          id: requestId, type: 'PAYMENT', payeeName: payeeName.trim(), amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines,
         }, files);
         toast({ tone: 'success', title: tr.supplierSent, body: asked.renoReview ? p.renoSent : undefined });
       } else {
         const made = await postWithFiles<{ route: 'float' | 'finance' }>('/claims/receipts', {
-          spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: [line],
+          spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines,
           ...(way === 'finance' ? { payBack: 'finance', bank } : {}),
         }, files);
         toast({ tone: 'success', title: tr.sent, body: way === 'finance' ? p.directSent : made.route === 'float' ? tr.paidFromFloat : tr.paidByFinance });
@@ -206,12 +217,26 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
         ? <DateField label={tr.payBy} value={wantedOn} display={day} onChange={setWantedOn} min={todayMyt()} />
         : <DateField label={tr.date} value={spendDate} display={day} onChange={v => { setSpendDate(v); dateTouched.current = true; }} max={todayMyt()} />}
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
-      {onProjects
-        /* Type a word of the project (chew, 18 Nov 2026: search it by keyword): ASTRUM, R-13-03, RN-2607. */
-        ? <SearchSelect label={tr.project} showLabel size="md" value={projectId} onChange={setProjectId} allLabel={tr.noProject} placeholder={tr.searchProject}
-            options={(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} ┊ ${x.name}` : x.name }))} />
-        : <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
-            options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />}
+      {rows.map((r, n) => (
+        <div key={r.id} className={split ? 'flex flex-col gap-2 border-t border-solid border-line pt-3' : 'contents'}>
+          {onProjects
+            /* Type a word of the project (chew, 18 Nov 2026: search it by keyword): ASTRUM, R-13-03, RN-2607. */
+            ? <SearchSelect label={tr.project} showLabel size="md" value={r.target} onChange={v => setRow(r.id, { target: v })} allLabel={tr.noProject} placeholder={tr.searchProject}
+                options={(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} ┊ ${x.name}` : x.name }))} />
+            : <Select label={tr.unit} showLabel size="md" value={r.target} onChange={v => setRow(r.id, { target: v })}
+                options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />}
+          {split && (
+            <span className="flex items-end gap-2">
+              <span className="flex-1 min-w-0"><MoneyInput label={tr.lineAmount} valueSen={r.amountSen} onChangeSen={v => setRow(r.id, { amountSen: v })} /></span>
+              <Button size="touch" variant="secondary" onClick={() => removeRow(r.id)} aria-label={`${tr.removeLine} ${n + 1}`}>{tr.removeLine}</Button>
+            </span>
+          )}
+        </div>
+      ))}
+      {split && amountSen != null && splitSen !== amountSen && (
+        <span className={`text-meta ${splitSen > amountSen ? 'text-danger' : 'text-muted-ink'}`}>{splitSen > amountSen ? tr.overSplit(rm(splitSen - amountSen)) : tr.leftToSplit(rm(amountSen - splitSen))}</span>
+      )}
+      {rows.length < 20 && <Button size="touch" variant="ghost" className="self-start" onClick={addRow}>{onProjects ? tr.addProject : tr.addUnit}</Button>}
       {way === 'finance' && (
         <ClaimBankFields bank={bank} wrong={wrongBank} t={t} touch
           onChange={(k, v) => { setBank(b => ({ ...b, [k]: v })); if (wrongBank === k) setWrongBank(null); }} />
