@@ -5,6 +5,7 @@ import { LEAK_CLIENT_ID, actionsEnabled, mcpActionsReady, writeKindsReady, write
 import { WRITE_ACTION_LABELS } from '../../../_lib/mcpWrite';
 import { RATE_PER_DAY, RATE_PER_MINUTE } from '../../../_lib/mcpMore';
 import { MCP_TOOL_NAMES } from '../../../_lib/mcpServer';
+import { NO_GUIDE_NOTE } from '../../../_lib/mcpHowto';
 
 /** Where a person sits, for the lists: their position, else their department. */
 const PLACE_JOIN = 'LEFT JOIN positions p ON p.id = u.position_id LEFT JOIN departments d ON d.id = u.department_id';
@@ -22,7 +23,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const now = nowIso();
   const dayAgo = new Date(Date.now() - 24 * 3600_000).toISOString();
   type Person = { user_id: string; full_name: string; place: string };
-  const [requests, connected, allowed, calls, staff, stats] = await Promise.all([
+  const monthAgo = new Date(Date.now() - 30 * 24 * 3600_000).toISOString();
+  const [requests, connected, allowed, calls, staff, stats, gaps] = await Promise.all([
     all<Person & { id: string; reason: string | null; created_at: string }>(env, `
       SELECT r.id, r.user_id, r.reason, r.created_at, u.full_name, ${PLACE} AS place
         FROM mcp_access_requests r JOIN users u ON u.id = r.user_id ${PLACE_JOIN}
@@ -50,6 +52,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              (SELECT count(*) FROM mcp_calls WHERE created_at > ? AND ok = 0) AS refused,
              (SELECT count(DISTINCT user_id) FROM mcp_tokens WHERE revoked_at IS NULL AND refresh_expires_at > ? AND client_id <> ?) AS people`,
     dayAgo, dayAgo, now, LEAK_CLIENT_ID),
+    // Help gap log (owner, 27 Nov 2026): how_to / explain_error / ... questions that found no guide, personal data
+    // already stripped when logged (mcpHowto.ts scrubQuestion, mcpHowtoTools.ts helpOutcome).
+    all<{ tool: string; target: string; n: number; last_at: string }>(env, `
+      SELECT tool, target, COUNT(*) AS n, MAX(created_at) AS last_at FROM mcp_calls
+       WHERE note = ? AND created_at >= ? AND COALESCE(target, '') <> ''
+       GROUP BY tool, target ORDER BY n DESC, last_at DESC LIMIT 50`, NO_GUIDE_NOTE, monthAgo),
   ]);
   const actionsReady = await mcpActionsReady(env);
   const actionsOn = actionsReady && await actionsEnabled(env);
@@ -70,5 +78,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     allowed: allowed.map(r => ({ ...person(r), approvedAt: r.approved_at })),
     calls: calls.map(k => ({ id: k.id, userId: k.user_id, name: k.full_name, app: appLabel(k.client_name ?? ''), tool: k.tool, target: k.target ?? '', status: Number(k.status ?? 0), ok: Number(k.ok) === 1, note: k.note ?? '', ms: Number(k.ms ?? 0), at: k.created_at })),
     staff: staff.map(person),
+    noGuide: gaps.map(g => ({ tool: g.tool, question: g.target, count: Number(g.n), lastAt: g.last_at })),
   });
 };

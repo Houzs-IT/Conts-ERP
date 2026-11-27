@@ -508,6 +508,36 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   `aiBrief.ts`, `functions/api/mcp/proactive/`, `functions/api/ai-connector/brief*`, `src/pages/AiBriefSettings.tsx`,
   `migrations-pg/0397_mcp_brief_alerts.sql`, `src/lib/mcpProactive.test.mjs`.
 
+- **Round 5, process help (owner, 27 Nov 2026: "how do I..."; branch `feat/mcp-howto`).** Mirrors Hookka PR 1640 /
+  Houzs PR 6124 (same data model and honesty tests). Code: `functions/_lib/mcpHowto.ts` (pure answers + tool
+  definitions), `functions/_lib/mcpHowtoTools.ts` (the person's access and side, gap log), data in
+  `functions/_lib/howto/` (`types.ts`, `guidesConts*.ts`, `guidesDcSupplyChain.ts`, `flows.ts`, `modules.ts`,
+  `glossary.ts`, `errors.ts`). Tests `src/lib/mcpHowto.test.mjs` + checks in `src/lib/howtoCheck.mjs`. No migration.
+  - Tools (read-only, no ERP data read, so every connected person sees them): `how_to {question|topic, company}`,
+    `module_overview {module}`, `glossary {term}`, `explain_error {text}`, `onboarding {role}`; prompts `how_do_i`,
+    `explain_module`, `what_does_it_mean`, `explain_this_error`, `my_first_week`.
+  - Guides to the full SOP standard (purpose, prerequisites, who / permission, fields with format and example, click
+    steps with `?highlight=` links, checkBefore, result, warnings, undo, approvals, deadlines, commonMistakes,
+    workedExample, related / nextStep, contact), tagged by company: 15 The Conts (reservations, check-in / out, guest
+    payments and receipts, dates / cancel, cleaning, maintenance + owner approval, blocks, owners, units, letting,
+    utility bills, owner statements, payouts, pricing, guest reviews) + 13 Dream Crafter (project, quotation, convert,
+    VO, stages, defects + handover, instalment billing, collect payment, supplier, PO, purchase invoice, payment
+    voucher, commission) + 2 shared (Mail Center, My claims). Flows: reservation to owner payout, new unit onboarding,
+    renovation project quotation to handover, procure to pay.
+  - Company: the person's side (Users and roles) picks the guides; management sees both; `company` overrides. A
+    question only the other company answers says so (`otherCompany`) instead of showing it silently.
+  - canDo = the session middleware's own gate (`gateFor`) for each `"METHOD /api/path"` a guide names, and the
+    person's level for each `"area:<key>:<level>"` (Dream Crafter's screens are the engine's, which opens them from the
+    levels sent at sign-on: engine/backend/src/conts/access.ts). No connector-only rule.
+  - Honesty tests: every page is a router path (`src/App.tsx` routes + `scmEngine.ts` ENGINE_PATH menu addresses),
+    every double-quoted label is in `src/` or `engine/frontend/src` (or the reservation drawer's server-sent move
+    labels, `bookingLifecycle.ts`), every permission names a real handler method or area, every error fragment is
+    still in the code. Business rules only from code, cited in comments beside each sentence.
+  - Gap log: an unanswered help question is logged in `mcp_calls` with note `no-guide` (emails, phone and document
+    numbers removed) and listed on System > AI Connector, "Questions with no guide yet" (last 30 days).
+  - Known limit: on engine screens (Dream Crafter, Mail Center) `?highlight=` opens the screen but cannot outline the
+    button inside the engine frame; answers say so (`engineScreen`).
+
 ## Mail Center re-synced with Houzs, 26 Nov 2026
 
 The engine's Mail Center (Property OS > Mail) now matches Houzs ERP's (owner, 26 Nov 2026): per-person read state and

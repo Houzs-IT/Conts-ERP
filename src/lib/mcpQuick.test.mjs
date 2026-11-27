@@ -143,7 +143,11 @@ test('fetch ids round-trip; anything else is refused; list kinds are picked out 
 });
 
 test('prompts expand to a question; unknown prompt is refused', () => {
-  assert.equal(Q.PROMPTS.length, 9); // round 4c added five role prompts (mcpWrite.test.mjs tests them)
+  assert.equal(Q.PROMPTS.length, 14); // round 4c added five role prompts (mcpWrite.test.mjs tests them); round 5 five help prompts
+  for (const [p, tool] of [['how_do_i', 'how_to'], ['explain_module', 'module_overview'], ['what_does_it_mean', 'glossary'], ['explain_this_error', 'explain_error'], ['my_first_week', 'onboarding']]) {
+    assert.deepEqual(Q.PROMPT_TOOLS[p], [tool]);
+    assert.match(Q.promptText(p, { task: 'x', module: 'x', term: 'x', message: 'x', role: 'x' }), new RegExp(tool));
+  }
   assert.match(Q.promptText('daily-brief', {}), /daily_brief/);
   assert.match(Q.promptText('monthly_review', { month: '2026-10' }), /2026-10.*business_summary/);
   assert.match(Q.promptText('monthly_review', { month: 'junk' }), /this month/);
