@@ -110,7 +110,7 @@ export async function myBank(): Promise<ClaimBank | null> {
 }
 
 /** Hands a receipt in (or asks finance to pay, or sends a changed request again): the fields as JSON beside the files. */
-export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests' | `/claims/requests/${string}/resubmit` | `/claims/requests/${string}/balance` | `/claims/reno-review/${string}/send`, data: Record<string, unknown>, files: File[]): Promise<T> {
+export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests' | `/claims/requests/${string}/resubmit` | `/claims/requests/${string}/balance`, data: Record<string, unknown>, files: File[]): Promise<T> {
   const form = new FormData();
   form.set('data', JSON.stringify(data));
   for (const f of files) form.append('file', f);

@@ -162,7 +162,7 @@ type RequestForm = { type: string; supplierId: string | null; payeeName: string;
 
 /** Who is paid, how much, by when and on which lines, checked alike for a new request and for one changed and sent again
  *  after a withdraw or a rejection; or the refusal to send back. Files are each caller's own. */
-export async function readRequestForm(c: Ctx, sb: any, companyId: number, staff: Staff, b: Record<string, unknown>): Promise<RequestForm | Response> {
+async function readRequestForm(c: Ctx, sb: any, companyId: number, staff: Staff, b: Record<string, unknown>): Promise<RequestForm | Response> {
   const type = String(b.type ?? '');
   if (type !== 'PAYMENT' && type !== 'DEPOSIT') return c.json({ error: 'validation', message: 'Choose a payment or a deposit.' }, 422);
   /* A field worker may ask finance to pay a supplier they name (chew, 12 Nov 2026: Direct Pay to Supplier on the phone's
@@ -218,7 +218,7 @@ export async function readRequestForm(c: Ctx, sb: any, companyId: number, staff:
 }
 
 /** The header fields a request is saved with, from what the person filled in. */
-export const headerOf = (f: RequestForm, b: Record<string, unknown>) => ({
+const headerOf = (f: RequestForm, b: Record<string, unknown>) => ({
   type: f.type, supplier_id: f.supplierId, payee_name: f.payeeName.slice(0, 200), payee_to_check: !f.supplierId, purchase_order_id: f.purchaseOrderId,
   wanted_on: f.wantedOn, owes_formal_invoice: f.type === 'DEPOSIT' || b.owesFormalInvoice === true, note: b.note ? String(b.note).slice(0, 500) : null, amount_sen: f.amountSen,
 });
