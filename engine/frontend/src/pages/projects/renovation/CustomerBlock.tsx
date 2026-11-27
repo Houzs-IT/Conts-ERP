@@ -38,6 +38,8 @@ import {
 } from "./customerPropertyModel";
 
 const input = "h-9 w-full min-w-0 rounded-md border border-border bg-surface px-2.5 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-dim disabled:text-ink-secondary";
+// Native selects indent their text ~4px past the padding; appearance-none lines it up with the inputs (index.css paints the chevron).
+const selectInput = `${input} appearance-none`;
 const ring = "border-err ring-2 ring-err/15";
 const labelCls = "mb-1 block text-[11px] font-semibold uppercase tracking-wide";
 
@@ -294,7 +296,7 @@ export function CustomerBlock({
             placeholder="customer@example.com" onChange={(e) => set({ customerEmail: e.target.value })} />
         </Cell>
         <Cell label="Salesperson" htmlFor={id("sales")}>
-          <select id={id("sales")} className={input} value={value.salespersonId} disabled={off("salespersonId") || !canChangeSalesperson}
+          <select id={id("sales")} className={selectInput} value={value.salespersonId} disabled={off("salespersonId") || !canChangeSalesperson}
             onChange={(e) => set({ salespersonId: e.target.value })}>
             <option value="">{staff.isLoading ? "Loading..." : "Not set"}</option>
             {value.salespersonId && !staffRows.some((s) => s.id === value.salespersonId) && (
@@ -372,7 +374,7 @@ export function CustomerBlock({
         {!hideProperty && (
           <>
             <Cell label="Property type" required missing={miss("Property type")} htmlFor={id("ptype")}>
-              <select id={id("ptype")} className={cn(input, miss("Property type") && ring)} value={value.propertyType} disabled={off("propertyType")}
+              <select id={id("ptype")} className={cn(selectInput, miss("Property type") && ring)} value={value.propertyType} disabled={off("propertyType")}
                 onChange={(e) => set({ propertyType: e.target.value })}>
                 <option value="">Choose...</option>
                 {typeMissingFromList && <option value={value.propertyType}>{value.propertyType}</option>}
@@ -380,7 +382,7 @@ export function CustomerBlock({
               </select>
             </Cell>
             <Cell label="Layout" required missing={miss("Layout")} className="col-span-2" htmlFor={id("layout")}>
-              <select id={id("layout")} className={cn(input, miss("Layout") && ring)} disabled={off("layoutLabel")}
+              <select id={id("layout")} className={cn(selectInput, miss("Layout") && ring)} disabled={off("layoutLabel")}
                 value={pickedLayout ? String(pickedLayout.id) : value.layoutLabel ? "custom" : ""}
                 onChange={(e) => {
                   if (e.target.value === "custom") return;

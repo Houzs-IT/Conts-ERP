@@ -116,6 +116,8 @@ export function InUseToggle({ on, onChange, name }: { on: boolean; onChange: (on
 }
 
 export const inputClass = "w-full rounded-md border border-border bg-surface px-3 py-2 text-sm";
+/** Same field for a select: appearance-none drops the native ~4px text indent so it lines up with inputs (index.css paints the chevron). */
+export const selectClass = `${inputClass} appearance-none`;
 /** Compact field for dense record cards (key log, design steps, procurement dates). */
 export const smallInput = "w-full min-w-0 rounded border border-border bg-surface px-2 py-1 text-xs text-ink disabled:opacity-60";
 /** Compact Button size (cn has no tailwind-merge, so the base h-9 / px-4 need the important prefix). */
