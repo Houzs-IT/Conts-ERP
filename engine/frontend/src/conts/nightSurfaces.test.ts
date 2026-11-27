@@ -99,6 +99,12 @@ describe("night surfaces the engine paints with fixed light colours", () => {
       for (const colour of bareColours(body)) expect(contrastOnCard(colour)).toBeGreaterThanOrEqual(4.5);
     }
   });
+  it("hovered fixed inks take their night colour, like the plain class", () => {
+    const nightRules = ruleBodies(embedCss, /data-beta-skin="night"\]/).map(([selector]) => selector);
+    for (const hovered of ["hover\\:text-primary:hover", "hover\\:border-primary:hover", "hover\\:text-accent", "hover\\:text-err:hover", "group-hover\\:text-primary"]) {
+      expect(nightRules.some((selector) => selector.includes(hovered))).toBe(true);
+    }
+  });
   it("the settlement label cell's hover fill is a theme colour, so night does not turn it pale", () => {
     expect(bareColoursIn("pages/scm-v2/SettlementSetup.module.css", /\.row:hover > \.label/)).toEqual([]);
   });

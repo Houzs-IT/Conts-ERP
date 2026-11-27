@@ -10,6 +10,13 @@ import styles from './renovationSoLineCompact.module.css';
 
 export { styles as renovationLineStyles };
 
+/** The qty a typed line amount stands for. A sales order qty is a whole number (the server refuses
+    anything else), so it rounds to one; a quotation takes three decimals. */
+export function qtyForAmount(amountSen: number, unitPriceSen: number, discountSen: number, isDecimalQty: boolean): number {
+  const exactQty = (amountSen + discountSen) / unitPriceSen;
+  return isDecimalQty ? Math.max(0.001, Math.round(exactQty * 1000) / 1000) : Math.max(1, Math.round(exactQty));
+}
+
 export function RenovationLineHead() {
   return (
     <div className={styles.head} aria-hidden="true">
