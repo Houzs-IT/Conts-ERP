@@ -8,13 +8,13 @@ import {
 } from "../../lib/meetings";
 
 /* The calendar views of the Meetings page: the month picker in the rail, the day/week
-   time grid (drag to book, drag to move, drag the bottom edge to change the length),
+   ti3Eme grid (drag to book, drag to move, drag the bottom edge to change the length),
    the month grid, the rooms timeline and the list. All of them only draw and report;
    the page decides what a drop or a click does. */
 
 const HH = 48; // pixels per hour in the time grid
-const DARK_INK = "#11140F";
-const LIGHT_INK = "#FFFFFF";
+// Below this background luminance white text out-reads the near-black meet ink; above it the dark ink wins.
+const INK_SWITCH_LUMINANCE = 0.19;
 
 const channel = (v: number): number => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
 const luminance = (hex: string): number => {
@@ -22,12 +22,11 @@ const luminance = (hex: string): number => {
   return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
 };
 
-/** Text colour for a meeting block: white or near-black, whichever reads better on the room or company colour.
- *  A CSS variable (my own meetings) pairs with the theme's on-primary colour. */
-function inkOn(background: string): string {
-  if (!/^#[0-9a-f]{6}$/i.test(background)) return "var(--color-on-primary)";
-  const bg = luminance(background);
-  return (1.05 / (bg + 0.05)) >= ((bg + 0.05) / (luminance(DARK_INK) + 0.05)) ? LIGHT_INK : DARK_INK;
+/** Text class for a meeting block: the light or dark meet ink, whichever reads better on the room or company colour.
+ *  My own meetings are painted in the theme's primary, so they take its own text colour. */
+function inkClassOn(background: string): string {
+  if (!/^#[0-9a-f]{6}$/i.test(background)) return "text-on-primary";
+  return luminance(background) < INK_SWITCH_LUMINANCE ? "text-meet-ink-light" : "text-meet-ink-dark";
 }
 const WORKDAY_SCROLL_HOUR = 8.5;
 const QUICK_SLOT_MIN = 30;
@@ -234,8 +233,8 @@ export function TimeGrid(p: CalProps & {
                     <div key={m.id} role="button" tabIndex={0} aria-label={`${m.title}, ${fmtRange(item.start, item.end)}`}
                       onPointerDown={(e) => grab(e, m, "move")}
                       onKeyDown={(e) => { if (e.key === "Enter") { const r = e.currentTarget.getBoundingClientRect(); p.onOpen(m, r.right, r.top); } }}
-                      className={cn("absolute cursor-pointer select-none overflow-hidden rounded-control border border-card px-1.5 py-0.5 text-[11.5px] leading-[15px]", m.status === "ended" && "opacity-55", m.status === "live" && "ring-2 ring-success-line ring-offset-1")}
-                      style={{ top: top(item.start), height: h - 2, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, background: p.colorOf(m), color: inkOn(p.colorOf(m)), touchAction: "pan-y" }}>
+                      className={cn("absolute cursor-pointer select-none overflow-hidden rounded-control border border-card px-1.5 py-0.5 text-[11.5px] leading-[15px]", inkClassOn(p.colorOf(m)), m.status === "ended" && "opacity-55", m.status === "live" && "ring-2 ring-success-line ring-offset-1")}
+                      style={{ top: top(item.start), height: h - 2, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, background: p.colorOf(m), touchAction: "pan-y" }}>
                       <b className="block truncate text-[12px] font-semibold">{m.status === "live" ? "Live · " : ""}{m.title || "(No title)"}</b>
                       {h > 30 && <span>{fmtRange(item.start, item.end)}{room ? ` · ${room.name}` : ""}</span>}
                       {h > 58 && <span className="block truncate opacity-90">{m.guest ? `Guest · host ${personName(m.organizer, p.people)}` : [org?.company, org?.department].filter(Boolean).join(" · ")}</span>}
@@ -260,15 +259,15 @@ export function TimeGrid(p: CalProps & {
                   const s = atHour(d, 0) + hoverSlot.startMin * MIN;
                   if (evs.some((x) => x.start < s + HOUR && s < x.end)) return null;
                   return (
-                    <div aria-hidden="true" className="pointer-events-none absolute left-0.5 right-1.5 z-[2] overflow-hidden rounded-control border border-dashed border-[var(--meet-now)] bg-primary-soft/60 px-1.5 py-0.5 text-[11.5px] leading-[15px] text-primary-ink"
+                    <div aria-hidden="true" className="pointer-events-none absolute left-0.5 right-1.5 z-[2] overflow-hidden rounded-control border border-dashed border-meet-now bg-primary-soft/60 px-1.5 py-0.5 text-[11.5px] leading-[15px] text-primary-ink"
                       style={{ top: ((hoverSlot.startMin - GRID_FROM * 60) / 60) * HH, height: HH - 2 }}>
                       <b className="block truncate font-semibold">+ Quick book</b><span className="block truncate">{fmtRange(s, s + HOUR)}</span>
                     </div>
                   );
                 })()}
                 {d === today && new Date(now).getHours() >= GRID_FROM && new Date(now).getHours() < GRID_TO && (
-                  <div className="pointer-events-none absolute -left-px right-0 z-[3] h-0.5 bg-[var(--meet-now)]" style={{ top: top(now) }}>
-                    <span className="absolute -left-[3px] -top-[2px] h-1.5 w-1.5 rounded-full bg-[var(--meet-now)]" />
+                  <div className="pointer-events-none absolute -left-px right-0 z-[3] h-0.5 bg-meet-now" style={{ top: top(now) }}>
+                    <span className="absolute -left-[3px] -top-[2px] h-1.5 w-1.5 rounded-full bg-meet-now" />
                   </div>
                 )}
               </div>
@@ -355,8 +354,8 @@ export function RoomsTimeline(p: CalProps & { day: number; onCreate: (s: number,
                 const org = p.people.get(m.organizer);
                 return (
                   <button key={m.id} type="button" onClick={(e) => p.onOpen(m, e.clientX, e.clientY)}
-                    className={cn("absolute bottom-2.5 top-2.5 overflow-hidden rounded-control px-2 py-1 text-left text-[11.5px] leading-[15px]", m.status === "ended" && "opacity-55")}
-                    style={{ left: `${pct(ms(m.start))}%`, width: `calc(${pct(ms(m.end)) - pct(ms(m.start))}% - 3px)`, background: p.colorOf(m), color: inkOn(p.colorOf(m)) }}>
+                    className={cn("absolute bottom-2.5 top-2.5 overflow-hidden rounded-control px-2 py-1 text-left text-[11.5px] leading-[15px]", inkClassOn(p.colorOf(m)), m.status === "ended" && "opacity-55")}
+                    style={{ left: `${pct(ms(m.start))}%`, width: `calc(${pct(ms(m.end)) - pct(ms(m.start))}% - 3px)`, background: p.colorOf(m) }}>
                     <b className="block truncate">{m.title}</b>{fmtRange(ms(m.start), ms(m.end))}
                     <span className="block truncate">{m.guest ? "Guest booking" : [org?.company, org?.department].filter(Boolean).join(" · ")}</span>
                   </button>
@@ -366,7 +365,7 @@ export function RoomsTimeline(p: CalProps & { day: number; onCreate: (s: number,
                 <div className="pointer-events-none absolute bottom-2.5 top-2.5 rounded-control bg-primary px-2 py-1 text-[11.5px] text-on-primary opacity-85"
                   style={{ left: `${((drag.a - GRID_FROM * 60) / span) * 100}%`, width: `${((drag.b - drag.a) / span) * 100}%` }}><b>(No title)</b></div>
               )}
-              {startOfDay(p.now) === p.day && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-[var(--meet-now)]" style={{ left: `${pct(p.now)}%` }} />}
+              {startOfDay(p.now) === p.day && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-meet-now" style={{ left: `${pct(p.now)}%` }} />}
             </div>
           </div>
         ))}

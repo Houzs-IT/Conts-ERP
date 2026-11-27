@@ -125,6 +125,18 @@ body { margin: 0; }
   /* Text on the solid red (danger button): white in both themes, 5.9:1; dark's text-inverse is near-black (3.1:1). */
   --color-on-danger-solid: #FFFFFF;
 
+  /* Meetings calendar (src/pages/meetings): the warm canvas behind its calendar card, the Book a room button (Conts
+     green with white text, 6.75:1) and the now line. Redefined for the dark theme in theme-dark.css. */
+  --color-meet-canvas: #F4F1EA;
+  --color-meet-accent: #196754;
+  --color-meet-accent-hover: #145443;
+  --color-on-meet-accent: #FFFFFF;
+  --color-meet-now: #196754;
+  /* Text on a meeting block, which is painted in its room's own colour. Rooms keep one colour in both themes, so
+     these two stay the same in dark: white on deep colours, near-black on bright ones. */
+  --color-meet-ink-light: #FFFFFF;
+  --color-meet-ink-dark: #11140F;
+
   /* text-on-dark: the quiet line on a black panel or photo tile. Pages used the class before it existed, so the
      Portfolio tiles drew it in page ink, unreadable on the photo. */
   --color-on-dark: #D9D4CB;
