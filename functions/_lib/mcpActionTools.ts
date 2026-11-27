@@ -24,7 +24,9 @@ import {
 } from './mcpStore';
 import { confirmWrite, proposeWrite, type WriteDeps } from './mcpWrite';
 
-type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
+/** A tool's content: text, or (show_me) an image. */
+export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
+type ToolResult = { content: ToolContent[]; isError?: boolean };
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
 export type Outcome = { result: ToolResult; status: number; note: string; target: string };
 const done = (body: unknown, target: string, note = ''): Outcome => ({ result: text(typeof body === 'string' ? body : JSON.stringify(body)), status: 200, note, target });

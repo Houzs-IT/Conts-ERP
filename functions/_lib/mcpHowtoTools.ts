@@ -17,12 +17,18 @@
 import type { Outcome, ToolCtx } from './mcpActionTools';
 import { gateFor } from './mcpActionTools';
 import { sessionState } from './auth';
-import { HOWTO_TOOL_NAMES, explainError, glossary, helpOutcome, howTo, moduleOverview, onboarding, type Access } from './mcpHowto';
+import { HOWTO_TOOL_NAMES, NO_GUIDE_NOTE, explainError, glossary, helpOutcome, howTo, moduleOverview, onboarding, pageLink, scrubQuestion, type Access } from './mcpHowto';
 
 import { SCREEN_TOOLS, explainScreen, whereIs } from './mcpScreens';
+import { SHOW_ME_TOOL, annotatedHtml, annotatedSvg, resolveShot, showMeText } from './mcpShowMe';
+import { HELP_SHOTS_CAPTURED_AT } from './howto/helpShots';
+import { EXPORT_PREFIX, EXPORT_TTL_MS, signExport } from './mcpActions';
+import { mytToday } from './db';
+import { randomToken } from './mcpStore';
 
 export { HOWTO_TOOLS } from './mcpHowto';
 export { SCREEN_TOOLS } from './mcpScreens';
+export const SHOW_ME_TOOLS = [SHOW_ME_TOOL];
 const SCREEN_TOOL_NAMES = new Set(SCREEN_TOOLS.map(t => t.name));
 
 /** The person's access as the ERP checks it, and their side ('' = both). */
@@ -36,7 +42,40 @@ export function accessFor(c: ToolCtx): { access: Access; side: () => Promise<str
   };
 }
 
+/** base64 of a byte array (Workers and Node). */
+function toBase64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+/** show_me: the plain WebP screenshot as an image (Claude rejects SVG), the box, the live link, and a 15-minute link to
+ *  the annotated picture (an HTML page under mcp-exports/, served by GET /api/mcp/export like get_pdf's files). */
+async function showMe(args: Record<string, unknown>, c: ToolCtx): Promise<Outcome> {
+  const r = resolveShot(args);
+  const text = (v: unknown) => ({ type: 'text' as const, text: JSON.stringify(v) });
+  if ('error' in r) {
+    const link = r.page ? pageLink(c.origin, r.page, r.label || undefined) : null;
+    return { result: { content: [text({ matched: false, message: r.error, ...(link ? { openThePage: link } : {}) })] }, status: 200, note: NO_GUIDE_NOTE, target: scrubQuestion(String(args.label ?? args.guide_id ?? args.path ?? 'show_me')) };
+  }
+  const { hit, caption } = r;
+  const target = `show_me ${hit.page} ${hit.label}`.slice(0, 200);
+  const url = `${c.origin}/help-shots/${hit.shot.file}`;
+  const res = await (c.env.ASSETS ? c.env.ASSETS.fetch(new Request(url)) : fetch(url)).catch(() => null);
+  if (!res || !res.ok) return { result: { content: [text({ ...showMeText(hit, c.origin, caption, null, HELP_SHOTS_CAPTURED_AT), problem: 'The screenshot could not be loaded; use openThePage: it outlines the button on the real page.' })] }, status: 200, note: 'shot missing', target };
+  const b64 = toBase64(new Uint8Array(await res.arrayBuffer()));
+  let link: string | null = null;
+  if (c.env.MEDIA) {
+    const exp = Date.now() + EXPORT_TTL_MS;
+    const key = `${EXPORT_PREFIX}${mytToday()}/${randomToken(12)}/show-me.html`;
+    await c.env.MEDIA.put(key, annotatedHtml(annotatedSvg(hit, b64, caption), caption), { httpMetadata: { contentType: 'text/html; charset=utf-8' }, customMetadata: { userId: c.id.user.id, expiresAt: new Date(exp).toISOString() } });
+    link = `${c.origin}/api/mcp/export?${await signExport(c.env.SESSION_SECRET, key, exp)}`;
+  }
+  return { result: { content: [{ type: 'image', data: b64, mimeType: 'image/webp' }, text(showMeText(hit, c.origin, caption, link, HELP_SHOTS_CAPTURED_AT))] }, status: 200, note: '', target };
+}
+
 export async function runHowtoTool(name: string, args: Record<string, unknown>, c: ToolCtx): Promise<Outcome | null> {
+  if (name === 'show_me') return showMe(args, c);
   if (!HOWTO_TOOL_NAMES.has(name) && !SCREEN_TOOL_NAMES.has(name)) return null;
   const { access, side } = accessFor(c);
   const ans =

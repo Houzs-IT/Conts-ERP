@@ -70,7 +70,7 @@ export async function withPersonToken<T>(c: RunCtx, userId: string, fn: (id: Mcp
 }
 
 /** A quick answer's JSON: structuredContent when present, else the text parsed. */
-function answerValue(r: { content: { text: string }[]; structuredContent?: Obj; isError?: boolean }): { ok: true; value: Obj } | { ok: false; message: string } {
+function answerValue(r: { content: { type: string; text?: string }[]; structuredContent?: Obj; isError?: boolean }): { ok: true; value: Obj } | { ok: false; message: string } {
   const t = r.content[0]?.text ?? '';
   if (r.isError) return { ok: false, message: t.slice(0, 200) };
   const sc = r.structuredContent;
