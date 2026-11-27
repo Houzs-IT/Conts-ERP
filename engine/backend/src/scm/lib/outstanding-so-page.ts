@@ -1,30 +1,5 @@
-// ----------------------------------------------------------------------------
-// ONE PAGE of the PO-from-SO picker (owner, 19 Nov 2026: "show what I search first, or by scrolling; no need to load
-// everything at once").
-//
-// `GET /mfg-purchase-orders/outstanding-so-items` without `limit` still answers the whole list
-// (lib/outstanding-so-lines.ts) for the mobile convert wizard and the PO detail page. With `limit` it answers one page.
-//
-// HOW A PAGE IS CHOSEN (20 Nov 2026). The column funnels (Project, Customer, Supplier, ...) only ever saw the loaded
-// page, so a project past the first pages could not be picked from its funnel. The server now reads ONE LIGHT LIST of
-// every open SO line in scope (no stock check: that is what made the whole list take 8 to 24 s) and a pure function
-// (`buildPickerPage`) takes it with the search, the top-bar filters, the column funnels and the sort, and returns the
-// funnel counts, the total and the page's ids. Funnels, total and pages come from the same list, so they cannot
-// disagree. Only the page's lines get the full row and the stock check (route).
-//
-// KEYSET, NOT OFFSET. The cursor is the (sort value, doc_no, id) of the last line handed out: a line that a PO
-// converts between two scrolls cannot shift the next page and skip a line.
-//
-// COUNTS AND TOTAL ARE UPPER BOUNDS. They are taken before the stock check. On production (19 Nov 2026) 4,993 of
-// 5,121 live lines passed it, so they are close, but never offered as the count of lines still to order.
-//
-// PROJECT GROUPS (owner, 27 Nov 2026). `?groups=1` answers the projects only, each with its matching and open line
-// counts, so the picker opens collapsed without reading any line. A project's lines are then one paged read filtered
-// by its two funnel texts (project, customer), which pick out exactly that group.
-//
-// FUNNEL VALUES ARE THE GRID'S OWN TEXT. The grid re-applies each funnel to the rows it holds, so `facetValue` must
-// give the exact string the page's column hands the grid (PurchaseOrderFromSo.tsx), or a ticked row vanishes.
-// ----------------------------------------------------------------------------
+// Counts are taken before the stock check, so they are upper bounds.
+// facetValue must return the exact text the grid column shows, or the grid's own funnel hides a ticked row.
 
 import { paginateAll, chunkIn } from './paginate-all';
 import { readMfgProductBindings } from './supplier-bindings';
@@ -48,7 +23,6 @@ export type PickerFacets = Record<PickerFacetCol, Array<[string, number]>>;
 export interface PageCursor { d: string; i: string; s?: string | number }
 
 export interface OutstandingSoPageQuery {
-  /** Answer the project groups instead of a page of lines. */
   groups: boolean;
   limit: number;
   cursor: PageCursor | null;
@@ -277,7 +251,7 @@ export function buildPickerPage(lines: readonly PickerLine[], page: OutstandingS
   return { ids: slice.map((k) => k.id), nextCursor, total: matched.length, facets };
 }
 
-/** The picker's heading for a group (frontend lib/projectCustomerHeading.ts, same rule). */
+// Must match frontend lib/projectCustomerHeading.ts.
 export function groupHeading(l: PickerLine): string {
   const p = projectTitle(l);
   const c = l.debtorName?.trim();
@@ -286,24 +260,19 @@ export function groupHeading(l: PickerLine): string {
 }
 
 export interface PickerGroup {
-  /** The Project and Customer funnel texts: `cols={project:[project],debtorName:[customer]}` reads this group. */
   project: string;
   customer: string;
   heading: string;
-  /** Lines matching the search and top-bar filters; `total` counts every open line of the group. Upper bounds. */
   matching: number;
   total: number;
 }
 
 export interface PickerGroups {
   groups: PickerGroup[];
-  /** Main supplier choices [code, name, lines], counted under every filter but the supplier one. */
   suppliers: Array<[string, string, number]>;
-  /** Category choices [item group, lines], counted under every filter but the category one. */
   categories: Array<[string, number]>;
 }
 
-/** From the light list to the project groups: only groups with a matching line, in heading order. */
 export function buildPickerGroups(lines: readonly PickerLine[], page: OutstandingSoPageQuery): PickerGroups {
   const byKey = new Map<string, PickerGroup>();
   const suppliers = new Map<string, [string, string, number]>();

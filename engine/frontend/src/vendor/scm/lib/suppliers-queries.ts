@@ -967,7 +967,6 @@ export type OutstandingSoPageFilters = {
   cols?: Record<string, string[]>;
   /** A sort the server applies over every matching line (PICKER_SORT_COLS); null for the list order. */
   sort?: { key: string; dir: 'asc' | 'desc' } | null;
-  /** A main supplier code; '' or absent for every supplier. */
   supplier?: string;
 };
 
@@ -1003,18 +1002,14 @@ export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { do
   return `/mfg-purchase-orders/outstanding-so-items?${p.toString()}`;
 }
 
-/** The PO-from-SO picker's top bar: what narrows the project list (owner, 27 Nov 2026). */
 export type PickerTopFilters = Pick<OutstandingSoPageFilters, 'q' | 'category' | 'dateField' | 'dateFrom' | 'dateTo'> & { supplier: string };
 
-/** One project (or customer, when the SO has no project) of the picker. `project` and `customer` are the Project and
-    Customer funnel texts: together they read exactly this group's lines. Counts are upper bounds (before the stock check). */
+// project and customer are funnel texts: together they read exactly this group's lines.
 export type PickerGroup = { project: string; customer: string; heading: string; matching: number; total: number };
 
 export type PickerGroups = {
   groups: PickerGroup[];
-  /** [code, name, lines], counted under every filter but the supplier one. */
   suppliers: Array<[string, string, number]>;
-  /** [item group, lines], counted under every filter but the category one. */
   categories: Array<[string, number]>;
 };
 
@@ -1024,7 +1019,6 @@ export function pickerGroupsUrl(f: PickerTopFilters): string {
   return `/mfg-purchase-orders/outstanding-so-items?${p.toString()}`;
 }
 
-/** The picker's first view: the projects only, no lines. The last list stays on screen while a new filter loads. */
 export function usePickerGroups(filters: PickerTopFilters) {
   return useQuery({
     queryKey: ['mfg-purchase-orders', 'outstanding-so-items', 'groups', filters],
@@ -1039,11 +1033,9 @@ export const pickerGroupLinesKey = (filters: PickerTopFilters, g: PickerGroup) =
   ['mfg-purchase-orders', 'outstanding-so-items', 'group', filters, g.project, g.customer] as const;
 
 const GROUP_LINES_CHUNK = 200;
-/* A runaway guard: 50 requests is 10,000 lines, past any one project. Reaching it is reported, never cut short. */
 const GROUP_LINES_MAX_PAGES = 50;
 
-/* A search can open many projects at once, and each read walks the server's whole open-line list: a few at a time,
-   the rest wait their turn. */
+// Each project read walks the whole open-line list on the server, so cap how many run at once.
 const GROUP_READS_AT_ONCE = 3;
 let groupReadsRunning = 0;
 const groupReadQueue: Array<() => void> = [];
@@ -1058,8 +1050,7 @@ async function withGroupReadSlot<T>(read: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Every open line of one project under the top-bar filters, read by cursor so a line converted meanwhile cannot
-    shift the rest and drop one. */
+// Cursor, not offset: a line converted mid-read cannot shift the rest and drop one.
 export function fetchPickerGroupLines(filters: PickerTopFilters, g: PickerGroup, signal?: AbortSignal): Promise<OutstandingSoItem[]> {
   return withGroupReadSlot(() => readPickerGroupLines(filters, g, signal));
 }

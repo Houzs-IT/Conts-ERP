@@ -696,11 +696,7 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
   const supabase = c.get('supabase');
   const parsed = parseOutstandingSoPageQuery(c.req.query());
   if (!parsed.ok) return c.json({ error: 'bad_cursor', reason: parsed.reason }, 400);
-  /* PAGED MODE (owner, 19 Nov 2026) — `?limit=` asks for one page. lib/outstanding-so-page.ts reads the light list of
-     every open line, and applies the search, the filters, the column funnels and the sort to it; the funnel counts come
-     from the same list (20 Nov 2026). Only the page's lines get the full row and the stock check. */
-  /* PROJECT GROUPS (27 Nov 2026): the picker's collapsed first view. The dates are applied after the read, not pushed
-     into it, so each group's total counts every open line it has. */
+  // Dates filter after the read so each group's total still counts all its open lines.
   if (parsed.page?.groups) {
     const page = parsed.page;
     const index = await readPickerLines(supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), { ...page, dateFrom: null, dateTo: null });
@@ -732,13 +728,7 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
       pageSize: page.limit,
     });
   }
-  /* The WHOLE LIST (no `limit`): the Production Order detail and From-SO pages.
-     PAGED READ — lib/outstanding-so-lines.ts. This read carried a `.limit(500)` with
-     all three of the filters that decide the answer running after it in JS, so
-     the picker offered at most 500 of the company's 15,050 live SO lines
-     (measured 2026-09-08, docs/bugs/0677) chosen by document number.
-     The pooled MRP compute needs nothing from these lines and is most of this request's time (measured on production
-     19 Nov 2026: ~3 s quiet, ~24 s under load), so it is started first and runs while the lines are read. */
+  // Start the slow pooled MRP compute before reading the lines.
   const mrpRun = startPickerMrp(c, null);
   const { data: items, error } = await loadOutstandingSoLines(
     supabase,
