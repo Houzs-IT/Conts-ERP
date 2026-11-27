@@ -5,9 +5,10 @@ import { ROOM_COLORS, type Closure, type Room } from "../../lib/meetings";
 
 export const CONTROL =
   "w-full rounded-control border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-faint focus:border-primary focus:outline-none";
-/** A field that must read as a control on its own (colleague search): the 3:1 input outline instead of the soft line. */
+/** A field that must read as a control on its own (colleague search): the 3:1 input outline instead of the soft line.
+ *  Important, because theme-dark.css paints every dark input border with border-strong (1.9:1) outside the layers. */
 export const CONTROL_OUTLINED =
-  "w-full rounded-control border border-line-input bg-card px-3 py-2 text-[13px] text-ink placeholder:text-faint focus:border-primary focus:outline-none";
+  "w-full rounded-control border border-line-input! bg-card px-3 py-2 text-[13px] text-ink placeholder:text-faint focus:border-primary focus:outline-none";
 export const LABEL = "flex flex-col gap-1 text-[11.5px] font-semibold uppercase tracking-wide text-faint";
 export const BTN = "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-card px-3.5 text-[13px] font-medium text-ink hover:bg-muted disabled:opacity-50";
 export const PRI = "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary hover:opacity-90 disabled:opacity-50";
