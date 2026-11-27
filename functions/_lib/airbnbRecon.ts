@@ -94,9 +94,10 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
   const sorted = [...rows].sort((a, b) => a.txnDate.localeCompare(b.txnDate) || a.id.localeCompare(b.id));
   const uploaded = sorted.filter(t => t.type === 'Reservation');
   // The booking's instalments the system already holds (chew, 27 Nov 2026: "认 booking number"), each counted unless an
-  // uploaded payment is the same money (under RM 0.05 apart, one for one).
+  // uploaded payment is the same money (under RM 0.05 apart, one for one). Only for a reservation these files pay part of:
+  // one paid in full before them (AirCover or a refund here only) stays R13.
   const unmatched = [...uploaded];
-  const earlier = [...recorded].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).filter(p => {
+  const earlier = (uploaded.length ? [...recorded] : []).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).filter(p => {
     const i = unmatched.findIndex(t => near(t.amount, p.amount));
     if (i < 0) return true;
     unmatched.splice(i, 1);
