@@ -18,6 +18,10 @@
 // COUNTS AND TOTAL ARE UPPER BOUNDS. They are taken before the stock check. On production (19 Nov 2026) 4,993 of
 // 5,121 live lines passed it, so they are close, but never offered as the count of lines still to order.
 //
+// PROJECT GROUPS (owner, 27 Nov 2026). `?groups=1` answers the projects only, each with its matching and open line
+// counts, so the picker opens collapsed without reading any line. A project's lines are then one paged read filtered
+// by its two funnel texts (project, customer), which pick out exactly that group.
+//
 // FUNNEL VALUES ARE THE GRID'S OWN TEXT. The grid re-applies each funnel to the rows it holds, so `facetValue` must
 // give the exact string the page's column hands the grid (PurchaseOrderFromSo.tsx), or a ticked row vanishes.
 // ----------------------------------------------------------------------------
@@ -44,6 +48,8 @@ export type PickerFacets = Record<PickerFacetCol, Array<[string, number]>>;
 export interface PageCursor { d: string; i: string; s?: string | number }
 
 export interface OutstandingSoPageQuery {
+  /** Answer the project groups instead of a page of lines. */
+  groups: boolean;
   limit: number;
   cursor: PageCursor | null;
   q: string;
@@ -125,7 +131,8 @@ function parseSort(raw: string | undefined): PickerSort | null {
  */
 export function parseOutstandingSoPageQuery(query: Record<string, string | undefined>):
   { ok: true; page: OutstandingSoPageQuery | null } | { ok: false; reason: string } {
-  if (query.limit == null || query.limit === '') return { ok: true, page: null };
+  const groups = query.groups === '1';
+  if (!groups && (query.limit == null || query.limit === '')) return { ok: true, page: null };
   const n = Number(query.limit);
   const limit = Number.isFinite(n) && n > 0 ? Math.min(PAGE_LIMIT_MAX, Math.floor(n)) : PAGE_LIMIT_DEFAULT;
   const cursor = decodeCursor(query.cursor);
@@ -138,7 +145,7 @@ export function parseOutstandingSoPageQuery(query: Record<string, string | undef
   return {
     ok: true,
     page: {
-      limit, cursor, q: cleanSearch(query.q),
+      groups, limit, cursor, q: cleanSearch(query.q),
       category: query.category && query.category !== 'all' ? query.category : null,
       dateField, dateFrom: date(query.dateFrom), dateTo: date(query.dateTo),
       supplier: text(query.supplier), location: text(query.location), docNo: text(query.docNo),
@@ -268,6 +275,65 @@ export function buildPickerPage(lines: readonly PickerLine[], page: OutstandingS
     ? (last.s === undefined ? { d: last.d, i: last.i } : { d: last.d, i: last.i, s: last.s })
     : null;
   return { ids: slice.map((k) => k.id), nextCursor, total: matched.length, facets };
+}
+
+/** The picker's heading for a group (frontend lib/projectCustomerHeading.ts, same rule). */
+export function groupHeading(l: PickerLine): string {
+  const p = projectTitle(l);
+  const c = l.debtorName?.trim();
+  if (p) return c ? `${p} - ${c}` : p;
+  return c ? `No project - ${c}` : 'No project, no customer';
+}
+
+export interface PickerGroup {
+  /** The Project and Customer funnel texts: `cols={project:[project],debtorName:[customer]}` reads this group. */
+  project: string;
+  customer: string;
+  heading: string;
+  /** Lines matching the search and top-bar filters; `total` counts every open line of the group. Upper bounds. */
+  matching: number;
+  total: number;
+}
+
+export interface PickerGroups {
+  groups: PickerGroup[];
+  /** Main supplier choices [code, name, lines], counted under every filter but the supplier one. */
+  suppliers: Array<[string, string, number]>;
+  /** Category choices [item group, lines], counted under every filter but the category one. */
+  categories: Array<[string, number]>;
+}
+
+/** From the light list to the project groups: only groups with a matching line, in heading order. */
+export function buildPickerGroups(lines: readonly PickerLine[], page: OutstandingSoPageQuery): PickerGroups {
+  const byKey = new Map<string, PickerGroup>();
+  const suppliers = new Map<string, [string, string, number]>();
+  const categories = new Map<string, number>();
+  const noSupplier = { ...page, supplier: null };
+  const noCategory = { ...page, category: null };
+  for (const l of lines) {
+    const project = facetValue(l, 'project');
+    const customer = facetValue(l, 'debtorName');
+    const key = JSON.stringify([project, customer]);
+    let g = byKey.get(key);
+    if (!g) { g = { project, customer, heading: groupHeading(l), matching: 0, total: 0 }; byKey.set(key, g); }
+    g.total += 1;
+    if (passesTopBar(l, page)) g.matching += 1;
+    if (l.mainSupplierCode && passesTopBar(l, noSupplier)) {
+      const s = suppliers.get(l.mainSupplierCode) ?? [l.mainSupplierCode, l.mainSupplierName ?? l.mainSupplierCode, 0];
+      s[2] += 1;
+      suppliers.set(l.mainSupplierCode, s);
+    }
+    if (l.itemGroup && passesTopBar(l, noCategory)) {
+      const c = l.itemGroup.toUpperCase();
+      categories.set(c, (categories.get(c) ?? 0) + 1);
+    }
+  }
+  const byText = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
+  return {
+    groups: [...byKey.values()].filter((g) => g.matching > 0).sort((a, b) => byText(a.heading, b.heading)),
+    suppliers: [...suppliers.values()].sort((a, b) => byText(a[1], b[1])),
+    categories: [...categories.entries()].sort((a, b) => byText(a[0], b[0])),
+  };
 }
 
 const INDEX_SELECT = `

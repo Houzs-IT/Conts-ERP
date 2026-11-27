@@ -47,7 +47,7 @@ import { VALID_CURRENCIES, VALID_KINDS } from '../lib/purchase-doc-vocab';
 import { resolveMaintenanceConfigForSupplier, poVariantPricingInput } from '../lib/po-pricing';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
 import { loadOutstandingSoLines, OUTSTANDING_SO_SELECT } from '../lib/outstanding-so-lines';
-import { parseOutstandingSoPageQuery, readPickerLines, buildPickerPage, encodeCursor } from '../lib/outstanding-so-page';
+import { parseOutstandingSoPageQuery, readPickerLines, buildPickerPage, buildPickerGroups, encodeCursor } from '../lib/outstanding-so-page';
 import { poHasDownstream } from '../lib/downstream-lock';
 import { cascadePoSupplierDate, recordedSupplierDate, supplierDatePatchGate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
 import { description2InputsChanged } from '../lib/po-line-description2';
@@ -699,6 +699,14 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
   /* PAGED MODE (owner, 19 Nov 2026) — `?limit=` asks for one page. lib/outstanding-so-page.ts reads the light list of
      every open line, and applies the search, the filters, the column funnels and the sort to it; the funnel counts come
      from the same list (20 Nov 2026). Only the page's lines get the full row and the stock check. */
+  /* PROJECT GROUPS (27 Nov 2026): the picker's collapsed first view. The dates are applied after the read, not pushed
+     into it, so each group's total counts every open line it has. */
+  if (parsed.page?.groups) {
+    const page = parsed.page;
+    const index = await readPickerLines(supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), { ...page, dateFrom: null, dateTo: null });
+    if (index.error) return c.json({ error: 'load_failed', reason: index.error }, 500);
+    return c.json(buildPickerGroups(index.lines, page));
+  }
   if (parsed.page) {
     const page = parsed.page;
     const index = await readPickerLines(supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), page);
