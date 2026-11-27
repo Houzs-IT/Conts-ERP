@@ -75,7 +75,6 @@ select x.*, (select s.id from scm.suppliers s where s.company_id = 1
 "description": "Size: W1800 D400 H443\nColour: CABINET LEG: 808 GOLD; CABINET BODY: 172 BLACK\nMaterial: CABINET LEG: METAL; CABINET BODY: LAMINATED BOARD\nAssembly: KD (KNOCK DOWN)\nPack: 1PC/CTN\nCarton: 336046= L2062 W453 H92\nGross weight: 31 kg\nNett weight: 29 kg\nCubic: 0.08593591 m3\nHin Lim code: 336046",
 "supplier_sku": "336046"
 }
-]
 ]$hlm$::jsonb)
   as x(id text, code text, name text, sub_category text, uom text, cost integer, m3 integer, branding text, description text,
        supplier_sku text)
