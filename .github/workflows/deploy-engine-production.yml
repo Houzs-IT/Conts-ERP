@@ -58,6 +58,10 @@ jobs:
           fi
           echo "Publishing: $part"
           echo "part=$part" >> "$GITHUB_OUTPUT"
+      - name: Install migration script
+        if: steps.part.outputs.part != 'none'
+        # Its own step, so package install scripts never see PROD_DB_URL.
+        run: npm ci --no-audit --no-fund
       - name: Stop if production has pending migrations
         if: steps.part.outputs.part != 'none'
         # Read-only (--check never writes). Engine code merged before its migration would hit missing tables.
@@ -65,7 +69,6 @@ jobs:
           DATABASE_URL: ${{ secrets.PROD_DB_URL }}
         run: |
           [ -n "$DATABASE_URL" ] || { echo "::error::PROD_DB_URL secret is not set"; exit 1; }
-          npm ci --no-audit --no-fund
           node scripts/migrate-pg.mjs --check || { echo "::error::Migrations are pending on production. Nothing was published."; exit 1; }
       - name: Install engine server
         if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'server'
