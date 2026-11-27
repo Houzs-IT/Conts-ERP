@@ -91,6 +91,7 @@ import { StatusWithHold, rowIsHeld } from "../../vendor/scm/components/HoldChip"
 import { PrintPreviewBatchModal, usePrintPreview } from "../../components/scm-v2/PrintPreviewModal";
 import { ProgressBar } from "./renovationProductionParts";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
+import { useStaffLookup } from "../../hooks/useStaffLookup";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -255,7 +256,7 @@ function SplitDropdown({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex h-9 items-center rounded-md border border-primary/60 bg-primary/10 px-2.5 text-primary hover:bg-primary/20"
+        className="inline-flex h-9 items-center rounded-md rounded-l-none border-l border-white/25 bg-primary px-2.5 text-white hover:bg-primary/90"
       >
         <ChevronDown size={14} />
       </button>
@@ -721,6 +722,7 @@ export function ProductionOrdersListV2() {
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const notify = useNotify();
+  const { actorNameOf } = useStaffLookup();
   const askChoice = useChoice();
   const warehousesQ = useWarehouses({ includeInactive: true });
 
@@ -1150,7 +1152,15 @@ export function ProductionOrdersListV2() {
       disableSort: true,
       getValue: (r) => (extraOf(r).assigned_to ?? []).join(", "),
       render: (r) => <span className="text-[12.5px] text-ink-secondary">{(extraOf(r).assigned_to ?? []).join(", ") || "Nobody yet"}</span>,
-    },    lineCols.item_code!,
+    },    {
+      key: "created_by",
+      label: "Created By",
+      width: "132px",
+      disableSort: true,
+      getValue: (r) => actorNameOf(r.created_by, ""),
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{actorNameOf(r.created_by)}</span>,
+    },
+    lineCols.item_code!,
     lineCols.item_description!,
     lineCols.item_description_2!,
     lineCols.location!,

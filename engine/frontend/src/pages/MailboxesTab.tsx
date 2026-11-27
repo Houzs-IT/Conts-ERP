@@ -101,7 +101,7 @@ export function MailboxesTab() {
 
   return (
     <div className="space-y-6">
-      <div role="tablist" aria-label="Mail Center" className="flex flex-wrap gap-1 border-b border-border">
+      <div role="tablist" aria-label="Mail Center" className="flex flex-wrap gap-1 w-fit max-w-full rounded-lg border border-border bg-surface px-1">
         {SUBPAGES.map((p) => (
           <button
             key={p.id}

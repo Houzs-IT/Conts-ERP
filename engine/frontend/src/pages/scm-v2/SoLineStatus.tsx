@@ -5,7 +5,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { fmtDate } from "@2990s/shared";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
-import type { TrailStep } from "./RenovationDocTrail";
+import { stepCaption, type TrailStep } from "./renovationDocTrailModel";
 
 export interface LineStatus { stock: "stock" | "po" | "shortage" | null; incomingPo: string | null; eta: string | null; steps: TrailStep[] }
 
@@ -66,7 +66,7 @@ export function SoLineStatusCell({ s }: { s: LineStatus | undefined }): ReactEle
         <span key={`${t.kind}-${t.id}`}>
           <span style={{ color: TONE.wait }}>{LABEL[t.kind]} </span>
           <b style={{ fontWeight: 600 }}>{t.no}</b>
-          <span style={{ color: TONE[t.tone] }}> · {[t.word, t.date ? fmtDate(t.date) : null].filter(Boolean).join(" ")}</span>
+          <span style={{ color: TONE[t.tone] }}> · {stepCaption(t)}</span>
         </span>
       ))}
       {!st && steps.length === 0 && <span style={{ color: TONE.wait }}>No PO yet</span>}
@@ -78,5 +78,5 @@ export function SoLineStatusCell({ s }: { s: LineStatus | undefined }): ReactEle
 export function soLineStatusText(s: LineStatus | undefined): string {
   if (!s) return "";
   const st = s.stock ? `${STOCK[s.stock].word}${s.stock === "po" && s.eta ? ` ETA ${s.eta}` : ""}` : "";
-  return [st, ...s.steps.filter((t) => t.kind !== "so").map((t) => `${LABEL[t.kind]} ${t.no} ${t.word}${t.date ? ` ${t.date.slice(0, 10)}` : ""}`)].filter(Boolean).join("; ");
+  return [st, ...s.steps.filter((t) => t.kind !== "so").map((t) => `${LABEL[t.kind]} ${t.no} ${stepCaption(t, (day) => day)}`)].filter(Boolean).join("; ");
 }

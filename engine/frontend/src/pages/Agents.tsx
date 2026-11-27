@@ -271,7 +271,7 @@ export function Agents() {
           )}
 
           {/* View tabs */}
-          <div className="flex gap-1 border-b border-border">
+          <div className="flex gap-1 w-fit max-w-full rounded-lg border border-border bg-surface px-1">
             <TabBtn active={view === "console"} onClick={() => setView("console")}>
               Console
             </TabBtn>

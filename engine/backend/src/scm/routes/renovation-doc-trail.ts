@@ -33,13 +33,13 @@ export function stepOf(r: TrailRow): TrailStep {
   }
   if (r.kind === 'production') {
     if (r.done) return { ...base, word: 'Completed', tone: 'done', date: r.done };
-    if (r.started) return { ...base, word: 'In progress, due', tone: 'active', date: r.expected };
-    return { ...base, word: 'Not started, due', tone: 'wait', date: r.expected };
+    if (r.started) return { ...base, word: 'In progress', tone: 'active', date: r.expected };
+    return { ...base, word: 'Not started', tone: 'wait', date: r.expected };
   }
   if (r.kind === 'gr') return { ...base, word: 'Received', tone: 'done', date: r.done };
   if (s === 'DRAFT') return { ...base, word: 'Draft delivery', tone: 'wait', date: r.expected };
   if (r.done) return { ...base, word: 'Delivered', tone: 'done', date: r.done };
-  return { ...base, word: 'Confirmed, due', tone: 'active', date: r.expected };
+  return { ...base, word: 'Confirmed', tone: 'active', date: r.expected };
 }
 
 export const trailOf = (rows: readonly TrailRow[]): TrailStep[] => [...rows]

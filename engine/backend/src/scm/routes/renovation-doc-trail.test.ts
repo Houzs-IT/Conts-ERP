@@ -9,13 +9,13 @@ describe('stepOf', () => {
     expect(stepOf(row({ status: 'RECEIVED', done: '2026-11-07' }))).toMatchObject({ word: 'Received', date: '2026-11-07', tone: 'done' });
   });
   it('a production order reads by what actually happened', () => {
-    expect(stepOf(row({ kind: 'production' }))).toMatchObject({ word: 'Not started, due' });
-    expect(stepOf(row({ kind: 'production', started: '2026-11-07' }))).toMatchObject({ word: 'In progress, due' });
+    expect(stepOf(row({ kind: 'production' }))).toMatchObject({ word: 'Not started' });
+    expect(stepOf(row({ kind: 'production', started: '2026-11-07' }))).toMatchObject({ word: 'In progress' });
     expect(stepOf(row({ kind: 'production', started: '2026-11-07', done: '2026-11-08' }))).toMatchObject({ word: 'Completed', date: '2026-11-08' });
   });
   it('a DO separates draft, confirmed and delivered', () => {
     expect(stepOf(row({ kind: 'do', status: 'DRAFT' }))).toMatchObject({ word: 'Draft delivery' });
-    expect(stepOf(row({ kind: 'do', status: 'LOADED' }))).toMatchObject({ word: 'Confirmed, due' });
+    expect(stepOf(row({ kind: 'do', status: 'LOADED' }))).toMatchObject({ word: 'Confirmed' });
     expect(stepOf(row({ kind: 'do', status: 'DELIVERED', done: '2026-11-07' }))).toMatchObject({ word: 'Delivered' });
   });
   it('held and cancelled win over everything', () => {
@@ -35,7 +35,7 @@ describe('lineStatuses', () => {
     const out = lineStatuses(['a', 'b', 'c'], rows, cover);
     expect(out.a).toMatchObject({ stock: 'stock', eta: null });
     expect(out.a.steps.map((s) => s.no)).toEqual(['TC-PO-1']);
-    expect(out.b).toMatchObject({ stock: null, steps: [{ no: 'TC-PRO-1', word: 'In progress, due' }] });
+    expect(out.b).toMatchObject({ stock: null, steps: [{ no: 'TC-PRO-1', word: 'In progress' }] });
     expect(out.c).toMatchObject({ stock: 'po', incomingPo: 'TC-PO-9', eta: '2026-11-30', steps: [] });
   });
   it('an unknown stock word reads as no stock information', () => {

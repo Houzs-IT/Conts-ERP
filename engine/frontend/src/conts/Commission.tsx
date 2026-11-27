@@ -568,7 +568,7 @@ function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim
       {note && <div role="alert" style={{ color: BAD }}>{note}</div>}
       {done && <div role="status" style={{ color: GOOD }}>{done}</div>}
 
-      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+      <div className="rounded-xl border border-border bg-surface shadow-stone" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
           <thead><tr style={{ color: MUTED }}>
             <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Person</th>

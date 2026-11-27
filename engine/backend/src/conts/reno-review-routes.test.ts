@@ -107,6 +107,38 @@ describe('the review', () => {
     expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', reno_reviewed_by: 'Mei Ling' });
     expect(sb.tables.payment_requests[0].reno_reviewed_at).toBeTruthy();
   });
+  test('send with an edited form saves the changes and moves it to SUBMITTED', async () => {
+    const { sb, id } = await inReview();
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, {
+      type: 'PAYMENT', payeeName: 'KEDAI BARU', amountSen: 7000, keepFileIds: [sb.tables.payment_request_files[0].id], lines: [{ amountSen: 7000, subDepartmentId: 's-tc' }],
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id, edited: true });
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', payee_name: 'KEDAI BARU', amount_sen: 7000, requester_user_id: 'u-ops', reno_reviewed_by: 'Mei Ling' });
+    expect(sb.tables.payment_request_lines).toHaveLength(1);
+    expect(sb.tables.payment_request_lines[0]).toMatchObject({ amount_sen: 7000, sub_department_id: 's-tc' });
+    expect(sb.tables.payment_request_files).toHaveLength(1);
+  });
+  test('send with an empty body still sends it as it is', async () => {
+    const { sb, id } = await inReview();
+    expect(await (await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, {})).json()).toMatchObject({ id, edited: false });
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 4500, payee_name: 'KEDAI PAIP' });
+  });
+  test('an edited send on a request no longer in review is refused and writes nothing', async () => {
+    const { sb, id } = await inReview();
+    sb.tables.payment_requests[0].status = 'SUBMITTED';
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { type: 'PAYMENT', payeeName: 'KEDAI BARU', amountSen: 7000, keepFileIds: [sb.tables.payment_request_files[0].id], lines: [{ amountSen: 7000, subDepartmentId: 's-tc' }] });
+    expect(res.status).toBe(409);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ amount_sen: 4500, payee_name: 'KEDAI PAIP' });
+    expect(sb.tables.payment_request_lines[0].amount_sen).toBe(4500);
+  });
+  test('an edited send with no file kept and none added is refused', async () => {
+    const { sb, id } = await inReview();
+    const res = await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, { type: 'PAYMENT', payeeName: 'KEDAI BARU', amountSen: 7000, lines: [{ amountSen: 7000, subDepartmentId: 's-tc' }] });
+    expect(res.status).toBe(422);
+    expect(sb.tables.payment_requests[0].status).toBe('RENO_REVIEW');
+    expect(sb.tables.payment_request_files).toHaveLength(1);
+  });
   test('a request no longer in review cannot be sent or rejected again', async () => {
     const { sb, id } = await inReview();
     await post(appFor(sb, REVIEWER), `/reno-review/${id}/send`, {});

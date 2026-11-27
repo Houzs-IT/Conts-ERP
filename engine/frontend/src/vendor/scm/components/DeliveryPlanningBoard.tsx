@@ -1520,7 +1520,7 @@ export function DeliveryPlanningBoard({
           Pending Delivery / Pending Schedule / Overdue / Delivered, with counts.
           OVERDUE keeps its red tone so a backlog reads at a glance. */}
       {stateTabs && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-border pb-0.5">
+        <div className="flex flex-wrap items-center gap-2 w-fit max-w-full rounded-lg border border-border bg-surface px-1">
           {([{ key: 'ALL' as const, label: 'All' },
              ...STATE_TABS.map((s) => ({ key: s, label: DELIVERY_STATE_LABEL[s] }))]
           ).map((t) => {

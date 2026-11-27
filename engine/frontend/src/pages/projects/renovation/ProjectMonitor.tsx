@@ -235,7 +235,7 @@ export function ProjectMonitor({ canWrite, embedded = false, onOpenProject, docL
           onChange={(e) => set({ q: e.target.value || null })} aria-label="Search projects" />
       </div>
 
-      <div role="tablist" aria-label="Team" className="flex flex-wrap gap-1 border-b border-border mb-3">
+      <div role="tablist" aria-label="Team" className="mb-3 flex flex-wrap gap-1 w-fit max-w-full rounded-lg border border-border bg-surface px-1">
         {ROLE_TABS.map((t) => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} title={t.who}
             onClick={() => set({ tab: t.key, show: null })}

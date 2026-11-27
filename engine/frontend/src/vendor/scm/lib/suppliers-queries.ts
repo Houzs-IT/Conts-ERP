@@ -406,15 +406,24 @@ export function invalidateSupplierLists(qc: ReturnType<typeof useQueryClient>) {
   ]);
 }
 
+export interface SupplierDetail { supplier: SupplierRow; bindings: BindingRow[] }
+
+const supplierDetailQuery = (id: string | null) => ({
+  queryKey: ['supplier-detail', id],
+  queryFn: () => authedFetch<SupplierDetail>(`/suppliers/${id}`),
+  staleTime: 30_000,
+  retry: retryUnlessClientError,
+  retryDelay: 800,
+});
+
 export function useSupplierDetail(id: string | null) {
-  return useQuery({
-    queryKey: ['supplier-detail', id],
-    queryFn: () => authedFetch<{ supplier: SupplierRow; bindings: BindingRow[] }>(`/suppliers/${id}`),
-    enabled: Boolean(id),
-    staleTime: 30_000,
-    retry: retryUnlessClientError,
-    retryDelay: 800,
-  });
+  return useQuery({ ...supplierDetailQuery(id), enabled: Boolean(id) });
+}
+
+/** Loads a supplier's detail into the same cache useSupplierDetail reads, for a handler that must decide before switching. */
+export function useFetchSupplierDetail(): (id: string) => Promise<SupplierDetail> {
+  const qc = useQueryClient();
+  return (id) => qc.fetchQuery(supplierDetailQuery(id));
 }
 
 export type SupplierScorecard = {

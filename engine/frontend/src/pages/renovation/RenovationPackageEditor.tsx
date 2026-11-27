@@ -112,7 +112,7 @@ export function RenovationPackageEditor(): ReactElement {
         </div>
       </Card>
 
-      <div role="tablist" className="flex gap-1 border-b border-border">
+      <div role="tablist" className="flex gap-1 w-fit max-w-full rounded-lg border border-border bg-surface px-1">
         {([['lines', 'Lines'], ['used', `Used in ${p.usedIn.length}`], ['history', 'History']] as Array<[Tab, string]>).map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
             className={cn('-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold', tab === k ? 'border-primary text-primary' : 'border-transparent text-ink-secondary hover:text-ink')}>{label}</button>

@@ -195,6 +195,16 @@ export async function resolveCallerStaffId(
   return ((data as { id?: string } | null)?.id as string | undefined) ?? null;
 }
 
+/** The staff uuid to stamp as a new order's created_by: the signed-in person's own
+ *  staff row, else the bridge's system uuid (headless agent, or no staff row). */
+export async function resolveCreatorStaffId(
+  sb: Parameters<typeof resolveCallerStaffId>[0],
+  houzsUserId: number | null | undefined,
+  systemStaffId: string,
+): Promise<string> {
+  return (await resolveCallerStaffId(sb, houzsUserId)) ?? systemStaffId;
+}
+
 /**
  * The REVERSE of resolveCallerStaffId: the public.users id behind one scm.staff
  * uuid, or null when there is none — an AutoCount-imported staff row carries no

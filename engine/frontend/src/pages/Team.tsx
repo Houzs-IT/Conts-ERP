@@ -2647,7 +2647,7 @@ function MemberDetail({
       </button>
 
       {/* Tab strip — Overview / Org & Performance. Brands & Commission stays a side-drawer. */}
-      <div className="mb-4 flex items-center gap-1 border-b border-border" role="tablist">
+      <div className="mb-4 flex items-center gap-1 w-fit max-w-full rounded-lg border border-border bg-surface px-1" role="tablist">
         <button
           type="button"
           role="tab"
