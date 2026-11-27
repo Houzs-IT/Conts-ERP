@@ -8,7 +8,7 @@ export default function MeetingsPage() {
   return (
     <div className="flex flex-col min-h-0 gap-3" style={{ height: 'calc(100dvh - 140px)', minHeight: 560 }}>
       <PageHeader title="Meetings" sub="Meeting rooms shared by every company. Book anyone from any company; they see it in their own ERP." />
-      <div className="meetings-ui flex-1 min-h-0 rounded-card border border-solid border-line bg-card overflow-hidden">
+      <div className="meetings-ui bg-meet-canvas flex-1 min-h-0 -mx-4 sm:mx-0 sm:rounded-card sm:border sm:border-solid border-line overflow-hidden">
         <Meetings erpName="Theconts ERP" embedded />
       </div>
     </div>

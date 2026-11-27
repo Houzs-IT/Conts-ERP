@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, ChevronLeft, ChevronRight, Link2, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { api, openLoadedTab } from "./kit-api";
 import { refreshMeetingsUnread } from "../../lib/meetingsUnread";
 import { TabStrip } from "./kit";
+import { useElementWidth } from "./useElementWidth";
+import { MeetingsToolbar } from "./MeetingsToolbar";
+import { MeetingsFilters, MeetingsFilterSheet } from "./MeetingsFilters";
 import { cx as cn } from "../../lib/design-tokens";
 import {
-  DAY, MONTH_NAMES, addDays, atHour, draftBody, draftFrom, emptyDraft, fmtDayLong, isMeetingsTab, isoDay, isView, VIEWS, ms, nextStart, peopleOf, readConflict, startOfDay, startOfWeek,
-  companyColor, meetingColor, INVITED_COLOR, OTHERS_COLOR, type Bootstrap, type CalView, type ColorBy, type ConflictReply, type Draft, type GuestLink, type Meeting, type MeetingsTab, type Notice, type Room, bestRoom } from "../../lib/meetings";
+  DAY, MONTH_NAMES, addDays, atHour, draftBody, draftFrom, emptyDraft, fmtDay, fmtDayLong, isMeetingsTab, isoDay, isView, VIEWS, ms, nextStart, peopleOf, readConflict, startOfDay, startOfWeek,
+  meetingColor, type Bootstrap, type CalView, type ColorBy, type ConflictReply, type Draft, type GuestLink, type Meeting, type MeetingsTab, type Notice, type Room, bestRoom } from "../../lib/meetings";
 import { ListView, MiniMonth, MonthView, RoomsTimeline, TimeGrid } from "./MeetingsCalendar";
-import { ConflictDialog, MeetingDetail, MeetingEditor, PersonSearch, QuickBook, ScopeQuestion, type MeetingFile } from "./MeetingsDialogs";
-import { BTN, PRI, roomForm, type RoomForm } from "./ui";
+import { ConflictDialog, MeetingDetail, MeetingEditor, QuickBook, ScopeQuestion, type MeetingFile } from "./MeetingsDialogs";
+import { BOOK_CTA, BTN, roomForm, type RoomForm } from "./ui";
 import { EmailPage, LinkDialog, LinksPage, LogPage, MyMeetings, RoomDialog, RoomsPage, type LinkForm } from "./MeetingsAdmin";
 
 /**
@@ -27,6 +30,7 @@ import { EmailPage, LinkDialog, LinksPage, LogPage, MyMeetings, RoomDialog, Room
  */
 
 const POLL_MS = 60_000;
+const COMPACT_CALENDAR_PX = 760;
 const COLOR_KEY = "meetings.colorBy";
 const fresh = <T,>(path: string) => api.get<T>(path, { signal: new AbortController().signal });
 const message = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong. Please try again.");
@@ -43,8 +47,13 @@ function rangeFor(view: CalView, anchor: number): [number, number] {
 export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?: string; embedded?: boolean }) {
   const [params, setParams] = useSearchParams();
   const tab: MeetingsTab = isMeetingsTab(params.get("tab")) ? (params.get("tab") as MeetingsTab) : "calendar";
-  const narrow = typeof window !== "undefined" && window.innerWidth < 768;
-  const view: CalView = isView(params.get("view")) ? (params.get("view") as CalView) : narrow ? "day" : "week";
+  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
+  const rootWidth = useElementWidth(rootEl);
+  // Below this width 7 days (plus the sidebar on wide screens) leave each day too narrow to read, so show one day.
+  const isCompact = rootWidth > 0 ? rootWidth < COMPACT_CALENDAR_PX : typeof window !== "undefined" && window.innerWidth < 768;
+  const shownViews: readonly CalView[] = isCompact ? VIEWS.filter((v) => v !== "week") : VIEWS;
+  const viewParam = params.get("view");
+  const view: CalView = isView(viewParam) && shownViews.includes(viewParam) ? viewParam : isCompact ? "day" : "week";
   const dateParam = params.get("date");
   const [today] = useState(() => startOfDay(Date.now()));
   const anchor = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(`${dateParam}T00:00:00`).getTime() : today;
@@ -68,6 +77,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
   const [onlyMine, setOnlyMine] = useState(false);
   const [overlay, setOverlay] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<{ m: Meeting; x: number; y: number; history: { at: string; who: string; text: string }[] | null; files: MeetingFile[] } | null>(null);
@@ -139,8 +149,9 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
     return true;
   });
   const busyRoomsFor = (d: Draft) => new Set(meetings.filter((m) => m.id !== d.id && m.roomId && m.status !== "ended" && ms(m.start) < d.end && d.start < ms(m.end)).map((m) => m.roomId as number));
+  const shownRooms = rooms.filter((r) => roomFilter[r.id] !== false);
   const freeRoomFor = (s: number, e: number) =>
-    bestRoom(rooms, 1, new Set(meetings.filter((m) => m.roomId && m.status !== "ended" && ms(m.start) < e && s < ms(m.end)).map((m) => m.roomId as number)))?.id ?? null;
+    bestRoom(shownRooms.length ? shownRooms : rooms, 1, new Set(meetings.filter((m) => m.roomId && m.status !== "ended" && ms(m.start) < e && s < ms(m.end)).map((m) => m.roomId as number)))?.id ?? null;
 
   const uploadFiles = async (meetingId: number) => {
     if (!pendingFiles.length) return;
@@ -239,8 +250,12 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
     if (view === "month") { const d = new Date(anchor); d.setMonth(d.getMonth() + dir, 1); setAnchor(d.getTime()); }
     else setAnchor(addDays(anchor, dir * (view === "week" ? 7 : view === "list" ? 7 : 1)));
   };
-  const title = view === "day" || view === "rooms" ? fmtDayLong(anchor) : `${MONTH_NAMES[new Date(view === "week" ? startOfWeek(anchor) + 3 * DAY : anchor).getMonth()]} ${new Date(anchor).getFullYear()}`;
+  const title = view === "day" || view === "rooms" ? (isCompact ? fmtDay(anchor) : fmtDayLong(anchor)) : `${MONTH_NAMES[new Date(view === "week" ? startOfWeek(anchor) + 3 * DAY : anchor).getMonth()]} ${new Date(anchor).getFullYear()}`;
   const days = view === "day" ? [startOfDay(anchor)] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
+  const filterProps = {
+    rooms, roomFilter, onRoomFilter: setRoomFilter, colorBy, onColorBy: setColorBy, companies, onlyMine, onOnlyMine: setOnlyMine,
+    overlay, onOverlay: setOverlay, me, people, peopleList: boot?.people ?? [], onGuestLinks: () => patch({ tab: "links" }),
+  };
   const cal = { meetings: shown, rooms, people, colorOf, now, onOpen: (m: Meeting, x: number, y: number) => void openMeeting(m, x, y) };
 
   if (bootError && !boot) {
@@ -248,7 +263,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
   }
 
   return (
-    <div className="flex min-h-0 flex-col" style={{ "--meet-mine": "var(--color-primary)", height: embedded ? "100%" : "calc(100dvh - 64px)" } as CSSProperties}>
+    <div ref={setRootEl} className="flex min-h-0 flex-col" style={{ "--meet-mine": "var(--color-primary)", height: embedded ? "100%" : "calc(100dvh - 64px)" } as CSSProperties}>
       <div className={cn("px-4 sm:px-6", embedded ? "pt-1" : "pt-4")}>
         {!embedded && <h1 className="text-[22px] font-bold text-ink">Meetings</h1>}
         {!embedded && <p className="mb-2 text-[13px] text-muted-ink">Meeting rooms shared by every company. Book anyone from any company; they see it in their own ERP.</p>}
@@ -256,60 +271,21 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
       </div>
       {tab === "calendar" && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-card px-3 py-2 sm:px-4">
-            <button type="button" className={BTN} onClick={() => setAnchor(startOfDay(Date.now()))}>Today</button>
-            <button type="button" aria-label="Previous" className="rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => step(-1)}><ChevronLeft size={18} /></button>
-            <button type="button" aria-label="Next" className="rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => step(1)}><ChevronRight size={18} /></button>
-            <h2 className="ml-1 whitespace-nowrap text-[18px] font-medium text-ink">{title}</h2>
-            <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
-              <label className="relative hidden sm:block"><Search size={15} className="absolute left-3 top-2.5 text-faint" />
-                <input aria-label="Search meetings" placeholder="Search meetings, people, rooms" className="h-9 w-56 rounded-full border border-line bg-muted pl-8 pr-3 text-[13px]" value={query} onChange={(e) => { setQuery(e.target.value); if (e.target.value) patch({ view: "list" }); }} />
-              </label>
-              <div className="flex overflow-hidden rounded-full border border-line" role="group" aria-label="View">
-                {VIEWS.map((v) => (
-                  <button key={v} type="button" onClick={() => patch({ view: v })} className={cn("h-9 px-3 text-[13px] font-medium capitalize", view === v ? "bg-primary-soft font-semibold text-primary-ink" : "bg-card text-ink")}>{v}</button>
-                ))}
-              </div>
-              <button type="button" aria-label={`My meetings, ${unread} unread`} className="relative rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => patch({ tab: "mine" })}>
-                <Bell size={18} />{unread > 0 && <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-line px-1 text-[10px] font-bold text-on-primary">{unread}</span>}
-              </button>
-            </div>
-          </div>
+          <MeetingsToolbar isCompact={isCompact} title={title} view={view} views={shownViews} query={query} unread={unread}
+            onToday={() => setAnchor(startOfDay(Date.now()))} onStep={step} onView={(v) => patch({ view: v })}
+            onQuery={(q) => { setQuery(q); if (q) patch({ view: "list" }); }} onInbox={() => patch({ tab: "mine" })}
+            activeFilterCount={rooms.filter((r) => r.active && roomFilter[r.id] === false).length + overlay.length + (onlyMine && !overlay.length ? 1 : 0)} onFilters={() => setIsFilterSheetOpen(true)} />
           {calError && <div className="bg-danger-bg px-4 py-2 text-[13px] text-danger">The calendar could not be loaded: {calError}</div>}
           <div className="flex min-h-0 flex-1">
-            <aside className="hidden w-[248px] flex-none flex-col gap-3.5 overflow-auto border-r border-line bg-card p-3.5 lg:flex">
-              <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className="flex h-[52px] items-center gap-2.5 self-start rounded-2xl bg-primary-soft pl-4 pr-5 font-semibold text-primary-ink shadow-md">
-                <span className="text-[24px] leading-none" aria-hidden="true">+</span>Book a room
+            <aside className="meet-scroll hidden w-[248px] flex-none content-start gap-3.5 overflow-y-auto px-3.5 pb-3.5 pt-1 lg:grid">
+              <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(BOOK_CTA, "h-11 w-full flex-none")}>
+                <Plus size={18} aria-hidden="true" />Book a room
               </button>
               <MiniMonth key={`${new Date(anchor).getFullYear()}-${new Date(anchor).getMonth()}`} anchor={anchor} week={view === "week"} onPick={setAnchor} />
-              <div>
-                <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Rooms</div>
-                {rooms.filter((r) => r.active).map((r) => (
-                  <label key={r.id} className="flex min-h-[30px] cursor-pointer items-center gap-2.5 text-[13px]">
-                    <input type="checkbox" checked={roomFilter[r.id] !== false} onChange={(e) => setRoomFilter({ ...roomFilter, [r.id]: e.target.checked })} style={{ accentColor: r.color }} />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color }} />{r.name} · {r.seats}
-                  </label>
-                ))}
-                {rooms.length === 0 && <p className="text-[12.5px] text-faint">No rooms yet.</p>}
-              </div>
-              <div>
-                <div className="mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Colours show</div>
-                <div className="flex overflow-hidden rounded-full border border-line">
-                  {([["room", "Room"], ["company", "Company"], ["me", "Me"]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setColorBy(k)} className={cn("h-8 flex-1 text-[12.5px]", colorBy === k ? "bg-primary-soft font-semibold text-primary-ink" : "bg-card")}>{l}</button>)}
-                </div>
-                {colorBy === "me" && <div className="mt-1.5 flex flex-col gap-0.5 text-[12.5px]"><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-primary" />I organise</span><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full " style={{ background: INVITED_COLOR }} />I'm invited</span><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full " style={{ background: OTHERS_COLOR }} />Others (room taken)</span></div>}
-                {colorBy === "company" && <div className="mt-1.5 flex flex-col gap-0.5 text-[12.5px]">{companies.map((c) => <span key={c}><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: companyColor(c, companies) }} />{c}</span>)}</div>}
-              </div>
-              <div>
-                <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Show</div>
-                <label className="flex min-h-[30px] cursor-pointer items-center gap-2.5 text-[13px]"><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />Only my meetings</label>
-                {overlay.map((o) => <label key={o} className="flex min-h-[30px] cursor-pointer items-center gap-2.5 text-[13px]"><input type="checkbox" checked onChange={() => setOverlay(overlay.filter((x) => x !== o))} />{people.get(o)?.name ?? o}'s meetings</label>)}
-                <PersonSearch people={boot?.people ?? []} exclude={[me, ...overlay]} placeholder="Add a colleague's calendar" onPick={(k) => { setOverlay([...overlay, k]); setOnlyMine(true); }} />
-              </div>
-              <button type="button" className={cn(BTN, "justify-center")} onClick={() => patch({ tab: "links" })}><Link2 size={15} />Make a guest booking link</button>
+              <MeetingsFilters density="rail" {...filterProps} />
               <p className="text-[12px] leading-[17px] text-faint">Drag across empty time to book. Drag a meeting to move it, drag its bottom edge to change the length.</p>
             </aside>
-            <section className="flex min-w-0 flex-1 flex-col bg-card" aria-label="Calendar">
+            <section className="mx-2 mb-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-card lg:ml-0" aria-label="Calendar">
               {(view === "day" || view === "week") && (
                 <TimeGrid {...cal} days={days} me={me} canChange={canChange}
                   onCreate={(s, e) => setQuick(newDraft(s, e))}
@@ -320,7 +296,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
               {view === "list" && <ListView {...cal} query={query} />}
             </section>
           </div>
-          <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(PRI, "fixed bottom-5 right-4 z-30 h-12 shadow-lg lg:hidden")}>+ Book a room</button>
+          <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(BOOK_CTA, "fixed bottom-[calc(92px+env(safe-area-inset-bottom))] right-4 z-30 h-12 px-5 shadow-lg lg:hidden")}><Plus size={18} aria-hidden="true" />Book a room</button>
         </div>
       )}
       {tab !== "calendar" && (
@@ -346,6 +322,10 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
           onEdit={() => { setPendingFiles([]); setEditor({ draft: draftFrom(detail.m), isNew: false }); setDetail(null); }}
           onCancel={() => (detail.m.seriesId ? setScopeAsk({ act: "cancel", draft: draftFrom(detail.m), m: detail.m }) : void act(detail.m, "cancel"))}
           onStart={() => void act(detail.m, "start")} onEnd={() => void act(detail.m, "end")} />
+      )}
+      {isFilterSheetOpen && tab === "calendar" && (
+        <MeetingsFilterSheet {...filterProps} onClose={() => setIsFilterSheetOpen(false)}
+          monthPicker={<MiniMonth key={`${new Date(anchor).getFullYear()}-${new Date(anchor).getMonth()}`} anchor={anchor} week={view === "week"} isTouch onPick={(d) => { setAnchor(d); setIsFilterSheetOpen(false); }} />} />
       )}
       {quick && <QuickBook draft={quick} rooms={rooms} people={boot?.people ?? []} busyRooms={busyRoomsFor(quick)} saving={saving} onClose={() => setQuick(null)} onMore={(d) => { setQuick(null); setPendingFiles([]); setEditor({ draft: d, isNew: true }); }} onSave={(d) => void save(d, true)} />}
       {editor && (

@@ -180,3 +180,9 @@
   .meetings-ui :where(ul, ol) { padding: 0; list-style: none; }
   .meetings-ui :where(table) { border-collapse: collapse; }
 }
+
+/* Meetings: a thin scrollbar for the sidebar and the time grid. */
+.meet-scroll { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+.meet-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.meet-scroll::-webkit-scrollbar-track { background: transparent; }
+.meet-scroll::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 999px; }
