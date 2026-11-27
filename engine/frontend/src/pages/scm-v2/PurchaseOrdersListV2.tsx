@@ -87,6 +87,7 @@ import { StatusWithHold, rowIsHeld } from "../../vendor/scm/components/HoldChip"
 import { usePrintDocument } from "../../components/scm-v2/PrintChainProvider";
 import { PrintPreviewBatchModal, usePrintPreview } from "../../components/scm-v2/PrintPreviewModal";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
+import { useStaffLookup } from "../../hooks/useStaffLookup";
 import { purchaseOrderPrintChain } from "../../lib/printChain";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -820,6 +821,7 @@ export function PurchaseOrdersListV2() {
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const notify = useNotify();
+  const { actorNameOf } = useStaffLookup();
   const askChoice = useChoice();
   const warehousesQ = useWarehouses({ includeInactive: true });
 
@@ -1370,6 +1372,14 @@ export function PurchaseOrdersListV2() {
       render: (r) => (
         <span className="text-[12.5px] text-ink-secondary">{r.currency ?? "MYR"}</span>
       ),
+    },
+    {
+      key: "created_by",
+      label: "Created By",
+      width: "132px",
+      disableSort: true,
+      getValue: (r) => actorNameOf(r.created_by, ""),
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{actorNameOf(r.created_by)}</span>,
     },
     {
       // Owner 2026-07-31: the Sales Order(s) this PO's supply is assigned to, at

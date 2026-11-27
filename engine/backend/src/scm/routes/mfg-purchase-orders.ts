@@ -115,6 +115,7 @@ import { expireMrpSnapshot } from '../lib/mrp-snapshot';
 import { withSoRefPoIds } from '../lib/so-ref-search';
 import { poPickerOffers } from '../lib/renovation-po-split';
 import { chunkIn } from '../lib/paginate-all';
+import { resolveCreatorStaffId } from '../lib/salesScope';
 import { dbWriteFailure } from '../lib/pg-rule-error';
 
 /* ── Supplier sofa-combo auto-pricing (Commander 2026-05-29) ─────────────────
@@ -1388,7 +1389,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
     subtotal_sen: subtotal,
     tax_sen: 0,
     total_sen: subtotal,
-    created_by: user.id,
+    created_by: await resolveCreatorStaffId(supabase, c.get('houzsUser')?.id, user.id),
     /* PR #97 — AutoCount Purchase Location at create time.
        PR #157 — now required (see validation above). */
     purchase_location_id: purchaseLocationId,
@@ -2441,7 +2442,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       tax_sen: 0,
       total_sen: subtotal,
       notes: provenanceNote('so', [...bucket.soDocNos]), // a STORED CONTRACT, 8 readers: transfer-vocabulary.ts
-      created_by: user.id,
+      created_by: await resolveCreatorStaffId(supabase, c.get('houzsUser')?.id, user.id),
       expected_at: headerExpectedAt, // Commander 2026-05-28 — derived from the source SO lines, not asked.
       purchase_location_id: headerPurchaseLocationId,
     };

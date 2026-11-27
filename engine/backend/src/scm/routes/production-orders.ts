@@ -53,6 +53,7 @@ import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '.
 import { deferAllocationRecompute } from '../lib/stock-allocation-job';
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { resolveCreatorStaffId } from '../lib/salesScope';
 import { heldSoBehindLines, soOnHoldResponse } from '../lib/source-document-gates';
 import { actualMinutesByOrder, entryAddHandler, entryDeleteHandler, entryEditHandler, hoursGetHandler, stopRunningTimers, timerStartHandler, timerStopHandler } from './production-hours';
 
@@ -1001,7 +1002,7 @@ const createProductionOrder = async (c: any) => {
     currency, expected_at: expectedAt, supplier_delivery_date_2: headerD2, supplier_delivery_date_3: headerD3, supplier_delivery_date_4: headerD4,
     production_time_days: productionTime(body.productionTimeDays), production_time_hours: productionTime(body.productionTimeHours),
     plan_start: dateOrNull(body.planStart),
-    notes: (body.notes as string | undefined) ?? null, subtotal_sen: subtotal, tax_sen: 0, total_sen: subtotal, created_by: user.id, purchase_location_id: purchaseLocationId,
+    notes: (body.notes as string | undefined) ?? null, subtotal_sen: subtotal, tax_sen: 0, total_sen: subtotal, created_by: await resolveCreatorStaffId(supabase, c.get('houzsUser')?.id, user.id), purchase_location_id: purchaseLocationId,
   };
   /* The column's default is the database's UTC date, a day behind in Malaysia until 8am. */
   headerInsert.po_date = body.poDate || todayMyt();
