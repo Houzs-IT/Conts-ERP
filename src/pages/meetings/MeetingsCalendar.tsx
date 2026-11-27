@@ -13,6 +13,8 @@ import {
    the page decides what a drop or a click does. */
 
 const HH = 48; // pixels per hour in the time grid
+const WORKDAY_SCROLL_HOUR = 8.5;
+const QUICK_SLOT_MIN = 30;
 const span = (GRID_TO - GRID_FROM) * 60;
 
 export type CalProps = {
@@ -62,6 +64,7 @@ export function MiniMonth({ anchor, onPick, week }: { anchor: number; onPick: (d
 }
 
 type Drag = { type: "new"; di: number; a: number; b: number } | { type: "move"; id: number; s: number; e: number } | null;
+interface HoverSlot { di: number; startMin: number }
 
 export function TimeGrid(p: CalProps & {
   days: number[];
@@ -74,11 +77,19 @@ export function TimeGrid(p: CalProps & {
   const scroller = useRef<HTMLDivElement>(null);
   const cols = useRef<(HTMLDivElement | null)[]>([]);
   const [drag, setDrag] = useState<Drag>(null);
+  const [hoverSlot, setHoverSlot] = useState<HoverSlot | null>(null);
   useEffect(() => {
-    if (scroller.current) scroller.current.scrollTop = Math.max(0, (minutesOfDay(Date.now()) / 60 - GRID_FROM - 1) * HH);
+    if (scroller.current) scroller.current.scrollTop = (WORKDAY_SCROLL_HOUR - GRID_FROM) * HH;
   }, []);
   const today = startOfDay(now);
-  const yToMin = (el: HTMLElement, y: number) => snapMinutes(GRID_FROM * 60 + ((y - el.getBoundingClientRect().top) / HH) * 60);
+  const rawMin = (el: HTMLElement, y: number) => GRID_FROM * 60 + ((y - el.getBoundingClientRect().top) / HH) * 60;
+  const yToMin = (el: HTMLElement, y: number) => snapMinutes(rawMin(el, y));
+  const slotAt = (el: HTMLElement, y: number) => Math.floor(rawMin(el, y) / QUICK_SLOT_MIN) * QUICK_SLOT_MIN;
+  const trackHover = (e: RPointerEvent<HTMLDivElement>, di: number) => {
+    if (e.pointerType !== "mouse" || drag || e.target !== e.currentTarget) { if (hoverSlot) setHoverSlot(null); return; }
+    const startMin = slotAt(e.currentTarget, e.clientY);
+    if (hoverSlot?.di !== di || hoverSlot.startMin !== startMin) setHoverSlot({ di, startMin });
+  };
   const colAt = (x: number) => cols.current.findIndex((c) => { if (!c) return false; const r = c.getBoundingClientRect(); return x >= r.left && x < r.right; });
 
   const begin = (e: RPointerEvent<HTMLDivElement>, di: number) => {
@@ -96,13 +107,17 @@ export function TimeGrid(p: CalProps & {
       return;
     }
     e.preventDefault();
+    setHoverSlot(null);
+    const clickSlot = slotAt(col, e.clientY);
     const cur = { type: "new" as const, di, a: yToMin(col, e.clientY), b: yToMin(col, e.clientY) + 30 };
+    let dragged = false;
     setDrag({ ...cur });
-    const mv = (ev: PointerEvent) => { cur.b = Math.max(cur.a + 15, yToMin(col, ev.clientY)); setDrag({ ...cur }); };
+    const mv = (ev: PointerEvent) => { const b = Math.max(cur.a + 15, yToMin(col, ev.clientY)); if (b !== cur.b) dragged = true; cur.b = b; setDrag({ ...cur }); };
     const up = () => {
       window.removeEventListener("pointermove", mv);
       window.removeEventListener("pointerup", up);
       setDrag(null);
+      if (!dragged) { const s = atHour(days[cur.di], 0) + clickSlot * MIN; p.onCreate(s, s + HOUR); return; }
       const s = atHour(days[cur.di], 0) + Math.min(cur.a, cur.b) * MIN;
       let en = atHour(days[cur.di], 0) + Math.max(cur.a, cur.b) * MIN;
       if (en - s < 30 * MIN) en = s + HOUR;
@@ -168,7 +183,7 @@ export function TimeGrid(p: CalProps & {
           </div>
         ))}
       </div>
-      <div ref={scroller} className="relative flex-1 overflow-auto">
+      <div ref={scroller} className="meet-scroll relative flex-1 overflow-auto">
         <div className="relative grid" style={{ gridTemplateColumns: template, height: (GRID_TO - GRID_FROM) * HH, backgroundImage: `repeating-linear-gradient(to bottom, rgba(226,221,216,0.8) 0, rgba(226,221,216,0.8) 1px, transparent 1px, transparent ${HH}px)` }}>
           <div className="pr-2 text-right text-[10px] text-faint">
             {Array.from({ length: GRID_TO - GRID_FROM }, (_, i) => GRID_FROM + i).map((h) => (
@@ -181,6 +196,7 @@ export function TimeGrid(p: CalProps & {
             const dow = new Date(d).getDay();
             return (
               <div key={d} ref={(el) => { cols.current[di] = el; }} onPointerDown={(e) => begin(e, di)}
+                onPointerMove={(e) => trackHover(e, di)} onPointerLeave={() => setHoverSlot(null)}
                 className={cn("relative border-l border-line-soft", (dow === 0 || dow === 6) && "bg-muted/40")} style={{ touchAction: "pan-y" }}>
                 {laid.map(({ item, lane, lanes: n0, cluster }) => {
                   const n = Math.min(n0, 4);
@@ -222,9 +238,19 @@ export function TimeGrid(p: CalProps & {
                     <b className="block truncate">{meetings.find((x) => x.id === drag.id)?.title}</b>{fmtRange(drag.s, drag.e)}
                   </div>
                 )}
+                {hoverSlot?.di === di && !drag && (() => {
+                  const s = atHour(d, 0) + hoverSlot.startMin * MIN;
+                  if (evs.some((x) => x.start < s + HOUR && s < x.end)) return null;
+                  return (
+                    <div aria-hidden="true" className="pointer-events-none absolute left-0.5 right-1.5 z-[2] rounded-control border border-dashed border-[var(--meet-now)] bg-primary-soft/60 px-1.5 py-0.5 text-[11.5px] leading-[15px] text-primary-ink"
+                      style={{ top: ((hoverSlot.startMin - GRID_FROM * 60) / 60) * HH, height: HH - 2 }}>
+                      <b className="block font-semibold">+ Quick book</b>{fmtRange(s, s + HOUR)}
+                    </div>
+                  );
+                })()}
                 {d === today && new Date(now).getHours() >= GRID_FROM && new Date(now).getHours() < GRID_TO && (
-                  <div className="pointer-events-none absolute -left-px right-0 z-[3] h-0.5 bg-danger-line" style={{ top: top(now) }}>
-                    <span className="absolute -left-1.5 -top-[5px] h-3 w-3 rounded-full bg-danger-line" />
+                  <div className="pointer-events-none absolute -left-px right-0 z-[3] h-0.5 bg-[var(--meet-now)]" style={{ top: top(now) }}>
+                    <span className="absolute -left-[3px] -top-[2px] h-1.5 w-1.5 rounded-full bg-[var(--meet-now)]" />
                   </div>
                 )}
               </div>
@@ -322,7 +348,7 @@ export function RoomsTimeline(p: CalProps & { day: number; onCreate: (s: number,
                 <div className="pointer-events-none absolute bottom-2.5 top-2.5 rounded-control bg-primary px-2 py-1 text-[11.5px] text-on-primary opacity-85"
                   style={{ left: `${((drag.a - GRID_FROM * 60) / span) * 100}%`, width: `${((drag.b - drag.a) / span) * 100}%` }}><b>(No title)</b></div>
               )}
-              {startOfDay(p.now) === p.day && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-danger-line" style={{ left: `${pct(p.now)}%` }} />}
+              {startOfDay(p.now) === p.day && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-[var(--meet-now)]" style={{ left: `${pct(p.now)}%` }} />}
             </div>
           </div>
         ))}

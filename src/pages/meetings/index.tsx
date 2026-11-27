@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, ChevronLeft, ChevronRight, Link2, Search } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, Link2, Plus, Search, Users } from "lucide-react";
 import { api, openLoadedTab } from "./kit-api";
 import { refreshMeetingsUnread } from "../../lib/meetingsUnread";
 import { TabStrip } from "./kit";
@@ -10,7 +10,7 @@ import {
   companyColor, meetingColor, INVITED_COLOR, OTHERS_COLOR, type Bootstrap, type CalView, type ColorBy, type ConflictReply, type Draft, type GuestLink, type Meeting, type MeetingsTab, type Notice, type Room, bestRoom } from "../../lib/meetings";
 import { ListView, MiniMonth, MonthView, RoomsTimeline, TimeGrid } from "./MeetingsCalendar";
 import { ConflictDialog, MeetingDetail, MeetingEditor, PersonSearch, QuickBook, ScopeQuestion, type MeetingFile } from "./MeetingsDialogs";
-import { BTN, PRI, roomForm, type RoomForm } from "./ui";
+import { BOOK_CTA, BTN, SEG_ITEM, SEG_OFF, SEG_ON, SEG_TRACK, roomForm, type RoomForm } from "./ui";
 import { EmailPage, LinkDialog, LinksPage, LogPage, MyMeetings, RoomDialog, RoomsPage, type LinkForm } from "./MeetingsAdmin";
 
 /**
@@ -139,8 +139,9 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
     return true;
   });
   const busyRoomsFor = (d: Draft) => new Set(meetings.filter((m) => m.id !== d.id && m.roomId && m.status !== "ended" && ms(m.start) < d.end && d.start < ms(m.end)).map((m) => m.roomId as number));
+  const shownRooms = rooms.filter((r) => roomFilter[r.id] !== false);
   const freeRoomFor = (s: number, e: number) =>
-    bestRoom(rooms, 1, new Set(meetings.filter((m) => m.roomId && m.status !== "ended" && ms(m.start) < e && s < ms(m.end)).map((m) => m.roomId as number)))?.id ?? null;
+    bestRoom(shownRooms.length ? shownRooms : rooms, 1, new Set(meetings.filter((m) => m.roomId && m.status !== "ended" && ms(m.start) < e && s < ms(m.end)).map((m) => m.roomId as number)))?.id ?? null;
 
   const uploadFiles = async (meetingId: number) => {
     if (!pendingFiles.length) return;
@@ -256,18 +257,18 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
       </div>
       {tab === "calendar" && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-card px-3 py-2 sm:px-4">
+          <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 sm:px-4">
             <button type="button" className={BTN} onClick={() => setAnchor(startOfDay(Date.now()))}>Today</button>
             <button type="button" aria-label="Previous" className="rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => step(-1)}><ChevronLeft size={18} /></button>
             <button type="button" aria-label="Next" className="rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => step(1)}><ChevronRight size={18} /></button>
             <h2 className="ml-1 whitespace-nowrap text-[18px] font-medium text-ink">{title}</h2>
             <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
               <label className="relative hidden sm:block"><Search size={15} className="absolute left-3 top-2.5 text-faint" />
-                <input aria-label="Search meetings" placeholder="Search meetings, people, rooms" className="h-9 w-56 rounded-full border border-line bg-muted pl-8 pr-3 text-[13px]" value={query} onChange={(e) => { setQuery(e.target.value); if (e.target.value) patch({ view: "list" }); }} />
+                <input aria-label="Search meetings" placeholder="Search meetings, people, rooms…" className="h-9 w-64 rounded-full border border-line bg-card pl-8 pr-3 text-[13px]" value={query} onChange={(e) => { setQuery(e.target.value); if (e.target.value) patch({ view: "list" }); }} />
               </label>
-              <div className="flex overflow-hidden rounded-full border border-line" role="group" aria-label="View">
+              <div className={SEG_TRACK} role="group" aria-label="View">
                 {VIEWS.map((v) => (
-                  <button key={v} type="button" onClick={() => patch({ view: v })} className={cn("h-9 px-3 text-[13px] font-medium capitalize", view === v ? "bg-primary-soft font-semibold text-primary-ink" : "bg-card text-ink")}>{v}</button>
+                  <button key={v} type="button" aria-pressed={view === v} onClick={() => patch({ view: v })} className={cn(SEG_ITEM, "h-8 px-3 capitalize", view === v ? SEG_ON : SEG_OFF)}>{v}</button>
                 ))}
               </div>
               <button type="button" aria-label={`My meetings, ${unread} unread`} className="relative rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => patch({ tab: "mine" })}>
@@ -277,9 +278,9 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
           </div>
           {calError && <div className="bg-danger-bg px-4 py-2 text-[13px] text-danger">The calendar could not be loaded: {calError}</div>}
           <div className="flex min-h-0 flex-1">
-            <aside className="hidden w-[248px] flex-none flex-col gap-3.5 overflow-auto border-r border-line bg-card p-3.5 lg:flex">
-              <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className="flex h-[52px] items-center gap-2.5 self-start rounded-2xl bg-primary-soft pl-4 pr-5 font-semibold text-primary-ink shadow-md">
-                <span className="text-[24px] leading-none" aria-hidden="true">+</span>Book a room
+            <aside className="meet-scroll hidden w-[248px] flex-none flex-col gap-3.5 overflow-y-auto px-3.5 pb-3.5 pt-1 lg:flex">
+              <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(BOOK_CTA, "h-11 w-full flex-none")}>
+                <Plus size={18} aria-hidden="true" />Book a room
               </button>
               <MiniMonth key={`${new Date(anchor).getFullYear()}-${new Date(anchor).getMonth()}`} anchor={anchor} week={view === "week"} onPick={setAnchor} />
               <div>
@@ -287,15 +288,18 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
                 {rooms.filter((r) => r.active).map((r) => (
                   <label key={r.id} className="flex min-h-[30px] cursor-pointer items-center gap-2.5 text-[13px]">
                     <input type="checkbox" checked={roomFilter[r.id] !== false} onChange={(e) => setRoomFilter({ ...roomFilter, [r.id]: e.target.checked })} style={{ accentColor: r.color }} />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color }} />{r.name} · {r.seats}
+                    <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                    <span title={`${r.seats} seats`} className="inline-flex flex-none items-center gap-1 text-[12px] tabular-nums text-faint">
+                      <Users size={13} aria-hidden="true" />{r.seats}<span className="sr-only"> seats</span>
+                    </span>
                   </label>
                 ))}
                 {rooms.length === 0 && <p className="text-[12.5px] text-faint">No rooms yet.</p>}
               </div>
               <div>
                 <div className="mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Colours show</div>
-                <div className="flex overflow-hidden rounded-full border border-line">
-                  {([["room", "Room"], ["company", "Company"], ["me", "Me"]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setColorBy(k)} className={cn("h-8 flex-1 text-[12.5px]", colorBy === k ? "bg-primary-soft font-semibold text-primary-ink" : "bg-card")}>{l}</button>)}
+                <div className={SEG_TRACK} role="group" aria-label="Colours show">
+                  {([["room", "Room"], ["company", "Company"], ["me", "Me"]] as const).map(([k, l]) => <button key={k} type="button" aria-pressed={colorBy === k} onClick={() => setColorBy(k)} className={cn(SEG_ITEM, "h-7 flex-1 text-[12.5px]", colorBy === k ? SEG_ON : SEG_OFF)}>{l}</button>)}
                 </div>
                 {colorBy === "me" && <div className="mt-1.5 flex flex-col gap-0.5 text-[12.5px]"><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-primary" />I organise</span><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full " style={{ background: INVITED_COLOR }} />I'm invited</span><span><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full " style={{ background: OTHERS_COLOR }} />Others (room taken)</span></div>}
                 {colorBy === "company" && <div className="mt-1.5 flex flex-col gap-0.5 text-[12.5px]">{companies.map((c) => <span key={c}><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: companyColor(c, companies) }} />{c}</span>)}</div>}
@@ -309,7 +313,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
               <button type="button" className={cn(BTN, "justify-center")} onClick={() => patch({ tab: "links" })}><Link2 size={15} />Make a guest booking link</button>
               <p className="text-[12px] leading-[17px] text-faint">Drag across empty time to book. Drag a meeting to move it, drag its bottom edge to change the length.</p>
             </aside>
-            <section className="flex min-w-0 flex-1 flex-col bg-card" aria-label="Calendar">
+            <section className="mx-2 mb-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-card lg:ml-0" aria-label="Calendar">
               {(view === "day" || view === "week") && (
                 <TimeGrid {...cal} days={days} me={me} canChange={canChange}
                   onCreate={(s, e) => setQuick(newDraft(s, e))}
@@ -320,7 +324,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
               {view === "list" && <ListView {...cal} query={query} />}
             </section>
           </div>
-          <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(PRI, "fixed bottom-5 right-4 z-30 h-12 shadow-lg lg:hidden")}>+ Book a room</button>
+          <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(BOOK_CTA, "fixed bottom-5 right-4 z-30 h-12 px-5 shadow-lg lg:hidden")}><Plus size={18} aria-hidden="true" />Book a room</button>
         </div>
       )}
       {tab !== "calendar" && (
