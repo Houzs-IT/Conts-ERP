@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, ChevronLeft, ChevronRight, Link2, Plus, Search, Users } from "lucide-react";
+import { Link2, Plus, Users } from "lucide-react";
 import { api, openLoadedTab } from "./kit-api";
 import { refreshMeetingsUnread } from "../../lib/meetingsUnread";
-import { TabStrip } from "./kit";
+import { TabStrip, useIsPhone } from "./kit";
+import { MeetingsToolbar } from "./MeetingsToolbar";
 import { cx as cn } from "../../lib/design-tokens";
 import {
   DAY, MONTH_NAMES, addDays, atHour, draftBody, draftFrom, emptyDraft, fmtDayLong, isMeetingsTab, isoDay, isView, VIEWS, ms, nextStart, peopleOf, readConflict, startOfDay, startOfWeek,
@@ -43,8 +44,11 @@ function rangeFor(view: CalView, anchor: number): [number, number] {
 export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?: string; embedded?: boolean }) {
   const [params, setParams] = useSearchParams();
   const tab: MeetingsTab = isMeetingsTab(params.get("tab")) ? (params.get("tab") as MeetingsTab) : "calendar";
-  const narrow = typeof window !== "undefined" && window.innerWidth < 768;
-  const view: CalView = isView(params.get("view")) ? (params.get("view") as CalView) : narrow ? "day" : "week";
+  const isPhone = useIsPhone();
+  // A 7-day grid is unreadable at phone width, so a phone shows the day instead.
+  const shownViews: readonly CalView[] = isPhone ? VIEWS.filter((v) => v !== "week") : VIEWS;
+  const viewParam = params.get("view");
+  const view: CalView = isView(viewParam) && shownViews.includes(viewParam) ? viewParam : isPhone ? "day" : "week";
   const dateParam = params.get("date");
   const [today] = useState(() => startOfDay(Date.now()));
   const anchor = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(`${dateParam}T00:00:00`).getTime() : today;
@@ -257,25 +261,9 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
       </div>
       {tab === "calendar" && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 sm:px-4">
-            <button type="button" className={BTN} onClick={() => setAnchor(startOfDay(Date.now()))}>Today</button>
-            <button type="button" aria-label="Previous" className="rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => step(-1)}><ChevronLeft size={18} /></button>
-            <button type="button" aria-label="Next" className="rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => step(1)}><ChevronRight size={18} /></button>
-            <h2 className="ml-1 whitespace-nowrap text-[18px] font-medium text-ink">{title}</h2>
-            <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
-              <label className="relative hidden sm:block"><Search size={15} className="absolute left-3 top-2.5 text-faint" />
-                <input aria-label="Search meetings" placeholder="Search meetings, people, rooms…" className="h-9 w-64 rounded-full border border-line bg-card pl-8 pr-3 text-[13px]" value={query} onChange={(e) => { setQuery(e.target.value); if (e.target.value) patch({ view: "list" }); }} />
-              </label>
-              <div className={SEG_TRACK} role="group" aria-label="View">
-                {VIEWS.map((v) => (
-                  <button key={v} type="button" aria-pressed={view === v} onClick={() => patch({ view: v })} className={cn(SEG_ITEM, "h-8 px-3 capitalize", view === v ? SEG_ON : SEG_OFF)}>{v}</button>
-                ))}
-              </div>
-              <button type="button" aria-label={`My meetings, ${unread} unread`} className="relative rounded-full p-2 text-muted-ink hover:bg-muted" onClick={() => patch({ tab: "mine" })}>
-                <Bell size={18} />{unread > 0 && <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-line px-1 text-[10px] font-bold text-on-primary">{unread}</span>}
-              </button>
-            </div>
-          </div>
+          <MeetingsToolbar title={title} view={view} views={shownViews} query={query} unread={unread}
+            onToday={() => setAnchor(startOfDay(Date.now()))} onStep={step} onView={(v) => patch({ view: v })}
+            onQuery={(q) => { setQuery(q); if (q) patch({ view: "list" }); }} onInbox={() => patch({ tab: "mine" })} />
           {calError && <div className="bg-danger-bg px-4 py-2 text-[13px] text-danger">The calendar could not be loaded: {calError}</div>}
           <div className="flex min-h-0 flex-1">
             <aside className="meet-scroll hidden w-[248px] flex-none flex-col gap-3.5 overflow-y-auto px-3.5 pb-3.5 pt-1 lg:flex">

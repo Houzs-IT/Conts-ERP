@@ -1,12 +1,14 @@
 // The few pieces the Meetings page needs from the app, kept in one file so the page files read the same as Houzs
 // ERP's and Hookka ERP's (one hub, three front ends):
 //   TabStrip  - The Conts' own sub-tabs (TabBar, gold underline).
+//   useIsPhone - The Conts' phone check (lib/deviceClass).
 //   DateField, TimeField, NumberInput - The Conts' inputs (src/components/inputs), never a raw <input type="date|time|number">.
 import type { ReactNode } from "react";
 import { TabBar } from "../../components/TabBar";
 import { DateField as ContsDateField, TimeField as ContsTimeField, NumberInput } from "../../components/inputs";
+import { useIsMobile } from "../../lib/deviceClass";
 
-export { NumberInput };
+export { NumberInput, useIsMobile as useIsPhone };
 
 const text = (n: ReactNode): string => (typeof n === "string" || typeof n === "number" ? String(n) : "");
 
