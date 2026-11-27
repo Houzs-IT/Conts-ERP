@@ -58,7 +58,8 @@ export function routerPaths() {
   if (routes) return routes;
   const out = new Set();
   const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8');
-  for (const m of app.matchAll(/<Route path="([^"]+)"/g)) if (m[1] !== '*') out.add(m[1].replace(/\/:[^/]+\?$/, ''));
+  // An optional last segment ("/system/settings/:section?") counts with and without it.
+  for (const m of app.matchAll(/<Route path="([^"]+)"/g)) if (m[1] !== '*') { out.add(m[1].replace(/\/:[^/]+\?$/, '')); out.add(m[1].replace(/\?$/, '')); }
   const eng = readFileSync(join(ROOT, 'src/lib/scmEngine.ts'), 'utf8');
   const block = eng.slice(eng.indexOf('export const ENGINE_PATH'));
   for (const m of block.slice(0, block.indexOf('};')).matchAll(/^\s*'([^']+)':/gm)) out.add(m[1]);

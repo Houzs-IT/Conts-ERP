@@ -19,7 +19,11 @@ import { gateFor } from './mcpActionTools';
 import { sessionState } from './auth';
 import { HOWTO_TOOL_NAMES, explainError, glossary, helpOutcome, howTo, moduleOverview, onboarding, type Access } from './mcpHowto';
 
+import { SCREEN_TOOLS, explainScreen, whereIs } from './mcpScreens';
+
 export { HOWTO_TOOLS } from './mcpHowto';
+export { SCREEN_TOOLS } from './mcpScreens';
+const SCREEN_TOOL_NAMES = new Set(SCREEN_TOOLS.map(t => t.name));
 
 /** The person's access as the ERP checks it, and their side ('' = both). */
 export function accessFor(c: ToolCtx): { access: Access; side: () => Promise<string> } {
@@ -33,10 +37,12 @@ export function accessFor(c: ToolCtx): { access: Access; side: () => Promise<str
 }
 
 export async function runHowtoTool(name: string, args: Record<string, unknown>, c: ToolCtx): Promise<Outcome | null> {
-  if (!HOWTO_TOOL_NAMES.has(name)) return null;
+  if (!HOWTO_TOOL_NAMES.has(name) && !SCREEN_TOOL_NAMES.has(name)) return null;
   const { access, side } = accessFor(c);
   const ans =
-    name === 'how_to' ? await howTo(args, c.origin, access, await side())
+    name === 'explain_screen' ? await explainScreen(args, c.origin, access)
+    : name === 'where_is' ? await whereIs(args, c.origin, access, await side())
+    : name === 'how_to' ? await howTo(args, c.origin, access, await side())
     : name === 'module_overview' ? await moduleOverview(args, c.origin, access, await side())
     : name === 'glossary' ? glossary(args, c.origin)
     : name === 'explain_error' ? explainError(args)

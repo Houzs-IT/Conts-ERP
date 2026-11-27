@@ -39,6 +39,7 @@ import SupplyChainEngine, { armEngineSignIn } from './components/SupplyChainEngi
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
 import { prefetchScreen } from './lib/routePrefetch';
+import { HighlightFromUrl } from './lib/useHighlightParam';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
 const AddUnitPage = lazy(() => import('./pages/units/AddUnitPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
@@ -174,6 +175,8 @@ function AppLayout() {
   const engineShown = viaEngine && !closed;
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
+      {/* ?highlight=<label> from the AI Connector's links outlines that button for a few seconds (read-only). */}
+      <HighlightFromUrl />
       {lastEnginePath.current && (
         <div style={{ display: engineShown ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
           <SupplyChainEngine enginePath={lastEnginePath.current} active={engineShown} />

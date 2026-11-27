@@ -51,7 +51,7 @@ import { scmEngineConfigured } from './scmEngine';
 import { AnswerCache, QUICK_OUTPUT_SCHEMA, STRUCTURED_TOOLS, cacheKey, noAccessText, parseQuickText, readToolAllowed, withLinksAndRm } from './mcpVisibility';
 import { MORE_TOOLS, runMoreTool } from './mcpMoreTools';
 import { CONTS4_TOOLS, runConts4Tool } from './mcpConts4Tools';
-import { HOWTO_TOOLS, runHowtoTool } from './mcpHowtoTools';
+import { HOWTO_TOOLS, SCREEN_TOOLS, runHowtoTool } from './mcpHowtoTools';
 import { RATE_LIMITED_STATUS, limitVerdict, todayStays } from './mcpMore';
 import {
   FETCH_SPECS, PROMPTS, PROMPT_TOOLS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
@@ -88,7 +88,8 @@ ANSWER FAST: use a quick answer first. It is one call and already summarised:
 Only when no quick answer fits: list_modules, then list_endpoints for a module, then erp_get. With erp_get pass "fields" (only the keys you need) and query parameters (from / to dates, page / pageSize, q or search, status) to keep replies small.
 Quick answers give money in RM. In erp_get replies money is in sen (RM x 100) where a field ends in Sen or is an amount. Dates are YYYY-MM-DD, Malaysia time.
 If a call says "not available to your role" or names a missing access, tell the person their account does not have access to that data.
-HELP ("how do I...", "where is...", "what does X mean", an error message): how_to {question} gives click-by-click steps with ERP links for the person's own company (The Conts' short-stay rental, or Dream Crafter's renovation); end-to-end chains (a reservation to the owner's payout, a renovation project from quotation to handover) come back as one flow. module_overview {module} explains a module; glossary {term} explains a term or abbreviation; explain_error {text} explains an ERP error message (read it off a screenshot if needed); onboarding {role} gives a new starter's first-week reading path. Follow the guide's steps and labels exactly; if canDo is false, tell the person to ask their supervisor or management for the permission. Guides are in English; answer in the person's language.`;
+HELP ("how do I...", "where is...", "what does X mean", an error message): how_to {question} gives click-by-click steps with ERP links for the person's own company (The Conts' short-stay rental, or Dream Crafter's renovation); end-to-end chains (a reservation to the owner's payout, a renovation project from quotation to handover) come back as one flow. module_overview {module} explains a module; glossary {term} explains a term or abbreviation; explain_error {text} explains an ERP error message (read it off a screenshot if needed); onboarding {role} gives a new starter's first-week reading path. "Where do I open X?": where_is {thing} (sidebar path + a link that outlines the button). What a screen or button does: explain_screen.
+SCREENSHOTS: when the person sends a screenshot or photo of the ERP, read the address bar (the path after the domain, e.g. /owners/payouts) and the visible button, tab and heading labels, then call explain_screen {path, visible_text: [labels]}. Explain the page from its answer, not from guesses; point at buttons by their exact label and give the link. Follow the guide's steps and labels exactly; if canDo is false, tell the person to ask their supervisor or management for the permission. Guides are in English; answer in the person's language.`;
 
 const RO = { readOnlyHint: true, openWorldHint: false };
 const NO_ARGS = { type: 'object', properties: {}, additionalProperties: false };
@@ -140,6 +141,7 @@ const TOOLS = [
   ...MORE_TOOLS,
   ...CONTS4_TOOLS,
   ...HOWTO_TOOLS,
+  ...SCREEN_TOOLS,
   ...ACTION_TOOLS,
   ...WRITE_TOOLS,
   {
