@@ -13,7 +13,8 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { supabaseAuth } from '../middleware/auth';
-import { canViewAllSales, hasHouzsPerm } from '../lib/houzs-perms';
+import { canViewAllSales, canViewScmProductCost, hasHouzsPerm } from '../lib/houzs-perms';
+import { keepLineCosts, previousLines, stripLineCosts } from '../lib/renovation-cost-guard';
 import { soDocOutOfScope } from '../lib/salesScope';
 import { activeCompanyId, companyDocPrefix } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
@@ -31,7 +32,7 @@ import { approveVo, createVoWithEdits, listPoFlags, quickVo, readVo, resolvePoFl
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule, takeBackPoPayment } from '../lib/renovation-po-schedule';
 import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
-import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
+import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS, type NormSection } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
 import { cancelGate, contractPostingState, postContractCancel, postContractChange } from '../../acc/reno-ledger';
@@ -104,6 +105,15 @@ export function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; t
   };
 }
 
+/* A document answer for this caller: lines without their cost and supplier unless they may see product cost
+   (lib/renovation-cost-guard.ts). */
+const docOut = <T>(c: C, value: T): T => (canViewScmProductCost(c) ? value : stripLineCosts(value));
+/* Sections as the caller saved them, with cost and supplier from the database unless they may see product cost. */
+const docIn = async (c: C, db: RenoDb, sections: NormSection[] | undefined, before?: () => Promise<unknown>): Promise<NormSection[] | undefined> =>
+  sections === undefined || canViewScmProductCost(c)
+    ? sections
+    : keepLineCosts(db, sections, actorOf(c).companyId, before ? previousLines(await before()) : []);
+
 /* ── Quotations ─────────────────────────────────────────────────────────── */
 
 renovation.get('/quotations', handle(null, async (c, { sqlRead }) => {
@@ -119,17 +129,17 @@ renovation.get('/quotations', handle(null, async (c, { sqlRead }) => {
 renovation.post('/quotations', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const header = need(normaliseHeader(b.header));
-  const sections = b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined;
+  const sections = await docIn(c, sqlRead, b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined);
   const instalments = b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined;
   const out = await tx((db) => createQuotation(db, actorOf(c), {
     projectId: b.projectId == null || b.projectId === '' ? null : intParam(b.projectId, 'projectId'), brandId: b.brandId ?? header.brandId ?? null, templateId: b.templateId ?? null, header, sections, instalments,
   }));
-  return c.json(out, 201);
+  return c.json(docOut(c, out), 201);
 }));
 
 renovation.get('/quotations/:id', handle(null, async (c, { sqlRead }) => {
   const rev = c.req.query('rev');
-  return c.json(await getQuotation(sqlRead, param(c, 'id'), actorOf(c).companyId, rev ? intParam(rev, 'rev') : undefined));
+  return c.json(docOut(c, await getQuotation(sqlRead, param(c, 'id'), actorOf(c).companyId, rev ? intParam(rev, 'rev') : undefined)));
 }));
 
 renovation.put('/quotations/:id', handle(PERM.quote, async (c, { tx, sqlRead }) => {
@@ -138,10 +148,11 @@ renovation.put('/quotations/:id', handle(PERM.quote, async (c, { tx, sqlRead }) 
     version: intParam(b.version, 'version'),
     projectId: b.projectId === undefined ? undefined : b.projectId == null || b.projectId === '' ? null : intParam(b.projectId, 'projectId'),
     header: b.header !== undefined ? need(normaliseHeader(b.header)) : undefined,
-    sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined,
+    sections: await docIn(c, sqlRead, b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined,
+      () => getQuotation(sqlRead, param(c, 'id'), actorOf(c).companyId)),
     instalments: b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined,
   };
-  return c.json(await tx((db) => saveRevision(db, actorOf(c), param(c, 'id'), body)));
+  return c.json(docOut(c, await tx((db) => saveRevision(db, actorOf(c), param(c, 'id'), body))));
 }));
 
 renovation.post('/quotations/:id/revisions', handle(PERM.quote, async (c, { tx }) => {
@@ -217,7 +228,7 @@ renovation.post('/quotations/:id/save-as-template', handle(PERM.quote, async (c,
 renovation.get('/templates', handle(null, async (c, { sqlRead }) =>
   c.json({ templates: await listTemplates(sqlRead, actorOf(c).companyId, c.req.query('all') === '1') })));
 
-renovation.get('/templates/:id', handle(null, async (c, { sqlRead }) => c.json(await getTemplate(sqlRead, param(c, 'id'), actorOf(c).companyId))));
+renovation.get('/templates/:id', handle(null, async (c, { sqlRead }) => c.json(docOut(c, await getTemplate(sqlRead, param(c, 'id'), actorOf(c).companyId)))));
 
 const templateFields = (b: Record<string, any>, uoms: readonly UomDef[]) => ({
   name: b.name, brandId: b.brandId, description: b.description, printFormat: b.printFormat && (PRINT_FORMATS as readonly string[]).includes(b.printFormat) ? b.printFormat : undefined,
@@ -229,12 +240,14 @@ const templateFields = (b: Record<string, any>, uoms: readonly UomDef[]) => ({
 renovation.post('/templates', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const fields = templateFields(b, await loadUomsSql(sqlRead));
-  return c.json(await tx((db) => createTemplate(db, actorOf(c), fields)), 201);
+  fields.sections = await docIn(c, sqlRead, fields.sections);
+  return c.json(docOut(c, await tx((db) => createTemplate(db, actorOf(c), fields))), 201);
 }));
 
 renovation.put('/templates/:id', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const fields = templateFields(b, await loadUomsSql(sqlRead));
+  fields.sections = await docIn(c, sqlRead, fields.sections, () => getTemplate(sqlRead, param(c, 'id'), actorOf(c).companyId));
   await tx((db) => saveTemplate(db, actorOf(c), param(c, 'id'), fields));
   return c.json({ ok: true });
 }));
@@ -268,6 +281,7 @@ renovation.put('/brands/:brandId', handle(PERM.terms, async (c, { tx }) => {
 
 renovation.get('/lookups/products', handle(null, async (c, { sqlRead }) => {
   const q = (c.req.query('q') ?? '').trim();
+  const seesCost = canViewScmProductCost(c);
   const rows = await sqlRead.q(
     `select p.code, p.name, p.category::text as category, to_jsonb(p) ->> 'sub_category' as sub_category, to_jsonb(p) ->> 'uom' as uom,
             p.cost_price_sen,
@@ -290,8 +304,8 @@ renovation.get('/lookups/products', handle(null, async (c, { sqlRead }) => {
   return c.json({
     products: rows.map((r) => ({
       code: r.code, name: r.name, category: r.category, group: categoryGroupOf(r.category), subCategory: r.sub_category, uom: r.uom,
-      costSen: Number(r.binding_cost_sen ?? r.cost_price_sen ?? 0), sellPriceSen: Number(r.sell_price_sen ?? 0),
-      supplierId: r.supplier_id, supplierName: r.supplier_name,
+      costSen: seesCost ? Number(r.binding_cost_sen ?? r.cost_price_sen ?? 0) : 0, sellPriceSen: Number(r.sell_price_sen ?? 0),
+      supplierId: seesCost ? r.supplier_id : null, supplierName: seesCost ? r.supplier_name : null,
     })),
   });
 }));
@@ -316,14 +330,18 @@ renovation.get('/sales-orders/:docNo', handle(null, async (c, { sqlRead }) => {
   const docNo = param(c, 'docNo');
   const companyId = actorOf(c).companyId;
   const contract = await readContract(sqlRead, docNo, companyId);
-  return c.json({ ...contract, billing: await billingView(sqlRead, docNo, companyId) });
+  return c.json(docOut(c, { ...contract, billing: await billingView(sqlRead, docNo, companyId) }));
 }));
 
 renovation.patch('/sales-orders/:docNo', handle(PERM.quote, async (c, { tx }) => {
   const b = await json(c);
   const header = b.header !== undefined ? need(normaliseHeader(b.header)) : undefined;
   return c.json(await tx((db) => patchContract(db, actorOf(c), param(c, 'docNo'), {
-    version: intParam(b.version, 'version'), header, sections: Array.isArray(b.sections) ? b.sections : undefined, lines: Array.isArray(b.lines) ? b.lines : undefined,
+    version: intParam(b.version, 'version'), header, sections: Array.isArray(b.sections) ? b.sections : undefined,
+    /* Cost and supplier are left as stored when the caller may not see product cost. */
+    lines: Array.isArray(b.lines)
+      ? (canViewScmProductCost(c) ? b.lines : b.lines.map(({ supplierId: _s, unitCostSen: _u, ...rest }: Record<string, unknown>) => rest))
+      : undefined,
   })));
 }));
 
@@ -494,15 +512,17 @@ renovation.post('/sales-orders/:docNo/variation-orders', handle(PERM.quote, asyn
   return c.json(await tx((db) => createVoWithEdits(db, actorOf(c), param(c, 'docNo'), s.data)), 201);
 }));
 
-renovation.get('/variation-orders/:id', handle(null, async (c, { sqlRead }) => c.json(await readVo(sqlRead, param(c, 'id'), actorOf(c).companyId))));
+renovation.get('/variation-orders/:id', handle(null, async (c, { sqlRead }) => c.json(docOut(c, await readVo(sqlRead, param(c, 'id'), actorOf(c).companyId)))));
 
 renovation.put('/variation-orders/:id', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const uoms = await loadUomsSql(sqlRead);
-  return c.json(await tx((db) => saveVo(db, actorOf(c), param(c, 'id'), {
+  const sections = await docIn(c, sqlRead, b.sections !== undefined ? need(normaliseSections(b.sections, 'vo', uoms)) : undefined,
+    () => readVo(sqlRead, param(c, 'id'), actorOf(c).companyId));
+  return c.json(docOut(c, await tx((db) => saveVo(db, actorOf(c), param(c, 'id'), {
     version: intParam(b.version, 'version'), title: typeof b.title === 'string' ? b.title : undefined, docDate: b.docDate ?? undefined,
-    sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'vo', uoms)) : undefined,
-  })));
+    sections,
+  }))));
 }));
 
 const lineEditSchema = z.object({
