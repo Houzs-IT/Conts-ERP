@@ -495,6 +495,9 @@ export const RATE_PER_MINUTE = 30;
 export const RATE_PER_DAY = 600;
 /** The status a refused call is logged with; such rows do not count toward the limit. */
 export const RATE_LIMITED_STATUS = 429;
+/** Round 4d: the morning brief / test brief run daily_brief + data_gaps as the person under this client (mcpProactiveRun.ts).
+ *  Its calls are logged in mcp_calls like any other, but never counted toward the person's own rate limit. */
+export const BRIEF_CLIENT_ID = 'mcpc_morning_brief';
 
 /** Null when the call may go ahead, else the plain message the AI app is given. */
 export function limitVerdict(c: { minute: number; day: number }, perMinute = RATE_PER_MINUTE, perDay = RATE_PER_DAY): string | null {
@@ -506,8 +509,8 @@ export function limitVerdict(c: { minute: number; day: number }, perMinute = RAT
 /** One count as a scalar subquery for the door's token query (mcpStore resolveAccessToken withCounts), used twice
  *  (last minute, last day); each is one index range scan on mcp_calls (user_id, created_at). One `?`: the window start. */
 export const RATE_COUNT_SQL = (userCol: string) =>
-  `SELECT COUNT(*) FROM mcp_calls k WHERE k.user_id = ${userCol} AND k.created_at > ? AND k.status IS DISTINCT FROM ${RATE_LIMITED_STATUS}`;
+  `SELECT COUNT(*) FROM mcp_calls k WHERE k.user_id = ${userCol} AND k.created_at > ? AND k.status IS DISTINCT FROM ${RATE_LIMITED_STATUS} AND k.client_id IS DISTINCT FROM '${BRIEF_CLIENT_ID}'`;
 
 /** The same counts on their own (one index range scan on mcp_calls (user_id, created_at), migration 0378). */
 export const RATE_SQL = `SELECT COUNT(*) FILTER (WHERE created_at > ?) AS minute, COUNT(*) AS day
-  FROM mcp_calls WHERE user_id = ? AND created_at > ? AND status IS DISTINCT FROM ${RATE_LIMITED_STATUS}`;
+  FROM mcp_calls WHERE user_id = ? AND created_at > ? AND status IS DISTINCT FROM ${RATE_LIMITED_STATUS} AND client_id IS DISTINCT FROM '${BRIEF_CLIENT_ID}'`;

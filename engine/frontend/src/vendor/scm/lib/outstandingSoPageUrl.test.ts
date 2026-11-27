@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { outstandingSoPageUrl } from './suppliers-queries';
+import { outstandingSoPageUrl, pickerGroupsUrl } from './suppliers-queries';
 
 const params = (url: string) => Object.fromEntries(new URL(url, 'http://x').searchParams);
 
@@ -17,6 +17,10 @@ describe('outstandingSoPageUrl — the PO-from-SO picker asks the server for one
       q: '', category: 'all', dateField: 'soDate', dateFrom: '', dateTo: '',
       cols: { project: ['KL 48 B-2', '(none)'], debtorName: [] }, sort: { key: 'project', dir: 'desc' },
     }, null))).toEqual({ limit: '100', cols: JSON.stringify({ project: ['KL 48 B-2', '(none)'] }), sort: 'project:desc' });
+  });
+  test('the project list asks for groups with the top-bar filters and the supplier', () => {
+    expect(params(pickerGroupsUrl({ q: 'oak', category: 'all', dateField: 'soDate', dateFrom: '', dateTo: '', supplier: 'SUP-A' })))
+      .toEqual({ groups: '1', q: 'oak', supplier: 'SUP-A' });
   });
   test('a sofa set is read by its SO number', () => {
     expect(params(outstandingSoPageUrl({ docNo: 'HC-SO-1' }, null, 200))).toEqual({ limit: '200', docNo: 'HC-SO-1' });

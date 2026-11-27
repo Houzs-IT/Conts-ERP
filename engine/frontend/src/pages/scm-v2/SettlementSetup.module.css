@@ -92,7 +92,7 @@
   background: var(--c-cream);
   z-index: 1;
 }
-.row:hover > .label { background: #f7f8f6; }
+.row:hover > .label { background: rgb(var(--eng-surface-2)); }
 
 .name { font-weight: 700; }
 .sub {

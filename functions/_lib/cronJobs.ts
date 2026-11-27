@@ -104,6 +104,40 @@ export async function hubHealthReport(env: Env, o: RunOptions = {}): Promise<Job
   }
 }
 
+/** Every 15 minutes: the AI Connector's morning briefs and urgent alerts (round 4d). Like hubHealthReport, this worker only
+ *  knocks: the website builds each brief AS the person through the API's own routes in-process, which only it can do
+ *  (POST /api/mcp/proactive/tick, functions/_lib/mcpProactiveRun.ts), with Conts's IT Hub key as the credential. The
+ *  tick is bounded (at most 10 briefs and 15 alert checks, a 20 s budget) and idempotent, so a repeated or late run
+ *  sends nothing twice. Off until both the address and the key are set. */
+export async function aiBriefTick(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const key = (env.IT_HUB_API_KEY ?? '').trim();
+  const origin = (env.APP_ORIGIN ?? '').trim().replace(/\/+$/, '');
+  if (!key || !origin) return { job: 'ai-brief-tick', summary: 'Not connected here (IT_HUB_API_KEY or APP_ORIGIN not set): no briefs or alerts.' };
+  if (o.dryRun) return { job: 'ai-brief-tick', summary: `Would ask ${origin} to send the morning briefs and urgent alerts that are due.` };
+  try {
+    const res = await fetch(`${origin}/api/mcp/proactive/tick`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(28_000),
+    });
+    const b = await res.json().catch(() => null) as Record<string, unknown> | null;
+    if (!res.ok || !b) {
+      console.error('AI brief tick refused', res.status);
+      return { job: 'ai-brief-tick', summary: `AI brief tick refused (${res.status}).` };
+    }
+    if (b.ran === false) return { job: 'ai-brief-tick', summary: String(b.reason ?? 'Not set up on the website yet.') };
+    const n = (k: string) => Number(b[k] ?? 0);
+    return {
+      job: 'ai-brief-tick',
+      summary: `${plural(n('briefsSent'), 'brief')} sent (${n('briefsFailed')} failed), ${plural(n('alertEmails'), 'alert email')} (${plural(n('alertLines'), 'line')}); ${n('peopleDeferred')} left for the next run.`,
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error('AI brief tick not run', error);
+    return { job: 'ai-brief-tick', summary: 'AI brief tick not run.', error };
+  }
+}
+
 /** Every 15 minutes: email / WhatsApp copies held for quiet hours go out after 08:00, and failed ones are retried
  *  with a growing wait (5 min, 20 min, 80 min ...) up to MAX_SEND_ATTEMPTS. */
 export async function drainOutbox(env: Env, o: RunOptions = {}): Promise<JobReport> {
@@ -408,7 +442,7 @@ export const CRON = {
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox, meetingMail],
-  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep, lateIncomeSweep],
+  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep, lateIncomeSweep, aiBriefTick],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep, passKeyUrgencySweep, meetingsDirectory],
   [CRON.daily]: [dailyDigest],
 };

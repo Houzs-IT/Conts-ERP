@@ -41,14 +41,24 @@ export async function mapBounded<T, R>(
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
-  if (limit < 1) throw new Error(`mapBounded: limit must be >= 1, got ${limit}`);
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(`mapBounded: limit must be an integer >= 1, got ${limit}`);
+  }
   const out = new Array<R>(items.length);
   let next = 0;
+  let hasFailed = false;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     for (;;) {
+      // A sequential loop starts nothing after a throw, so siblings stop pulling new items too.
+      if (hasFailed) return;
       const i = next++;
       if (i >= items.length) return;
-      out[i] = await fn(items[i], i);
+      try {
+        out[i] = await fn(items[i], i);
+      } catch (err: unknown) {
+        hasFailed = true;
+        throw err;
+      }
     }
   });
   await Promise.all(workers);

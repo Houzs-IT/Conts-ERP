@@ -120,3 +120,26 @@ Applied on production 18 Nov 2026 (dry-run three times first): 26 SOs changed by
 Checked afterwards: a fresh dry-run reports all 81 matching; every SO's total equals its PDF's final total; qty, unit
 price and amount of every priced line equal the PDF's (78 SOs exactly; 3 carry one extra line, the lump-sum heading
 their PDF prices as a section). The one-off workflow was then removed.
+
+## Jin Ni quotations (owner, 27 Nov 2026)
+"All data, amounts included, follow our Google sheet": Jin Ni's unit quotations (Google sheet "JINNI UNIT PROGRESS",
+column Quotation, 18 PDFs on Drive) are the truth for her SOs. The CODE/COLOUR on a quotation is our Hin Lim code
+(355019 = FUR-HLM-355019); five codes Hin Lim lists as OBSOLETE were missing and are opened by migration 0398.
+`jinni-quotes-2026-11-27.json` holds the target per project, applied by `engine/backend/scripts/so-jinni-update.mts`
+(the 18 Nov script with this data) through the one-off workflow `.github/workflows/so-jinni-update.yml`.
+- SKYLINE EMBASSY, 9 SOs: each live SO with the quotation's SKUs, quantities, added and dropped lines; one VO each.
+  Lines keep their own prices; a qty change keeps the unit price; an added light is RM 0 (as on the other SOs), the
+  added bedside table 131198 takes the price of the 131098 one it splits from. Total: the quotation's printed total
+  where it prints one (A-11-05, C-31-01, C-51-06: RM 35,990), else the SO's own total, unchanged.
+- ASTRUM, 5 new SOs (R-13-03, R-16-22, R-21-18, R-54-16, S-25-20): lines without prices plus one package line,
+  RM 21,499 each (RM 14,999 + Airbnb RM 5,000 + electrical RM 1,500). The optional "extend kitchen top RM 100" is left out.
+- ASTRUM A-24-31 (no project before): project opened (customer SUN WENG FONG, from the quotation) and its SO at the printed
+  RM 23,500. ASTRUM S-24-29 (on the sheet, no project, no quotation): project only, customer SUWARNARAJ CHINNIAH (the
+  rental side's owner of that unit).
+- ASTRUM R-29-27, R-52-29, A-17-20 print no total: their SOs open at RM 0, to be updated when the price is known; ASTRUM
+  R-19-23 (no project, no owner on record): project opened under "OWNER TO BE CONFIRMED" (owner, 27 Nov 2026).
+- Applied on production 27 Nov 2026 (dry-run twice first): 9 SKYLINE EMBASSY SOs changed by one VO each (A-11-05 and
+  C-31-01 to RM 35,990), 9 ASTRUM SOs created (TC-SO-2611-043 to -051), 3 projects opened (A-24-31 RN-2611-073,
+  S-24-29 RN-2611-074, R-19-23 RN-2611-075). The one-off workflow is removed; the script stays for reference.
+- After the run, someone edited TC-SO-2611-045 (R-21-18) and -046 (R-54-16) by hand in the SO screen: the package line was
+  cancelled and an "EXTEND KITCHEN TOP" line carries RM 214,999 / RM 20,499. Left for the owner to confirm.

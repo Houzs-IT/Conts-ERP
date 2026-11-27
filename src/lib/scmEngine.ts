@@ -139,3 +139,9 @@ export function menuPathFor(enginePath: string, current?: string | null): string
   if (current && sameSide.length === 0) return current;
   return (sameSide.length ? sameSide : tied)[(sameSide.length ? sameSide : tied).length - 1];
 }
+
+/** The address for an engine screen under a menu item: the menu alone for its own screen, else the screen in ?engine=
+ *  (App.tsx opens it inside the frame), so an open record can be refreshed, bookmarked and shared. */
+export function engineAddress(menu: string, enginePath: string): string {
+  return ENGINE_PATH[menu] === enginePath ? menu : `${menu}?engine=${encodeURIComponent(enginePath)}`;
+}

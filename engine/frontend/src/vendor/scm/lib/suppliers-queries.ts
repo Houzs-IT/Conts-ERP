@@ -7,7 +7,7 @@
 // is verbatim.
 
 import { useMemo } from 'react';
-import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { poListParams, type PoListFilterParams } from './po-list-export';
 import type { PoListLine } from './po-line-export-columns';
@@ -967,6 +967,7 @@ export type OutstandingSoPageFilters = {
   cols?: Record<string, string[]>;
   /** A sort the server applies over every matching line (PICKER_SORT_COLS); null for the list order. */
   sort?: { key: string; dir: 'asc' | 'desc' } | null;
+  supplier?: string;
 };
 
 export type OutstandingSoPage = {
@@ -981,9 +982,7 @@ export type OutstandingSoPage = {
 
 export const OUTSTANDING_SO_PAGE_SIZE = 100;
 
-export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { docNo?: string }, cursor: string | null, limit = OUTSTANDING_SO_PAGE_SIZE): string {
-  const p = new URLSearchParams({ limit: String(limit) });
-  if (cursor) p.set('cursor', cursor);
+function setOutstandingSoFilterParams(p: URLSearchParams, f: Partial<OutstandingSoPageFilters> & { docNo?: string }): void {
   if (f.q?.trim()) p.set('q', f.q.trim());
   if (f.category && f.category !== 'all') p.set('category', f.category);
   if (f.dateFrom || f.dateTo) p.set('dateField', f.dateField ?? 'soDate');
@@ -993,7 +992,80 @@ export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { do
   const cols = Object.fromEntries(Object.entries(f.cols ?? {}).filter(([, v]) => v.length > 0));
   if (Object.keys(cols).length > 0) p.set('cols', JSON.stringify(cols));
   if (f.sort) p.set('sort', `${f.sort.key}:${f.sort.dir}`);
+  if (f.supplier) p.set('supplier', f.supplier);
+}
+
+export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { docNo?: string }, cursor: string | null, limit = OUTSTANDING_SO_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  setOutstandingSoFilterParams(p, f);
   return `/mfg-purchase-orders/outstanding-so-items?${p.toString()}`;
+}
+
+export type PickerTopFilters = Pick<OutstandingSoPageFilters, 'q' | 'category' | 'dateField' | 'dateFrom' | 'dateTo'> & { supplier: string };
+
+// project and customer are funnel texts: together they read exactly this group's lines.
+export type PickerGroup = { project: string; customer: string; heading: string; matching: number; total: number };
+
+export type PickerGroups = {
+  groups: PickerGroup[];
+  suppliers: Array<[string, string, number]>;
+  categories: Array<[string, number]>;
+};
+
+export function pickerGroupsUrl(f: PickerTopFilters): string {
+  const p = new URLSearchParams({ groups: '1' });
+  setOutstandingSoFilterParams(p, f);
+  return `/mfg-purchase-orders/outstanding-so-items?${p.toString()}`;
+}
+
+export function usePickerGroups(filters: PickerTopFilters) {
+  return useQuery({
+    queryKey: ['mfg-purchase-orders', 'outstanding-so-items', 'groups', filters],
+    queryFn: ({ signal }) => authedFetch<PickerGroups>(pickerGroupsUrl(filters), { signal }),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export const pickerGroupLinesKey = (filters: PickerTopFilters, g: PickerGroup) =>
+  ['mfg-purchase-orders', 'outstanding-so-items', 'group', filters, g.project, g.customer] as const;
+
+const GROUP_LINES_CHUNK = 200;
+const GROUP_LINES_MAX_PAGES = 50;
+
+// Each project read walks the whole open-line list on the server, so cap how many run at once.
+const GROUP_READS_AT_ONCE = 3;
+let groupReadsRunning = 0;
+const groupReadQueue: Array<() => void> = [];
+async function withGroupReadSlot<T>(read: () => Promise<T>): Promise<T> {
+  if (groupReadsRunning >= GROUP_READS_AT_ONCE) await new Promise<void>((resolve) => { groupReadQueue.push(resolve); });
+  groupReadsRunning += 1;
+  try {
+    return await read();
+  } finally {
+    groupReadsRunning -= 1;
+    groupReadQueue.shift()?.();
+  }
+}
+
+// Cursor, not offset: a line converted mid-read cannot shift the rest and drop one.
+export function fetchPickerGroupLines(filters: PickerTopFilters, g: PickerGroup, signal?: AbortSignal): Promise<OutstandingSoItem[]> {
+  return withGroupReadSlot(() => readPickerGroupLines(filters, g, signal));
+}
+
+async function readPickerGroupLines(filters: PickerTopFilters, g: PickerGroup, signal?: AbortSignal): Promise<OutstandingSoItem[]> {
+  const scoped = { ...filters, cols: { project: [g.project], debtorName: [g.customer] } };
+  const byId = new Map<string, OutstandingSoItem>();
+  let cursor: string | null = null;
+  for (let n = 0; n < GROUP_LINES_MAX_PAGES; n++) {
+    const page: OutstandingSoPage = await authedFetch<OutstandingSoPage>(outstandingSoPageUrl(scoped, cursor, GROUP_LINES_CHUNK), { signal });
+    for (const r of page.items) if (!byId.has(r.soItemId)) byId.set(r.soItemId, r);
+    if (!page.nextCursor) return [...byId.values()];
+    cursor = page.nextCursor;
+  }
+  throw new Error(`${g.heading} has more lines than one screen can load. Narrow the search or the filters, then try again.`);
 }
 
 /** One page at a time of the outstanding SO lines; the next page loads when the screen asks for it. */

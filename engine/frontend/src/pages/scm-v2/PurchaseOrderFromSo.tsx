@@ -1,44 +1,24 @@
-// ----------------------------------------------------------------------------
-// PurchaseOrderFromSo — multi-select SO → PO picker.
-//
-// Commander 2026-05-28 redesign:
-//   - REMOVED the "PO Defaults" card (Expected Delivery + Purchase Location).
-//     Those are NOT asked anymore — the server derives each PO line's
-//     warehouse from the source SO's Sales Location, and each line's delivery
-//     date from the SO line's own delivery date (header expected_at / purchase
-//     location are rolled up from the lines server-side).
-//   - SWAPPED the bespoke card list for the shared <DataGrid> primitive
-//     (same dense ledger look as MfgSalesOrdersList / SalesOrderDetailListing).
-//   - ADDED toolbar filters: a date-range filter that targets SO Date /
-//     Processing Date / Delivery Date, plus a Category filter.
-//
-// Original multi-select + partial-qty behaviour (Commander 2026-05-26) is
-// preserved: tick lines, optionally edit the pick qty, hit "Create POs".
-// Server groups by main supplier and emits one PO per supplier.
-//
-// Routing: /scm/purchase-orders/from-so.
-// ----------------------------------------------------------------------------
-
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-// HOUZS VENDOR — Link + useSearchParams live on 'react-router-dom' in
-// react-router v6 (the version Houzs ships). Only the import specifier changed.
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Save, X, CheckSquare, Square, Filter } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Save, X, Square, Filter, ChevronRight } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { fmtDateOrDash, fmtMoneySen, fmtQty } from '@2990s/shared';
 import { VariantDescription } from '../../vendor/scm/components/VariantDescription';
 import {
-  useOutstandingSoItemsPaged,
   outstandingSoPageUrl,
+  fetchPickerGroupLines,
+  pickerGroupLinesKey,
+  usePickerGroups,
   useCreatePosFromSoItems,
   usePurchaseOrderDetail,
   type OutstandingSoItem,
   type OutstandingSoPage,
+  type PickerGroup,
+  type PickerTopFilters,
 } from '../../vendor/scm/lib/suppliers-queries';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
-import { useServerColumnFunnels, funnelTicked, type ColFilters } from '../../hooks/useServerColumnFunnels';
 import { useIdempotencyKey } from '../../lib/idempotency';
 import { readScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
@@ -48,19 +28,18 @@ import { PageHeader } from '../../components/Layout';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
-import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
-import { mrpProjectLabel } from './mrp-model-pipeline';
-import { PROJECT_GROUP, PROJECT_GROUP_KEY, projectCustomerHeading } from '../../lib/projectCustomerHeading';
+import { SoLineStatusCell, soLineStatusText, useSoLineStatus, type LineStatus } from './SoLineStatus';
+import { SearchableSelect } from '../../vendor/scm/components/SearchableSelect';
+import { cn } from '../../lib/utils';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
 const fmtRm = (centi: number, currency = 'MYR'): string => fmtMoneySen(centi, currency);
 
-/* DataGrid localStorage layout key (commander 2026-05-28). */
-const STORAGE_KEY = 'po-from-so.layout.v1';
+// New key: older saved layouts still include the Project column.
+const STORAGE_KEY = 'po-from-so.project-lines.v1';
+const GROUP_LINES_STALE_MS = 30_000;
 
-/* Houzs-style compact pill controls for the toolbar filters — mirrors the
-   inputs used on the SO list page so the density matches. */
 const FILTER_INPUT: CSSProperties = {
   height: 28,
   border: '1px solid var(--line)',
@@ -71,7 +50,6 @@ const FILTER_INPUT: CSSProperties = {
   color: 'var(--c-ink)',
 };
 
-/** Which date field the range filter targets. */
 const DATE_FIELD_OPTIONS = [
   { value: 'soDate',       label: 'SO Date' },
   { value: 'processing',   label: 'Processing Date' },
@@ -79,11 +57,9 @@ const DATE_FIELD_OPTIONS = [
 ] as const;
 type DateField = typeof DATE_FIELD_OPTIONS[number]['value'];
 
-/* The search, category and date filters run on the server (lib/outstanding-so-page.ts), which applies them exactly as
-   this screen used to; the screen only asks for pages. */
+// Blank-category funnel texts, which the server cannot filter on.
+const BLANK_CATEGORY_VALUES = new Set(['(NONE)', '—']);
 
-/** Every outstanding line of one SO, page by page: a sofa set converts as a unit, and its members may sit on a page
-    not loaded yet or outside the current search. */
 async function fetchDocLines(docNo: string): Promise<OutstandingSoItem[]> {
   const out: OutstandingSoItem[] = [];
   let cursor: string | null = null;
@@ -98,147 +74,91 @@ async function fetchDocLines(docNo: string): Promise<OutstandingSoItem[]> {
 
 type Pick = { picked: boolean; qty: number };
 
-/* The columns whose funnels the server applies and counts over every open line (lib/outstanding-so-page.ts
-   PICKER_FACET_COLS). Stock & orders, Pick Qty, Line Value, the quantities and the dates are filtered on the loaded
-   lines only. */
-const SERVER_FUNNEL_COLS = ['soDocNo', 'soRef', 'project', 'debtorName', 'itemGroup', 'mainSupplier', 'itemCode', 'description'] as const;
-const serverFunnelsOf = (cf: ColFilters): Record<string, string[] | undefined> =>
-  Object.fromEntries(SERVER_FUNNEL_COLS.map((k) => [k, funnelTicked(cf, k)]));
-/* Every page of the current filters, read one after another for Select all and Export. 5,121 lines is 52 pages; the
-   stop is a runaway guard, and reaching it is reported, never cut short silently. */
-const MAX_PAGES_TO_LOAD = 200;
-
-const projectTitleOf = (r: OutstandingSoItem): string => r.projectName?.trim() || r.projectCode?.trim() || '';
+const groupKeyOf = (g: PickerGroup): string => JSON.stringify([g.project, g.customer]);
 
 export const PurchaseOrderFromSo = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  /* Commander 2026-05-29 — when opened from a PO ("Transfer from Sales Order" / "Add Line
-     Item"), ?poId scopes this picker to that PO: it locks to the PO's supplier
-     and, on save, APPENDS the picked SO lines to that PO (instead of creating
-     new POs), then returns to the PO. */
   const [searchParams] = useSearchParams();
   const targetPoId = searchParams.get('poId');
   const targetPoQ = usePurchaseOrderDetail(targetPoId);
   const targetPoSupplierCode = targetPoQ.data?.purchaseOrder?.supplier?.code ?? null;
   const targetPoNumber = targetPoQ.data?.purchaseOrder?.po_number ?? null;
   const createPos = useCreatePosFromSoItems();
-  /* One append per mount: only the ?poId branch posts, and it navigates to the
-     PO on success — so this mount IS one intent and a per-mount key is the same
-     shape as every other create form (lib/idempotency.ts). Load-bearing here
-     because onError leaves the operator ON this page with the picks intact and
-     an "Add failed" dialog: if the post actually committed and only the response
-     was lost, the invited re-press must REPLAY, not append the same lines twice.
-     Nothing caps it otherwise — this branch does not send fromMrp, so the server
-     only rejects a re-append once remaining runs out. */
+  // One key per mount: a re-press after a lost response must replay, not append the lines twice.
   const idemKey = useIdempotencyKey();
 
-  // Map<soItemId, { picked, qty }>. Defaults: picked = false; when ticked,
-  // qty defaults to remainingQty.
   const [picks, setPicks] = useState<Record<string, Pick>>({});
 
-  // Toolbar filters (commander 2026-05-28).
   const [category, setCategory]   = useState<string>('all');
   const categoryOptions = useCategoryOptions();
   const [dateField, setDateField] = useState<DateField>('soDate');
   const [dateFrom, setDateFrom]   = useState<string>('');
   const [dateTo, setDateTo]       = useState<string>('');
-  // Search box: sent to the server a moment after typing stops (owner, 19 Nov 2026).
   const [searchText, setSearchText] = useState<string>('');
   const [q, setQ] = useState<string>('');
   useEffect(() => {
     const t = setTimeout(() => setQ(searchText.trim()), 300);
     return () => clearTimeout(t);
   }, [searchText]);
+  const [supplierCode, setSupplierCode] = useState<string>('');
+  const didPresetSupplier = useRef(false);
+  useEffect(() => {
+    if (didPresetSupplier.current || !targetPoSupplierCode) return;
+    didPresetSupplier.current = true;
+    setSupplierCode(targetPoSupplierCode);
+  }, [targetPoSupplierCode]);
+  // Keeps a chosen supplier's name when other filters leave it no lines.
+  const [knownSuppliers, setKnownSuppliers] = useState<ReadonlyMap<string, string>>(new Map());
 
-  // In-app result dialog (validation only now — the grid feeds the form).
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string; confirmLabel?: string; onConfirm?: () => void } | null>(null);
-  // The SO whose sofa set is being read before it is ticked.
   const [setLoadingDoc, setSetLoadingDoc] = useState<string | null>(null);
 
-  /* Column funnels and header sort run on the server over every open line (20 Nov 2026): a project past the loaded
-     pages is offered and filtered at once. A new funnel or sort is a new query, so the list starts again at page 1. */
-  const { serverFunnels, onColFiltersChange } = useServerColumnFunnels(serverFunnelsOf, () => undefined);
-  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
-  const cols = useMemo(
-    () => Object.fromEntries(Object.entries(serverFunnels).filter((e): e is [string, string[]] => e[1] != null)),
-    [serverFunnels],
+  const topFilters = useMemo<PickerTopFilters>(
+    () => ({ q, category, dateField, dateFrom, dateTo, supplier: supplierCode }),
+    [q, category, dateField, dateFrom, dateTo, supplierCode],
   );
-  const filters = useMemo(() => ({ q, category, dateField, dateFrom, dateTo, cols, sort }), [q, category, dateField, dateFrom, dateTo, cols, sort]);
-  const itemsQ = useOutstandingSoItemsPaged(filters);
-  const { fetchNextPage, hasNextPage, isFetchingNextPage } = itemsQ;
-  const total = itemsQ.data?.pages[0]?.total ?? null;
-  /* The funnel counts of the last first page that arrived, kept while a new filter loads so the menus do not fall back
-     to counting the loaded lines. */
-  const facetsRef = useRef<Record<string, Array<[string, number]>> | null>(null);
-  const firstFacets = itemsQ.data?.pages[0]?.facets;
-  if (firstFacets) facetsRef.current = firstFacets;
-  const facets = facetsRef.current;
-  // The rows the grid shows after its own funnels: what Select all ticks.
-  const [shownRows, setShownRows] = useState<OutstandingSoItem[] | null>(null);
-  /* The same rows, readable in this component's effects within the commit the grid reported them in: the grid reports
-     from its own effect, which runs before ours, while the state above only lands on the next render. */
-  const shownRowsRef = useRef<OutstandingSoItem[] | null>(null);
-  const onShownRows = (list: OutstandingSoItem[]): void => { shownRowsRef.current = list; setShownRows(list); };
-  const [loadingAll, setLoadingAll] = useState(false);
-  const [selectAllPending, setSelectAllPending] = useState(false);
-
-  /* Every row this screen has been shown, kept across pages, searches and filter changes: a picked line stays picked
-     (and stays on the PO) when the search moves away from it. */
-  const rowCache = useRef(new Map<string, OutstandingSoItem>());
-  const items = useMemo(() => {
-    const seen = new Set<string>();
-    const out: OutstandingSoItem[] = [];
-    for (const page of itemsQ.data?.pages ?? []) {
-      for (const r of page.items) {
-        if (seen.has(r.soItemId)) continue;
-        seen.add(r.soItemId);
-        out.push(r);
-        rowCache.current.set(r.soItemId, r);
-      }
-    }
-    return out;
-  }, [itemsQ.data]);
-  const rowOf = (id: string): OutstandingSoItem | undefined => rowCache.current.get(id);
-
-  /* Load the next page when the line under the grid is in view. Re-observed after every page, because observe() reports
-     the current state at once: a page that added few rows leaves the line in view and asks for the next. A failed page
-     waits for the button rather than retrying by itself. */
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const pageCount = itemsQ.data?.pages.length ?? 0;
-  const nextPageFailed = itemsQ.isFetchNextPageError;
-  /* The grid's frozen header makes the table scroll inside its own box (useFrozenTableHeader), so the line under it is
-     always in view on a tall screen; on production that read every page one after another (5,121 lines). The line only
-     counts once the table's own box is scrolled near its end, or when the box does not scroll at all. */
+  const groupsQ = usePickerGroups(topFilters);
   useEffect(() => {
-    const el = loadMoreRef.current;
-    if (!el || !hasNextPage || isFetchingNextPage || nextPageFailed || loadingAll) return;
-    const box = el.previousElementSibling?.querySelector<HTMLElement>('.dt-table .thin-scroll') ?? null;
-    const boxAtEnd = (): boolean => !box || box.scrollHeight <= box.clientHeight + 1
-      || box.scrollTop + box.clientHeight >= box.scrollHeight - 400;
-    let lineInView = typeof IntersectionObserver === 'undefined';
-    let asked = false;
-    const maybeLoad = (): void => {
-      if (asked || !lineInView || !boxAtEnd()) return;
-      asked = true;
-      void fetchNextPage();
-    };
-    const io = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
-      lineInView = entries.some((e) => e.isIntersecting);
-      maybeLoad();
-    }, { rootMargin: '400px 0px' });
-    io?.observe(el);
-    box?.addEventListener('scroll', maybeLoad, { passive: true });
-    return () => { io?.disconnect(); box?.removeEventListener('scroll', maybeLoad); };
-  }, [pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage, loadingAll]);
+    const offered = groupsQ.data?.suppliers;
+    if (!offered) return;
+    setKnownSuppliers((known) => {
+      if (offered.every(([code]) => known.has(code))) return known;
+      const next = new Map(known);
+      for (const [code, name] of offered) next.set(code, name);
+      return next;
+    });
+  }, [groupsQ.data]);
+  const supplierOptions = useMemo(() => {
+    const options = [...knownSuppliers].map(([code, name]) => ({ value: code, label: `${code} · ${name}` }));
+    if (supplierCode && !knownSuppliers.has(supplierCode)) options.push({ value: supplierCode, label: supplierCode });
+    return [{ value: '', label: 'All suppliers' }, ...options.sort((a, b) => a.label.localeCompare(b.label))];
+  }, [knownSuppliers, supplierCode]);
+  const groups = groupsQ.data?.groups ?? [];
+  const matchingLines = groups.reduce((n, g) => n + g.matching, 0);
+  const isSearching = q !== '';
+  const isFiltered = isSearching || category !== 'all' || supplierCode !== '' || Boolean(dateFrom || dateTo);
 
-  /* Commander 2026-05-30 — the New PO form stashes its current draft
-     (poNewDraft) before sending us here. Build a per-soItemId draft qty map so:
-       · lines FULLY consumed by the draft are filtered out (clean),
-       · lines PARTIALLY consumed still show with a "draft already X" tag, and
-         the Pick Qty input is capped at (remaining − draft) so the same SO
-         qty can't be over-picked across draft + new picks. */
+  const [openState, setOpenState] = useState<{ q: string; open: Record<string, boolean> }>({ q: '', open: {} });
+  const openByGroup = openState.q === q ? openState.open : {};
+  const isGroupOpen = (key: string): boolean => openByGroup[key] ?? isSearching;
+  const setGroupOpen = (key: string, isOpen: boolean): void => setOpenState({ q, open: { ...openByGroup, [key]: isOpen } });
+
+  // Picks outlive the search that showed them, so keep every row seen and which project it came from.
+  const rowCache = useRef(new Map<string, OutstandingSoItem>());
+  const groupOfLine = useRef(new Map<string, string>());
+  const rowOf = (id: string): OutstandingSoItem | undefined => rowCache.current.get(id);
+  const readGroupLines = useCallback(async (g: PickerGroup, signal?: AbortSignal): Promise<OutstandingSoItem[]> => {
+    const lines = await fetchPickerGroupLines(topFilters, g, signal);
+    const key = groupKeyOf(g);
+    for (const r of lines) {
+      rowCache.current.set(r.soItemId, r);
+      groupOfLine.current.set(r.soItemId, key);
+    }
+    return lines;
+  }, [topFilters]);
+
   const draftQtyById = useMemo(() => {
     try {
       const d = readScmHandoff<{ lines?: Array<{ soItemId?: string | null; qty?: number }> }>('poNewDraft');
@@ -253,23 +173,15 @@ export const PurchaseOrderFromSo = () => {
   }, []);
   const cameFromNewPage = draftQtyById.size > 0;
 
-  /* Effective remaining for a row, after subtracting what the draft already
-     holds for this same SO line. <=0 → filter out. >0 with draftQty>0 →
-     partially consumed, show with the "draft already X" tag. */
   const effectiveRemaining = (r: OutstandingSoItem): number =>
     r.remainingQty - (draftQtyById.get(r.soItemId) ?? 0);
+  const hasRemaining = useCallback(
+    (r: OutstandingSoItem): boolean => r.remainingQty - (draftQtyById.get(r.soItemId) ?? 0) > 0,
+    [draftQtyById],
+  );
 
-  // ── Filtered rows fed to the grid ────────────────────────────────────
-  const rows = useMemo(() => {
-    return items.filter((r) => effectiveRemaining(r) > 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- effectiveRemaining reads only draftQtyById, which is in deps
-  }, [items, draftQtyById]);
-
-  // One supplier per PO (Commander 2026-05-29) — once a bound line is ticked,
-  // lines from other suppliers lock. Unbound ("— none —") lines don't lock.
+  // One PO takes one supplier; lines without a supplier never lock.
   const lockedSupplier = useMemo(() => {
-    // In PO-scoped mode the supplier is fixed to the PO's supplier from the
-    // start — every other supplier's lines grey out immediately.
     if (targetPoSupplierCode) return targetPoSupplierCode;
     for (const [id, v] of Object.entries(picks)) {
       if (!v.picked) continue;
@@ -279,32 +191,18 @@ export const PurchaseOrderFromSo = () => {
     return null;
   }, [picks, targetPoSupplierCode]);
 
-  // A row is LOCKED when a different bound supplier is already picked.
-  // Commander 2026-05-29: "不让勾选了，那为什么不把选项置灰呢" — grey these out
-  // and disable their checkbox / qty input so the lock is obvious, not vague.
-  // Nothing is locked while no supplier is chosen ("不要限制得太死"), and
-  // unbound "— none —" rows never lock (they have no supplier to conflict).
   const isRowLocked = (r: OutstandingSoItem): boolean =>
     Boolean(r.mainSupplierCode && lockedSupplier && r.mainSupplierCode !== lockedSupplier
       && !picks[r.soItemId]?.picked);
 
-  // ── Pick helpers ─────────────────────────────────────────────────────
   const togglePick = (id: string, remaining: number) => {
     const row = rowOf(id);
     if (!row) return;
-    // Block ticking a different bound supplier than the one already locked.
     if (row.mainSupplierCode && lockedSupplier && row.mainSupplierCode !== lockedSupplier
         && !picks[id]?.picked) return;
     const turningOn = !picks[id]?.picked;
 
-    /* Sofa SET (Commander 2026-05-29) — a sofa SO converts as a UNIT: every sofa
-       compartment AND every accessory (pillows: LONG/SQUARE PILLOW, etc.) of that
-       SAME SO travel together on the sofa's PO ("pillow 开在 sofa 里面就要跟 sofa
-       的 PO 一起"). Ticking ANY set member ticks the whole set. An accessory only
-       joins a set when its SO actually contains a sofa — accessories on a
-       sofa-less SO behave as normal standalone lines.
-       The list is loaded a page at a time, so the SO's other lines are read from the server first (every outstanding
-       line of that SO, whatever the search), the same set the whole list used to hold. */
+    // A sofa SO converts as a unit with its accessories, so read every open line of the SO first.
     const grp = (row.itemGroup ?? '').toLowerCase();
     if (grp === 'sofa' || grp === 'accessory') {
       if (setLoadingDoc) return;
@@ -329,8 +227,6 @@ export const PurchaseOrderFromSo = () => {
     applyPick(row, [row], turningOn, remaining);
   };
 
-  /** Tick or untick `row`, with its whole sofa set when it belongs to one. `docLines` are the outstanding lines of
-      its SO (just `[row]` for a line that cannot be in a set). */
   const applyPick = (row: OutstandingSoItem, docLines: OutstandingSoItem[], turningOn: boolean, remaining: number) => {
     const id = row.soItemId;
     const grp = (row.itemGroup ?? '').toLowerCase();
@@ -344,22 +240,14 @@ export const PurchaseOrderFromSo = () => {
         const g = (r.itemGroup ?? '').toLowerCase();
         return g === 'sofa' || g === 'accessory';
       });
-      /* The supplier this set rides on = the sofa's bound supplier (first sofa
-         line that has one), else whatever's already locked. */
       const sofaSupplier = members
         .find((r) => (r.itemGroup ?? '').toLowerCase() === 'sofa' && r.mainSupplierCode)?.mainSupplierCode
         ?? row.mainSupplierCode ?? lockedSupplier ?? null;
-      /* One PO = one supplier. Members on the sofa's supplier (or unbound) ride
-         this PO; members bound to a DIFFERENT supplier (e.g. pillows from another
-         vendor) can't sit on it — they split to their own PO ("不同就分开 + 提示"). */
       const rideOn   = members.filter((r) => !r.mainSupplierCode || !sofaSupplier || r.mainSupplierCode === sofaSupplier);
       const splitOff = members.filter((r) => r.mainSupplierCode && sofaSupplier && r.mainSupplierCode !== sofaSupplier);
       setPicks((s) => {
         const next = { ...s };
         for (const m of rideOn) {
-          /* Commander 2026-05-30 — when a draft already holds some of this SO
-             line's qty, the bulk-set tick defaults to the EFFECTIVE remaining
-             (remaining − draft) so it can't over-pick across draft + new. */
           const cap = effectiveRemaining(m);
           if (cap <= 0) continue;
           next[m.soItemId] = turningOn
@@ -387,74 +275,24 @@ export const PurchaseOrderFromSo = () => {
   const setQty = (id: string, qty: number) =>
     setPicks((s) => ({ ...s, [id]: { picked: true, qty } }));
 
-  /** Read every remaining page of the current filters into the grid: every line once, or why not. */
-  const loadAllPages = async (): Promise<{ rows: OutstandingSoItem[] } | { error: string }> => {
-    setLoadingAll(true);
-    try {
-      let res = await fetchNextPage();
-      for (let n = 0; res.hasNextPage && !res.isError && n < MAX_PAGES_TO_LOAD; n++) res = await fetchNextPage();
-      if (res.isError) return { error: `The lines past the ones on screen could not be read.${res.error instanceof Error ? `\n${res.error.message}` : ''}` };
-      if (res.hasNextPage) return { error: 'This list is longer than one screen can load. Narrow the search or the filters, then try again.' };
-      const byId = new Map<string, OutstandingSoItem>();
-      for (const p of res.data?.pages ?? []) for (const r of p.items) if (!byId.has(r.soItemId)) byId.set(r.soItemId, r);
-      return { rows: [...byId.values()] };
-    } finally {
-      setLoadingAll(false);
-    }
-  };
-
-  // Select every row the grid shows (search, filters and funnels applied).
-  // Commander 2026-05-30 — default each row's qty to its EFFECTIVE remaining
-  // (remaining − draftQty) so bulk-select honours the draft too.
-  const tickRows = (list: readonly OutstandingSoItem[]): void =>
-    setPicks((s) => {
-      const next = { ...s };
-      for (const l of list) {
-        const cap = effectiveRemaining(l);
-        if (cap <= 0) continue;
-        next[l.soItemId] = { picked: true, qty: cap };
-      }
-      return next;
-    });
-  /* Lines past the loaded pages are loaded first, once the operator agrees: they are then on screen, and the grid's
-     funnels on the loaded-only columns (stock, quantities, dates) apply to them before they are ticked. */
-  const selectAll = (): void => {
-    if (!hasNextPage) { tickRows(shownRows ?? rows); return; }
-    setDialog({
-      title: 'Tick every matching line?',
-      body: `${rows.length} line(s) are loaded${total != null ? ` and up to ${total} match` : ''}. The rest will be loaded first, which can take a while for a long list.`,
-      confirmLabel: 'Load and tick all',
-      onConfirm: () => {
-        setDialog(null);
-        setSelectAllPending(true);
-        void loadAllPages().then((res) => {
-          if ('error' in res) {
-            setSelectAllPending(false);
-            setDialog({ title: 'Not every line could be loaded', body: `${res.error}
-Nothing was ticked.` });
-          }
-        });
-      },
-    });
-  };
-  /* Ticks once the last page is on screen. Runs again on every page, so it reads the grid's report from the commit the
-     last page landed in (shownRowsRef), never one render behind. */
-  useEffect(() => {
-    if (!selectAllPending || loadingAll || hasNextPage || !shownRowsRef.current) return;
-    setSelectAllPending(false);
-    tickRows(shownRowsRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tickRows reads pick state through setPicks
-  }, [selectAllPending, loadingAll, hasNextPage, pageCount]);
-
   const clearAll = () => setPicks({});
 
   const picked = Object.entries(picks).filter(([, v]) => v.picked && v.qty > 0);
   const pickedCount = picked.length;
+  const pickedIds = useMemo(
+    () => new Set(Object.entries(picks).filter(([, v]) => v.picked).map(([id]) => id)),
+    [picks],
+  );
+  const pickedCountByGroup = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const id of pickedIds) {
+      const key = groupOfLine.current.get(id);
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [pickedIds]);
 
-  // ── Columns — memoized on `picks` so the controlled checkbox + qty input
-  //    re-render when pick state changes (DataGrid is React.memo'd). ───────
-  const lineStatus = useSoLineStatus(items.map((r) => r.soItemId));
-  const columns = useMemo<GridColumn<OutstandingSoItem>[]>(() => [
+  const buildColumns = useCallback((lineStatus: Record<string, LineStatus>): GridColumn<OutstandingSoItem>[] => [
     {
       key: 'pick', label: '', width: 40, sortable: false, groupable: false,
       accessor: (r) => {
@@ -466,7 +304,7 @@ Nothing was ticked.` });
             checked={on}
             disabled={locked}
             onChange={() => togglePick(r.soItemId, effectiveRemaining(r))}
-            // Stop the row-select click from also firing.
+            // The row click would toggle the pick a second time.
             onClick={(e) => e.stopPropagation()}
             aria-label={`Pick ${r.itemCode}`}
             style={locked ? { cursor: 'not-allowed' } : undefined}
@@ -475,64 +313,45 @@ Nothing was ticked.` });
       },
     },
     {
-      key: 'soDocNo', label: 'SO Doc No', width: 120, sortable: true, serverSortable: true, filterCounts: facets?.soDocNo, groupable: true,
-      accessor: (r) => <span className={styles.codeCell}>{r.soDocNo}</span>,
+      key: 'soDocNo', label: 'SO Doc No', width: 150, sortable: true,
+      accessor: (r) => <span className={styles.codeCell} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{r.soDocNo}</span>,
       searchValue: (r) => r.soDocNo,
     },
     {
-      key: 'soRef', label: 'Ref No.', width: 150, sortable: true, serverSortable: true, filterCounts: facets?.soRef,
-      accessor: (r) => soRefOfCamelStamp(r) || '—',
+      key: 'soRef', label: 'Ref No.', width: 190, sortable: true,
+      accessor: (r) => <span style={{ whiteSpace: 'normal' }}>{soRefOfCamelStamp(r) || '—'}</span>,
       searchValue: (r) => soRefOfCamelStamp(r),
       sortFn: (a, b) => soRefOfCamelStamp(a).localeCompare(soRefOfCamelStamp(b)),
     },
     {
-      key: 'project', label: 'Project', width: 200, sortable: true, serverSortable: true, filterCounts: facets?.project, groupable: true,
-      accessor: (r) => projectTitleOf(r) || '—',
-      searchValue: (r) => mrpProjectLabel(r),
-      groupValue: (r) => projectTitleOf(r) || '(none)',
-      sortFn: (a, b) => projectTitleOf(a).localeCompare(projectTitleOf(b)),
-    },
-    {
-      /* Hidden: the grid groups on it (owner, 24 Nov 2026). */
-      key: PROJECT_GROUP_KEY, label: 'Project - customer', defaultHidden: true, sortable: false,
-      accessor: (r) => projectCustomerHeading(projectTitleOf(r), r.debtorName),
-      groupValue: (r) => projectCustomerHeading(projectTitleOf(r), r.debtorName),
-    },
-    {
-      key: 'debtorName', label: 'Customer', width: 180, sortable: true, serverSortable: true, filterCounts: facets?.debtorName, groupable: true,
+      key: 'debtorName', label: 'Customer', width: 180, sortable: true, defaultHidden: true,
       accessor: (r) => r.debtorName ?? '—',
       searchValue: (r) => r.debtorName ?? '',
-      groupValue: (r) => r.debtorName ?? '(none)',
     },
     {
-      key: 'itemGroup', label: 'Category', width: 110, sortable: true, serverSortable: true, filterCounts: facets?.itemGroup, groupable: true,
+      key: 'itemGroup', label: 'Category', width: 110, sortable: true,
       accessor: (r) => <ItemGroupPill group={r.itemGroup} />,
       searchValue: (r) => r.itemGroup ?? '',
-      groupValue: (r) => (r.itemGroup ?? '(none)').toUpperCase(),
     },
     {
-      /* Commander 2026-05-28 — the SKU's main supplier (where this line's PO
-         goes). "— none —" means unbound: it can't be converted until assigned
-         a supplier. */
-      key: 'mainSupplier', label: 'Main Supplier', width: 200, sortable: true, serverSortable: true, filterCounts: facets?.mainSupplier, groupable: true,
+      key: 'mainSupplier', label: 'Main Supplier', width: 200, sortable: true,
       accessor: (r) =>
         r.mainSupplierCode
           ? <span>{r.mainSupplierCode}{r.mainSupplierName ? ` · ${r.mainSupplierName}` : ''}</span>
           : <span className={styles.muted} style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>— none —</span>,
       searchValue: (r) => `${r.mainSupplierCode ?? ''} ${r.mainSupplierName ?? ''}`.trim(),
-      groupValue: (r) => r.mainSupplierName ?? r.mainSupplierCode ?? '(none)',
     },
     {
-      key: 'itemCode', label: 'Item Code', width: 130, sortable: true, serverSortable: true, filterCounts: facets?.itemCode,
-      accessor: (r) => <span style={{ fontWeight: 600 }}>{r.itemCode}</span>,
+      key: 'itemCode', label: 'Item Code', width: 170, sortable: true,
+      accessor: (r) => <span style={{ fontWeight: 600, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{r.itemCode}</span>,
       searchValue: (r) => r.itemCode ?? '',
     },
     {
-      key: 'description', label: 'Description', width: 240, sortable: true, serverSortable: true, filterCounts: facets?.description,
+      key: 'description', label: 'Description', width: 340, sortable: true,
       accessor: (r) => {
         const draftQty = draftQtyById.get(r.soItemId) ?? 0;
         return (
-          <div>
+          <div style={{ whiteSpace: 'normal' }}>
             <VariantDescription
               itemCode={r.itemCode}
               itemGroup={r.itemGroup}
@@ -566,12 +385,12 @@ Nothing was ticked.` });
       exportValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
     },
     {
-      key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true, serverSortable: true,
+      key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true,
       accessor: (r) => fmtQty(r.qty),
       sortFn: (a, b) => a.qty - b.qty,
     },
     {
-      key: 'poQtyPicked', label: 'Done', width: 70, align: 'right', sortable: true, serverSortable: true,
+      key: 'poQtyPicked', label: 'Done', width: 70, align: 'right', sortable: true,
       accessor: (r) => <span className={styles.muted}>{r.poQtyPicked}</span>,
       sortFn: (a, b) => a.poQtyPicked - b.poQtyPicked,
     },
@@ -581,9 +400,6 @@ Nothing was ticked.` });
         const p = picks[r.soItemId];
         const on = Boolean(p?.picked);
         const locked = isRowLocked(r);
-        /* Commander 2026-05-30 — cap the input at the EFFECTIVE remaining
-           (remaining − draft) so a partially-consumed SO line can't over-pick
-           across the draft + new picks. */
         const cap = effectiveRemaining(r);
         return (
           <input
@@ -593,8 +409,6 @@ Nothing was ticked.` });
             value={on ? p!.qty : ''}
             placeholder={String(cap)}
             disabled={locked}
-            /* Commander 2026-05-28 — always editable: typing a qty auto-selects
-               the row (no need to tick the checkbox first). */
             onClick={(e) => e.stopPropagation()}
             onChange={(e) =>
               setQty(r.soItemId, Math.min(cap, Math.max(0, Number(e.target.value) || 0)))}
@@ -604,14 +418,13 @@ Nothing was ticked.` });
       },
     },
     {
-      /* Commander 2026-05-29 — add Processing Date column. */
-      key: 'processingDate', label: 'Processing Date', width: 120, sortable: true, serverSortable: true,
+      key: 'processingDate', label: 'Processing Date', width: 120, sortable: true,
       accessor: (r) => fmtDateOrDash(r.processingDate ?? null),
       searchValue: (r) => r.processingDate ?? '',
       sortFn: (a, b) => String(a.processingDate ?? '').localeCompare(String(b.processingDate ?? '')),
     },
     {
-      key: 'deliveryDate', label: 'Delivery Date', width: 120, sortable: true, serverSortable: true,
+      key: 'deliveryDate', label: 'Delivery Date', width: 120, sortable: true,
       accessor: (r) => fmtDateOrDash((r.lineDeliveryDate ?? r.deliveryDate) ?? null),
       searchValue: (r) => r.lineDeliveryDate ?? r.deliveryDate ?? '',
       sortFn: (a, b) =>
@@ -622,8 +435,6 @@ Nothing was ticked.` });
       key: 'lineValue', label: 'Line Value', width: 120, align: 'right', sortable: true,
       accessor: (r) => {
         const p = picks[r.soItemId];
-        /* Commander 2026-05-30 — preview value defaults to the EFFECTIVE
-           remaining (after draft) so the muted value matches the cap. */
         const pickQty = p?.picked ? p.qty : effectiveRemaining(r);
         return (
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-12)' }}>
@@ -636,13 +447,8 @@ Nothing was ticked.` });
       sortFn: (a, b) => a.remainingQty * a.unitPriceSen - b.remainingQty * b.unitPriceSen,
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
-  ], [picks, draftQtyById, lineStatus, facets]);
+  ], [picks, draftQtyById, lockedSupplier]);
 
-  // ── Add to PO ────────────────────────────────────────────────────────
-  // Commander 2026-05-29 — two modes:
-  //   • PO-scoped (?poId): APPEND the picked lines straight to that PO, then
-  //     return to the PO detail page (Transfer from Sales Order / Add Line Item).
-  //   • Default: stash the picks + feed the New PO form (/scm/purchase-orders/new).
   const onSave = () => {
     if (pickedCount === 0) { setDialog({ title: 'Nothing picked', body: 'Tick at least one SO line first.' }); return; }
 
@@ -652,7 +458,6 @@ Nothing was ticked.` });
         { picks: picksPayload, targetPoId, idempotencyKey: idemKey },
         {
           onSuccess: (res) => {
-            // Land back on the PO still in Edit mode so the new lines are right there.
             navigate(`/scm/purchase-orders/${res.targetPoId ?? targetPoId}?edit=1`);
           },
           onError: (e) => setDialog({
@@ -677,12 +482,12 @@ Nothing was ticked.` });
     navigate('/scm/purchase-orders/new');
   };
 
-  // ── Toolbar (filters + select/clear) rendered inside the DataGrid ──────
+  const resetFilters = (): void => {
+    setCategory('all'); setDateFrom(''); setDateTo(''); setSearchText(''); setQ(''); setSupplierCode('');
+  };
+
   const toolbar = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-      <Button variant="ghost" size="sm" onClick={selectAll} disabled={rows.length === 0 || loadingAll || selectAllPending}>
-        <CheckSquare {...ICON} /> Select all
-      </Button>
       <Button variant="ghost" size="sm" onClick={clearAll} disabled={pickedCount === 0}>
         <Square {...ICON} /> Clear all
       </Button>
@@ -695,22 +500,32 @@ Nothing was ticked.` });
         onChange={(e) => setSearchText(e.target.value)}
         placeholder="Search SO, ref, project, customer, item…"
         aria-label="Search outstanding SO lines"
-        style={{ ...FILTER_INPUT, width: 260 }}
+        style={{ ...FILTER_INPUT, width: 260, maxWidth: '100%' }}
       />
 
       <Filter size={14} strokeWidth={1.75} style={{ color: 'var(--fg-muted)' }} aria-label="Filters" />
 
-      {/* Category filter */}
       <select
         value={category}
         onChange={(e) => setCategory(e.target.value)}
         style={FILTER_INPUT}
         aria-label="Category filter"
       >
-        {[{ value: 'all', label: 'All categories' }, ...withRowCategories(categoryOptions, [...items.map((r) => r.itemGroup), category === 'all' ? null : category])].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {[{ value: 'all', label: 'All categories' }, ...withRowCategories(categoryOptions, [...(groupsQ.data?.categories ?? []).map(([group]) => group).filter((group) => !BLANK_CATEGORY_VALUES.has(group)), category === 'all' ? null : category])].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
 
-      {/* Date-range filter — pick which date field + from/to. */}
+      <div style={{ width: 220, maxWidth: '100%' }}>
+        <SearchableSelect
+          value={supplierCode}
+          onChange={setSupplierCode}
+          options={supplierOptions}
+          placeholder="All suppliers"
+          ariaLabel="Main supplier filter"
+          clearable
+          className="h-9 w-full rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--c-paper)] px-2 text-[16px] text-[color:var(--c-ink)] sm:h-7 sm:text-[length:var(--fs-12)]"
+        />
+      </div>
+
       <select
         value={dateField}
         onChange={(e) => setDateField(e.target.value as DateField)}
@@ -722,10 +537,10 @@ Nothing was ticked.` });
       <DateField value={dateFrom} onChange={(iso) => setDateFrom(iso)} style={FILTER_INPUT} aria-label="Date from"/>
       <span style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-11)' }}>→</span>
       <DateField value={dateTo} onChange={(iso) => setDateTo(iso)} style={FILTER_INPUT} aria-label="Date to"/>
-      {(category !== 'all' || dateFrom || dateTo || searchText) && (
+      {(category !== 'all' || dateFrom || dateTo || searchText || supplierCode) && (
         <button
           type="button"
-          onClick={() => { setCategory('all'); setDateFrom(''); setDateTo(''); setSearchText(''); setQ(''); }}
+          onClick={resetFilters}
           style={{
             background: 'transparent', border: '1px solid var(--line)',
             borderRadius: 'var(--radius-sm)', padding: '0 10px', height: 28,
@@ -740,10 +555,6 @@ Nothing was ticked.` });
 
   return (
     <div className="space-y-4">
-      {/* Explicit back target, not history-back: this picker is reachable from
-          a PO being edited, from New PO, and from the list, and each entry
-          point has its own correct destination (carried over verbatim from the
-          action-rail link this replaced). */}
       <PageHeader
         back={targetPoId ? `/scm/purchase-orders/${targetPoId}?edit=1`
           : cameFromNewPage ? '/scm/purchase-orders/new'
@@ -783,91 +594,53 @@ Nothing was ticked.` });
         </p>
       )}
 
-      <DataGridCompat<OutstandingSoItem>
-        rows={rows}
-        columns={columns}
-        storageKey={STORAGE_KEY}
-        rowKey={(r) => r.soItemId}
-        groupBy={PROJECT_GROUP}
-        /* The search box in the toolbar searches on the server; the grid's own box would only search the loaded page. */
-        hideSearch
-        serverSort
-        onSortChange={setSort}
-        onColFiltersChange={onColFiltersChange}
-        onFilteredRowsChange={onShownRows}
-        exportName="po-from-so"
-        exportLines={{
-          /* Every line the search, filters and funnels match, not only the loaded pages. */
-          fetchRows: async () => {
-            const res = hasNextPage ? await loadAllPages() : { rows: items };
-            if ('error' in res) throw new Error(`${res.error}
-Nothing was exported.`);
-            return res.rows.filter((r) => effectiveRemaining(r) > 0);
-          },
-          linesOf: () => [],
-          sheetName: 'SO lines',
-          onError: (e) => setDialog({ title: 'Export failed', body: e.message }),
-        }}
-        /* Commander 2026-05-28 — click anywhere on a row to toggle its pick
-           (the checkbox is just a visual). */
-        onRowClick={(r) => togglePick(r.soItemId, r.remainingQty)}
-        /* Commander 2026-05-29 — grey out rows whose supplier conflicts with
-           the locked one so the disabled state is obvious. */
-        rowStyle={(r) => isRowLocked(r)
-          ? { opacity: 0.45, background: 'var(--c-cream)', cursor: 'not-allowed' }
-          : undefined}
-        toolbar={toolbar}
-        groupBanner={false}
-        isLoading={itemsQ.isLoading}
-        /* A failed read must NEVER render as the sentence below. "We couldn't
-           load the lines" and "there are no lines left to do" are opposite
-           facts, and the operator acts on the second one by walking away from
-           work that is still outstanding.
+      {toolbar}
 
-           NEITHER MAY AN EMPTY ONE (owner 2026-08-17). This screen used to
-           report an empty result as a finished job — "every line has been
-           fully ...". An empty result is only ever evidence that THE QUERY
-           FOUND NOTHING: the read is scoped to the active company and
-           scopeToCompany FAILS CLOSED (scm/lib/companyScope.ts ->
-           .in('company_id', []) returns [] with error: null), PostgREST
-           truncates at db-max-rows without saying so, and a swallowed read
-           error is shaped identically to an empty one. The same claim was
-           removed from the from-PO picker in #2367 and reintroduced five
-           commits later, which is why backend/scripts/check-empty-state-claims.mjs
-           now gates it instead of a comment asking nicely. */
-        emptyMessage={itemsQ.isError
-          ? "We couldn't load the outstanding lines, so this list is incomplete. That is not the same as there being none left — please refresh and try again."
-          : items.length > 0
-            ? `The ${items.length} outstanding SO line(s) loaded so far are already held by the PO draft you came from.${hasNextPage ? ' More lines are still to load below.' : ''}`
-            : hasNextPage || itemsQ.isFetching
-              ? 'No matching line in the part of the list read so far. More is still loading below.'
-              : (q || category !== 'all' || dateFrom || dateTo || Object.keys(cols).length > 0)
-                ? 'No outstanding SO line matches this search and these filters. That is not the same as there being none left: clear the search and filters to see the full list.'
-                : "This search came back with no outstanding SO lines. That is not the same as everything having been converted — the list only covers the company you are working in, and lines it cannot see look identical to lines that are done. Open the sales order and check its balance before treating this as nothing left to purchase."}
-      />
+      <p role="status" style={{ margin: 0, fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+        {groupsQ.isLoading
+          ? 'Loading projects…'
+          : groupsQ.data
+            ? `${groups.length} project${groups.length === 1 ? '' : 's'} · up to ${matchingLines} line${matchingLines === 1 ? '' : 's'} matching${groupsQ.isFetching ? ' · updating…' : ''}`
+            : ''}
+        {setLoadingDoc ? ` · loading the sofa set on ${setLoadingDoc}…` : ''}
+      </p>
 
-      {/* Load on scroll (owner, 19 Nov 2026): the next page is asked for when this line comes into view, or by the button. */}
-      <div
-        ref={loadMoreRef}
-        style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) 0', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}
-      >
-        {!itemsQ.isLoading && (
-          <span>
-            {`Showing ${shownRows?.length ?? rows.length} line${(shownRows?.length ?? rows.length) === 1 ? '' : 's'}`}
-            {total != null ? ` of up to ${total} matching` : ''}
-            {loadingAll ? ' · loading every matching line…' : ''}
-            {setLoadingDoc ? ` · loading the sofa set on ${setLoadingDoc}…` : ''}
-          </span>
-        )}
-        {itemsQ.isFetchNextPageError && (
-          <span style={{ color: 'var(--c-festive-b, var(--c-festive-b))' }}>The next lines could not be loaded.</span>
-        )}
-        {hasNextPage && (
-          <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage || loadingAll}>
-            {isFetchingNextPage ? 'Loading…' : itemsQ.isFetchNextPageError ? 'Try again' : 'Load more'}
-          </Button>
-        )}
-      </div>
+      {/* Empty or failed is never "nothing left": the read fails closed per company. check-empty-state-claims.mjs gates this wording. */}
+      {groupsQ.isError ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--fs-12)', color: 'var(--c-festive-b)' }}>
+          <span>We couldn't load the projects, so this list is incomplete. That is not the same as there being none left.</span>
+          <Button variant="ghost" size="sm" onClick={() => { void groupsQ.refetch(); }} disabled={groupsQ.isFetching}>Try again</Button>
+        </div>
+      ) : groupsQ.data && groups.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 'var(--fs-13)', color: 'var(--fg-muted)' }}>
+          {isFiltered
+            ? 'No outstanding SO line matches this search and these filters. That is not the same as there being none left: clear the search and filters to see the full list.'
+            : "This search came back with no outstanding SO lines. That is not the same as everything having been converted — the list only covers the company you are working in, and lines it cannot see look identical to lines that are done. Open the sales order and check its balance before treating this as nothing left to purchase."}
+        </p>
+      ) : groups.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+          {groups.map((g) => {
+            const key = groupKeyOf(g);
+            return (
+              <ProjectGroupSection
+                key={key}
+                group={g}
+                isFiltered={isFiltered}
+                isOpen={isGroupOpen(key)}
+                onToggleOpen={() => setGroupOpen(key, !isGroupOpen(key))}
+                linesKey={pickerGroupLinesKey(topFilters, g)}
+                readLines={readGroupLines}
+                pickedIds={pickedIds}
+                rememberedPickCount={pickedCountByGroup.get(key) ?? 0}
+                isShown={hasRemaining}
+                isLocked={isRowLocked}
+                buildColumns={buildColumns}
+                onRowClick={(r) => togglePick(r.soItemId, r.remainingQty)}
+              />
+            );
+          })}
+        </div>
+      ) : null}
 
       {dialog && (
         <ActionResultDialog
@@ -881,3 +654,83 @@ Nothing was exported.`);
     </div>
   );
 };
+
+export interface ProjectGroupSectionProps {
+  group: PickerGroup;
+  isFiltered: boolean;
+  isOpen: boolean;
+  onToggleOpen: () => void;
+  linesKey: readonly unknown[];
+  readLines: (g: PickerGroup, signal?: AbortSignal) => Promise<OutstandingSoItem[]>;
+  pickedIds: ReadonlySet<string>;
+  rememberedPickCount: number;
+  isShown: (r: OutstandingSoItem) => boolean;
+  isLocked: (r: OutstandingSoItem) => boolean;
+  buildColumns: (lineStatus: Record<string, LineStatus>) => GridColumn<OutstandingSoItem>[];
+  onRowClick: (r: OutstandingSoItem) => void;
+}
+
+function ProjectGroupSection({
+  group, isFiltered, isOpen, onToggleOpen, linesKey, readLines, pickedIds, rememberedPickCount,
+  isShown, isLocked, buildColumns, onRowClick,
+}: ProjectGroupSectionProps) {
+  const linesQ = useQuery({
+    queryKey: linesKey,
+    queryFn: ({ signal }) => readLines(group, signal),
+    enabled: isOpen,
+    staleTime: GROUP_LINES_STALE_MS,
+    retry: false,
+  });
+  const lines = useMemo(() => linesQ.data?.filter(isShown) ?? null, [linesQ.data, isShown]);
+  const lineIds = useMemo(() => (isOpen ? (lines ?? []).map((r) => r.soItemId) : []), [isOpen, lines]);
+  const lineStatus = useSoLineStatus(lineIds);
+  const columns = useMemo(() => buildColumns(lineStatus), [buildColumns, lineStatus]);
+
+  const pickedHere = lines ? lines.filter((r) => pickedIds.has(r.soItemId)).length : rememberedPickCount;
+
+  const countLabel = isFiltered ? `${group.matching} of ${group.total}` : String(group.total);
+  const hasNoLines = lines != null && lines.length === 0;
+
+  return (
+    <section className="border-b border-border-subtle last:border-b-0">
+      <div className="flex items-center bg-surface-dim/70 transition-colors hover:bg-surface-dim">
+        <button
+          type="button"
+          onClick={onToggleOpen}
+          aria-expanded={isOpen}
+          className="flex min-h-11 flex-1 items-center gap-1.5 py-2 pl-4 pr-4 text-left text-[11px] font-semibold uppercase tracking-brand text-ink sm:min-h-9"
+        >
+          <ChevronRight size={12} className={cn('shrink-0 text-ink-muted transition-transform', isOpen && 'rotate-90')} aria-hidden />
+          <span className="min-w-0 break-words">{group.heading}</span>
+          <span className="shrink-0 font-mono text-[10px] font-normal normal-case tracking-normal text-ink-muted">({countLabel})</span>
+          {pickedHere > 0 && (
+            <span className="ml-auto shrink-0 pl-2 text-[11px] font-semibold normal-case tracking-normal text-primary">{pickedHere} picked</span>
+          )}
+        </button>
+      </div>
+      {isOpen && (
+        <div className="border-t border-border-subtle">
+          <DataGridCompat<OutstandingSoItem>
+            rows={lines ?? []}
+            columns={columns}
+            storageKey={STORAGE_KEY}
+            rowKey={(r) => r.soItemId}
+            hideSearch
+            exportName="po-from-so"
+            onRowClick={onRowClick}
+            rowStyle={(r) => isLocked(r)
+              ? { opacity: 0.45, background: 'var(--c-cream)', cursor: 'not-allowed' }
+              : undefined}
+            groupBanner={false}
+            isLoading={linesQ.isLoading}
+            emptyMessage={linesQ.isError
+              ? `We couldn't load the lines of this project, so it looks empty when it may not be. Close and open it again to retry.${linesQ.error instanceof Error ? ` (${linesQ.error.message})` : ''}`
+              : hasNoLines && (linesQ.data?.length ?? 0) > 0
+                ? 'The outstanding lines of this project are already held by the PO draft you came from.'
+                : 'No line of this project came back. The project count is taken before the stock check, so that is not the same as nothing left to purchase: open the sales order and check its balance.'}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
