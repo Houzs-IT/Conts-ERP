@@ -8,6 +8,7 @@ import { StatRow, StatTile } from '../components/Metric';
 import { Segmented } from '../components/Metric';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
+import { AiBriefSettings } from './AiBriefSettings';
 import { dateTimeShort, plural } from '../lib/format';
 
 type MyApp = { tokenId: string; app: string; connectedAt: string | null; lastUsedAt: string | null };
@@ -389,6 +390,8 @@ export default function AiConnectorPage() {
       )}
 
       {me?.allowed && <HowTo url={me.connectorUrl} />}
+
+      {me?.allowed && <AiBriefSettings key={tick} />}
     </div>
   );
 }
