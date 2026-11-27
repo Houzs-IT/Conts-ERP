@@ -19,8 +19,8 @@ import { fileToUpload, forwardClaims } from '../../_lib/claimsForward';
  *    POST requests/:id/balance (multipart): the rest of a paid deposit's AP invoice, nothing filled in again; the formal
  *         invoice may come with it (chew, 15 Nov 2026)                                         (office staff)
  *    GET  reno-review (requests waiting), reno-review/:id/files/:fileId                       (Review renovation claims)
- *    POST reno-review/:id/send (JSON `{}`: a flagged request goes on to finance),
- *         reno-review/:id/reject (JSON `reason`)                                              (Review renovation claims) */
+ *    POST reno-review/:id/send (JSON `{}`, or multipart `data` and `file` when the reviewer changed the request: it goes
+ *         on to finance as edited), reno-review/:id/reject (JSON `reason`)                                              (Review renovation claims) */
 const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|requests|requests\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects|sub-departments)$/;
 const GET_RENO_REVIEW = /^reno-review(\/[^/]+\/files\/[^/]+)?$/;
 const POST_RENO_REVIEW = /^reno-review\/[^/]+\/(send|reject)$/;
@@ -65,7 +65,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const [, requestId = '', step] = path.split('/');
     const sending = step === 'send';
     let payload: Record<string, unknown> = {};
-    if (!sending) {
+    let edit: { amountSen: unknown; files: number } | null = null;
+    if (sending && (request.headers.get('content-type') ?? '').includes('multipart/form-data')) {
+      const form = await readForm(request);
+      if (form instanceof Response) return form;
+      payload = { ...form.data, files: await Promise.all(form.files.map(fileToUpload)) };
+      edit = { amountSen: form.data.amountSen, files: form.files.length };
+    } else if (!sending) {
       const body = await request.json<{ reason?: unknown }>().catch(() => null);
       if (!body) return fail('VALIDATION', 'Send a JSON body.', 422);
       payload = { reason: body.reason };
@@ -73,7 +79,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const res = await forwardClaims(env, session, 'POST', `/${path}`, payload);
     if (res.ok) {
       await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: sending ? 'claims.reno_review_sent' : 'claims.reno_review_rejected',
-        entityTable: 'payment_requests', entityId: requestId, ...(sending ? {} : { after: { reason: payload.reason } }), source });
+        entityTable: 'payment_requests', entityId: requestId, ...(sending ? (edit ? { after: { edited: true, ...edit } } : {}) : { after: { reason: payload.reason } }), source });
     }
     return res;
   }
