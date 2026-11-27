@@ -1135,7 +1135,7 @@ export const PurchaseOrderNew = () => {
       {/* Items card */}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Items ({lines.length})</h2>
+          <h2 className={styles.cardTitle} style={{ whiteSpace: 'nowrap' }}>Items ({lines.length})</h2>
           {/* "Pick any item from 0 SKUs" was printed while the catalogue was still loading or had failed (owner,
               19 Nov 2026), which reads as an empty catalogue. */}
           <div className="flex flex-wrap items-center justify-end gap-2">
