@@ -1,7 +1,7 @@
 import { type Env, all, json, fail, mytToday } from '../../_lib/db';
 import { requireSession, hasColumn } from '../../_lib/auth';
 import { can } from '../../_lib/access';
-import { reconcileMonth, proposeIncomeType, RULES, INCOME_KINDS, type ReconTxn, type Stay } from '../../_lib/airbnbRecon';
+import { reconcileMonth, proposeIncomeType, RULES, INCOME_KINDS, type ReconTxn, type Recorded, type Stay } from '../../_lib/airbnbRecon';
 import { bulkEligible, checkIncomeType, incomeKey, type Applied } from '../../_lib/airbnbConfirm';
 import { confirmContext, planWith, previewOf } from '../../_lib/airbnbConfirmLoad';
 import { hasIncomeTypes, loadIncomeTypes, type IncomeType } from './income-types';
@@ -69,7 +69,17 @@ export async function loadMonth(env: Env, month: string, today: string) {
   const codeRows = codes.length
     ? await all<TxnRow>(env, `SELECT ${TXN_COLS} FROM airbnb_transactions WHERE code IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND month <> ?`, JSON.stringify(codes), month)
     : [];
-  return { recon: reconcileMonth(month, [...monthRows, ...codeRows].map(txnOf), stays, today), files, months };
+  // The payouts the system already holds for those bookings (owner workbook lines, one per Airbnb monthly instalment):
+  // a long stay's earlier instalment counts though its month's file is not uploaded (chew, 27 Nov 2026).
+  const recordedRows = codes.length
+    ? await all<{ id: string; code: string; amount: number; date: string | null }>(env, `
+      SELECT b.id, UPPER(TRIM(r.external_ref)) AS code, b.amount, COALESCE(b.received_on::text, b.created_at::text) AS date
+      FROM booking_payments b JOIN reservations r ON r.id = b.reservation_id
+      WHERE b.source = 'owner_workbook' AND b.kind = 'ota_payout' AND b.status = 'received'
+        AND UPPER(TRIM(r.external_ref)) IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(codes))
+    : [];
+  const recorded: Recorded[] = recordedRows.map(p => ({ id: p.id, code: p.code, amount: Number(p.amount), date: (p.date ?? '').slice(0, 10) }));
+  return { recon: reconcileMonth(month, [...monthRows, ...codeRows].map(txnOf), stays, today, recorded), files, months };
 }
 
 interface DecisionRow { id: string; code: string; action: string; note: string | null; applied: string | null; confirmed_at: string; confirmed_by: string | null }

@@ -30,7 +30,7 @@ import { useUrlState, MonthStepper, shiftMonth } from './listKit';
  *  statement, the company income with its type), or keeps it as it is; lines that only record company income can be
  *  confirmed together. A confirmation is undone while the statements it touched are open. */
 
-type Rule = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10' | 'R11' | 'R12' | 'R13' | 'R99';
+type Rule = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10' | 'R11' | 'R12' | 'R13' | 'R14' | 'R99';
 type IncomeKind = 'additional_charge' | 'recovered' | 'cancelled_paid' | 'aircover';
 interface Stay { id: string; unit: string; guest: string | null; checkIn: string; checkOut: string; state: string; net: number }
 interface Choice { typeId: string | null; subTypeId: string | null }
@@ -51,7 +51,7 @@ interface Line {
   newAmount: number | null; suggestion: string; income: Income[]; needsConfirm: boolean;
   guest: string | null; listing: string | null; startDate: string | null; endDate: string | null; nights: number | null;
   stays: Stay[]; found: boolean; cancelled: boolean; systemNet: number | null;
-  payments: { id: string; date: string; amount: number; inMonth: boolean }[];
+  payments: { id: string; date: string; amount: number; inMonth: boolean; recorded?: boolean }[];
   reservation: number; adjustment: number; extra: number; aircover: number; difference: number | null;
   decision?: Decision | null; preview?: Preview | null; previewSet?: Preview | null; bulk?: boolean;
   /** Months of this line's stays whose income is locked for their unit (Owner statement close). */
@@ -79,11 +79,11 @@ interface IncomeRow extends Income { rowKey: string; code: string; rule: Rule; u
 /** Equal is good, waiting is neutral, a change to make is a warning, a reservation not found or not understood is critical. */
 const RULE_TONE: Record<Rule, AnyTone> = {
   R1: 'success', R2: 'gold', R3: 'neutral', R4: 'gold', R5: 'info', R6: 'neutral', R7: 'warning', R8: 'warning',
-  R9: 'critical', R10: 'gold', R11: 'critical', R12: 'neutral', R13: 'gold', R99: 'critical',
+  R9: 'critical', R10: 'gold', R11: 'critical', R12: 'neutral', R13: 'gold', R14: 'warning', R99: 'critical',
 };
 /** "To confirm" opens on what needs a decision: not found or not understood, then amounts to change, then company
  *  income only, then confirm-only lines. */
-const RULE_FIRST: Rule[] = ['R99', 'R9', 'R11', 'R4', 'R10', 'R8', 'R7', 'R2', 'R3', 'R5', 'R13', 'R6', 'R1', 'R12'];
+const RULE_FIRST: Rule[] = ['R99', 'R9', 'R11', 'R4', 'R10', 'R8', 'R14', 'R7', 'R2', 'R3', 'R5', 'R13', 'R6', 'R1', 'R12'];
 const KIND_TONE: Record<IncomeKind, AnyTone> = { additional_charge: 'info', recovered: 'gold', cancelled_paid: 'warning', aircover: 'neutral' };
 const ACTION: Record<Line['action'], string> = { none: 'Nothing to change', set_amount: 'Set the amount', cancel: 'Mark cancelled', check: 'Look by hand', wait: 'Wait for a later file' };
 /** What the rules give each system type (migration 0259), shown where finance keeps the types. */
@@ -95,7 +95,9 @@ const SYSTEM_TEXT: Record<string, string> = {
 };
 const money = (sen: number | null | undefined) => (sen == null ? '–' : rm(sen));
 const signed = (sen: number) => (sen < 0 ? `−${rm(-sen)}` : rm(sen));
-const paymentsText = (l: Line) => l.payments.map(p => `${dateShort(p.date)} ${rm(p.amount)}${p.inMonth ? '' : ` (${monthLabel(p.date)})`}`).join('; ');
+const paymentsText = (l: Line) => l.payments.map(p => (p.recorded
+  ? `${rm(p.amount)} (already in the system)`
+  : `${dateShort(p.date)} ${rm(p.amount)}${p.inMonth ? '' : ` (${monthLabel(p.date)})`}`)).join('; ');
 const unitsOf = (l: Line) => [...new Set(l.stays.map(s => s.unit))].join(', ');
 const monthsText = (months: string[]) => months.map(m => monthLabel(m)).join(' and ');
 

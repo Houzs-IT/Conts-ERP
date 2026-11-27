@@ -240,3 +240,50 @@ test('the month: every code with a line in it, check-ins not paid yet, and the b
   assert.equal(m.payouts.length, 1);
   assert.deepEqual(m.summary.map(s => [s.rule, s.count]), [['R1', 2], ['R12', 1], ['R13', 1]]);
 });
+
+// chew, 27 Nov 2026 ("认 booking number"): D-49-03A's 58-night stay HMFA323EHS was paid in two instalments, RM 6,329.03
+// (September, held in the system from the owner workbook) and RM 6,580.77 (the October file). Only October was uploaded.
+test('R14 an earlier instalment already in the system counts: HMFA323EHS', () => {
+  const o = { start: '2026-09-03', end: '2026-10-31', nights: 58, date: '2026-10-04' };
+  const rows = [res('HMFA323EHS', 6580.77, o), resolution('HMFA323EHS', 99.99, { ...o, date: '2026-10-05' })];
+  const stays = [stay('HMFA323EHS', 6235.72, { checkIn: '2026-09-03', checkOut: '2026-10-31' })];
+  const sep = [{ id: 'wb-pay-HMFA323EHS', code: 'HMFA323EHS', amount: 632903, date: '2026-10-10' }];
+  const l = classify('HMFA323EHS', rows, stays, ctx, sep);
+  assert.equal(l.rule, 'R14');
+  assert.equal(l.action, 'set_amount');
+  assert.equal(l.newAmount, 1290980);
+  assert.equal(l.reservation, 1290980);
+  assert.deepEqual(l.payments.map(p => [p.amount, !!p.recorded, p.inMonth]), [[632903, true, false], [658077, false, true]]);
+  assert.match(l.suggestion, /RM 6,329\.03 already in the system .* RM 6,580\.77 in these files, RM 12,909\.80 in all/);
+  assert.equal(l.income.length, 1, 'the resolution payout is still company income');
+  // Once the reservation holds the whole stay, it is equal.
+  const fixed = classify('HMFA323EHS', rows, [stay('HMFA323EHS', 12909.79, { checkIn: '2026-09-03', checkOut: '2026-10-31' })], ctx, sep);
+  assert.equal(fixed.rule, 'R1');
+  // Without the recorded instalment, as before: one payment more than the system.
+  assert.equal(classify('HMFA323EHS', rows, stays, ctx).rule, 'R8');
+});
+
+test('a recorded payout that an uploaded file also carries counts once', () => {
+  const o = { start: '2026-09-14', end: '2026-10-15', nights: 31 };
+  const rows = [res('HMSAME0001', 5635.17, { ...o, date: '2026-09-20' }), res('HMSAME0001', 182.62, { ...o, date: '2026-10-15' })];
+  const rec = [{ id: 'wb-1', code: 'HMSAME0001', amount: 563517, date: '2026-10-10' }];
+  const l = classify('HMSAME0001', rows, [stay('HMSAME0001', 5817.79, { checkIn: '2026-09-14', checkOut: '2026-10-15' })], ctx, rec);
+  assert.equal(l.rule, 'R1');
+  assert.equal(l.payments.filter(p => p.recorded).length, 0);
+});
+
+test('a long stay with its earlier instalment recorded still waits for the rest', () => {
+  const o = { start: '2026-10-01', end: '2026-12-01', nights: 61, date: '2026-10-02' };
+  const rec = [{ id: 'wb-2', code: 'HMWAIT0001', amount: 300000, date: '2026-10-01' }];
+  const l = classify('HMWAIT0001', [res('HMWAIT0001', 3000, o)], [stay('HMWAIT0001', 9000, { checkIn: '2026-10-01', checkOut: '2026-12-01' })], ctx, rec);
+  assert.equal(l.rule, 'R6');
+  assert.equal(l.reservation, 300000, 'the recorded RM 3,000 is the same money as the uploaded one');
+  const l2 = classify('HMWAIT0001', [res('HMWAIT0001', 3100, o)], [stay('HMWAIT0001', 9000, { checkIn: '2026-10-01', checkOut: '2026-12-01' })], ctx, rec);
+  assert.equal(l2.rule, 'R6');
+  assert.equal(l2.reservation, 610000, 'a different instalment adds up');
+});
+
+test('a booking whose payment the system holds is not "not paid yet"', () => {
+  const m = reconcileMonth('2026-10', [], [stay('HMHELD0001', 500, { checkIn: '2026-10-05' })], '2026-11-10', [{ id: 'wb-3', code: 'HMHELD0001', amount: 50000, date: '2026-10-08' }]);
+  assert.deepEqual(m.lines.map(l => l.rule), []);
+});
