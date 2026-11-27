@@ -5,6 +5,9 @@ import { ROOM_COLORS, type Closure, type Room } from "../../lib/meetings";
 
 export const CONTROL =
   "w-full rounded-control border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-faint focus:border-primary focus:outline-none";
+/** A field that must read as a control on its own (colleague search): the 3:1 input outline instead of the soft line. */
+export const CONTROL_OUTLINED =
+  "w-full rounded-control border border-line-input bg-card px-3 py-2 text-[13px] text-ink placeholder:text-faint focus:border-primary focus:outline-none";
 export const LABEL = "flex flex-col gap-1 text-[11.5px] font-semibold uppercase tracking-wide text-faint";
 export const BTN = "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-card px-3.5 text-[13px] font-medium text-ink hover:bg-muted disabled:opacity-50";
 export const PRI = "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary hover:opacity-90 disabled:opacity-50";
@@ -12,7 +15,7 @@ export const BOOK_CTA = "inline-flex items-center justify-center gap-2 whitespac
 export const ICON_BTN = "inline-flex flex-none items-center justify-center rounded-full text-muted-ink hover:bg-muted";
 export const SEG_TRACK = "flex rounded-full bg-sunken p-0.5";
 export const SEG_ITEM = "rounded-full text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary";
-export const SEG_ON = "bg-card font-semibold text-ink shadow-sm";
+export const SEG_ON = "bg-meet-seg-on font-semibold text-on-meet-seg-on shadow-sm";
 export const SEG_OFF = "text-muted-ink hover:text-ink";
 export const CHIP = "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium";
 export const chip = (on: boolean) => cn(CHIP, on ? "border-primary bg-primary-soft text-primary-ink" : "border-line bg-card text-ink");
