@@ -545,6 +545,17 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   Frontend: `src/lib/highlightMatch.ts` (pure matcher) + `src/lib/useHighlightParam.ts` (`<HighlightFromUrl />` in
   `AppLayout`): `?highlight=<label>` outlines the button for 6 s, read-only (never clicks or focuses), then drops the
   parameter. Tests `src/lib/mcpScreens.test.mjs` (every router page has one entry, labels, permissions, matcher).
+- **Round 5c, `show_me` (branch `feat/mcp-howto-show-me`).** Mirrors Hookka PR 1643 / Houzs PR 6132, including the
+  lesson that the AI app gets a plain WebP image (Claude rejects SVG). Code `functions/_lib/mcpShowMe.ts` (pure),
+  runtime in `mcpHowtoTools.ts`: the WebP from `public/help-shots/` (via `env.ASSETS`) as an image, the box
+  `{x, y, width, height}`, the live `?highlight=` link, and a 15-minute link to the annotated picture (an HTML page
+  under `mcp-exports/`, served by `GET /api/mcp/export` with a CSP that allows nothing to run or load).
+  - Re-capture after UI changes: `PLAYWRIGHT_CORE=<a playwright-core folder> npm run help:shots` (on Git Bash prefix
+    `MSYS_NO_PATHCONV=1` when passing page paths). It starts its own Vite server, mocks the session as a made-up
+    manager, answers every data read 503 (screens show their dev design sample data) and aborts every other host.
+    `src/lib/mcpShowMe.test.mjs` fails ("re-capture screenshots") when a boxed label leaves the frontend.
+  - Not captured: supply chain engine screens (Dream Crafter, Mail Center), pages that need a record id, and pages
+    whose buttons only show with data. show_me answers those with the link (logged as a gap).
 
 ## Mail Center re-synced with Houzs, 26 Nov 2026
 
