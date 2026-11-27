@@ -113,7 +113,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
   const [rows, setRows] = useState<{ id: number; target: string; amountSen: number | null }[]>([{ id: 1, target: '', amountSen: null }]);
   const split = rows.length > 1;
   const splitSen = rows.reduce((n, r) => n + (r.amountSen ?? 0), 0);
-  const setRow = (id: number, patch: Partial<{ target: string; amountSen: number | null }>) => setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patch } : r)));
+  const setRow = (id: number, patch: Partial<{ target: string; amountSen: number | null }>) => { setProblem(null); setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patch } : r))); };
   const addRow = () => setRows(rs => {
     const first = rs.length === 1 && rs[0].amountSen == null ? [{ ...rs[0], amountSen: amountSen ?? null }] : rs;
     const left = (amountSen ?? 0) - first.reduce((n, r) => n + (r.amountSen ?? 0), 0);
@@ -218,7 +218,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
         : <DateField label={tr.date} value={spendDate} display={day} onChange={v => { setSpendDate(v); dateTouched.current = true; }} max={todayMyt()} />}
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
       {rows.map((r, n) => (
-        <div key={r.id} className={split ? 'flex flex-col gap-2 border-t border-solid border-line pt-3' : 'contents'}>
+        <div key={r.id} className={split ? 'flex flex-col gap-2 border-0 border-t border-solid border-line pt-3' : 'contents'}>
           {onProjects
             /* Type a word of the project (chew, 18 Nov 2026: search it by keyword): ASTRUM, R-13-03, RN-2607. */
             ? <SearchSelect label={tr.project} showLabel size="md" value={r.target} onChange={v => setRow(r.id, { target: v })} allLabel={tr.noProject} placeholder={tr.searchProject}
