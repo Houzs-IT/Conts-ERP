@@ -202,14 +202,14 @@ describe("Purchase Order list: the ONE Export", () => {
     expect(h.aoa[0]).toEqual([
       "Doc No", "Project", "SO Doc No.", "Creditor Code", "Creditor Name", "Item Code", "Item Description",
       "Item Description 2", "Location", "Item Group", "Doc Date", "Remaining Qty", "Delivery Date",
-      "Estimate Delivery Date", "Supplier Delivery Date 2", "Supplier Delivery Date 3",
+      "Estimate Delivery Date", "Supplier Delivery Date 2", "Supplier Delivery Date 3", "Created By",
     ]);
     // 2 + 1 lines, and the PO with no line still gets its row.
     expect(h.aoa).toHaveLength(5);
     expect(h.aoa[1]).toEqual([
       "PO-009304", null, "HC-SO-013389", "400-A006", "AKEMI UNITED SDN BHD", "AK-GUARDIAN (Q)",
       "AKEMI GUARDIAN MATTRESS (153x190x30CM)", "QUEEN", "KL", "MATTRESS", "2026-09-04", 2, "2026-09-20",
-      "2026-09-12", null, null,
+      "2026-09-12", null, null, null,
     ]);
     expect(h.aoa[2]![5]).toBe("AK-BASTION (K)");
     expect(h.aoa[3]![0]).toBe("HC-PO-009950"); // not linked to AutoCount: the ERP number
