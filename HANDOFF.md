@@ -537,6 +537,14 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
     numbers removed) and listed on System > AI Connector, "Questions with no guide yet" (last 30 days).
   - Known limit: on engine screens (Dream Crafter, Mail Center) `?highlight=` opens the screen but cannot outline the
     button inside the engine frame; answers say so (`engineScreen`).
+- **Round 5b, screen map + `?highlight=` (branch `feat/mcp-howto-screens`).** Mirrors Hookka PR 1644 / Houzs PR 6130.
+  Code `functions/_lib/mcpScreens.ts` (pure), data `howto/screensFull.ts` (21 busiest pages, button by button, with the
+  permission each handler checks) + `howto/screensBasic.ts` (one line for every other router page; menu pages take
+  title and sidebar path from `navigation.ts` NAV). Tools `explain_screen {path | visible_text}`, `where_is {thing}`.
+  canOpen = the person's level on the page's menu area (`areaOfPath`); canDo per button = the ERP's own gate.
+  Frontend: `src/lib/highlightMatch.ts` (pure matcher) + `src/lib/useHighlightParam.ts` (`<HighlightFromUrl />` in
+  `AppLayout`): `?highlight=<label>` outlines the button for 6 s, read-only (never clicks or focuses), then drops the
+  parameter. Tests `src/lib/mcpScreens.test.mjs` (every router page has one entry, labels, permissions, matcher).
 
 ## Mail Center re-synced with Houzs, 26 Nov 2026
 
