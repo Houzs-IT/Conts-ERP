@@ -66,12 +66,23 @@ html.conts-embedded[data-beta-skin="night"] {
 }
 html.conts-embedded[data-beta-skin="night"] .page-head { border-color: rgba(150,175,255,.18); }
 /* Inks written as fixed colours (not --eng-*) that would vanish on night, with their slash-opacity variants. */
-html.conts-embedded[data-beta-skin="night"] :is(.text-err, [class*="text-err/"]) { color: #FF9B90; }
+html.conts-embedded[data-beta-skin="night"] :is(.text-err, [class*="text-err/"], .hover\:text-err:hover, .group:hover .group-hover\:text-err) { color: #FF9B90; }
 html.conts-embedded[data-beta-skin="night"] :is(.text-synced, [class*="text-synced/"]) { color: #7BE8D8; }
-html.conts-embedded[data-beta-skin="night"] :is(.text-accent, [class*="text-accent/"]) { color: #C8A46A; }
+html.conts-embedded[data-beta-skin="night"] :is(.text-accent, [class*="text-accent/"], :is(.hover\:text-accent, .hover\:text-accent-hover):hover, .group:hover .group-hover\:text-accent) { color: #C8A46A; }
 html.conts-embedded[data-beta-skin="night"] :is(.text-learning, [class*="text-learning/"]) { color: #A9C4FF; }
+<<<<<<< origin/feat/so-amount-to-qty
 html.conts-embedded[data-beta-skin="night"] .text-primary { color: #EEF1F8; }
 html.conts-embedded[data-beta-skin="night"] .border-primary { border-color: #EEF1F8; }
+=======
+/* The hover: and group-hover: forms of these fixed inks too, or hovered text drops back to the dark light-mode ink. */
+html.conts-embedded[data-beta-skin="night"] :is(.text-primary, .hover\:text-primary:hover, .group:hover .group-hover\:text-primary) { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] :is(.border-primary, .hover\:border-primary:hover, .group:hover .group-hover\:border-primary) { border-color: #EEF1F8; }
+/* Selected text: index.css gives dark ink on a brown wash, which vanished on the night card. Opaque fill, so the ink
+   reads the same over any surface. Announcement links: index.css is not night-mapped, so its dark teal sat on a dark card. */
+html.conts-embedded[data-beta-skin="night"] ::selection { background: #6B5C32; color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] :is(.ann-rich, .ann-rte) a { color: #9FC0FF; }
+html.conts-embedded[data-beta-skin="night"] .ann-rich a:hover { color: #EEF1F8; }
+>>>>>>> 62ae8cbf
 /* A chosen pill and the black main action: flat light ink, as /projects/list marks a chosen tab, so they keep their shape. */
 html.conts-embedded[data-beta-skin="night"] .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
 html.conts-embedded[data-beta-skin="night"] .bg-primary :is(.text-white, [class*="text-white/"]) { color: #151823; }
