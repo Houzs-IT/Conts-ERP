@@ -106,7 +106,9 @@ export function AiBriefSettings() {
         <Button size="sm" loading={busy === 'preview'} disabled={!!busy} disabledReason="Working"
           onClick={() => void act('preview', async () => { const r = await api.get<{ html: string }>('/ai-connector/brief/preview', { gaps: '1' }); setPreview(r.html); })}>Preview my brief</Button>
         <Button size="sm" loading={busy === 'test'} disabled={!!busy || noEmail} disabledReason={noEmail ? 'Your account has no email address' : 'Working'}
-          onClick={() => void act('test', async () => { const r = await api.post<{ sentTo: string; items: number }>('/ai-connector/brief/test', {}); await load(); toast({ tone: 'success', title: 'Test brief sent', body: `To ${r.sentTo}, ${plural(r.items, 'item')}.` }); })}>Send me a test brief</Button>
+          onClick={() => void act('test', async () => { const r = await api.post<{ sentTo: string; items: number; state: string; reason?: string }>('/ai-connector/brief/test', {}); await load();
+            toast(r.state === 'failed' ? { tone: 'warning', title: 'Test brief not sent yet', body: `The mail provider refused it (${r.reason ?? 'error'}). It will be tried again automatically.` }
+              : { tone: 'success', title: 'Test brief sent', body: `To ${r.sentTo}, ${plural(r.items, 'item')}.` }); })}>Send me a test brief</Button>
       </div>
 
       {preview !== null && (

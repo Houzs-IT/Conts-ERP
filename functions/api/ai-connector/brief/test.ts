@@ -38,6 +38,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const r = await sendEmail(env, { template: 'ai.brief_test', to: person.email, userId, key: `ai.brief_test|${userId}|${now.day}|${now.hhmm}`, subject: built.subject, text: built.text, html: built.html });
   await logSend(env, { userId, kind: 'brief_test', day: now.day, items: built.items, notificationId: r.id ?? null, status: r.state, note: ['with data gaps', r.reason ?? ''].filter(Boolean).join('; ') });
   await audit(env, { ...actorOf(person.session), action: 'ai_connector.brief_test', entityTable: 'mcp_brief_subscriptions', entityId: userId, after: { items: built.items, state: r.state } });
-  if (r.state === 'failed') return fail('UPSTREAM', `The email could not be sent (${r.reason ?? 'mail provider error'}). It will be tried again automatically.`, 502);
-  return json({ ok: true, sentTo: person.email, items: built.items, state: r.state });
+  // A provider failure is not an error of this request: the outbox row exists and the scheduled job retries it. The page
+  // says so plainly instead of "sent".
+  return json({ ok: true, sentTo: person.email, items: built.items, state: r.state, ...(r.state === 'failed' ? { reason: r.reason ?? 'mail provider error' } : {}) });
 };
