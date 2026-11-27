@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { Link2, Plus, Users } from "lucide-react";
 import { api, openLoadedTab } from "./kit-api";
 import { refreshMeetingsUnread } from "../../lib/meetingsUnread";
-import { TabStrip, useIsPhone } from "./kit";
+import { TabStrip } from "./kit";
+import { useElementWidth } from "./useElementWidth";
 import { MeetingsToolbar } from "./MeetingsToolbar";
 import { cx as cn } from "../../lib/design-tokens";
 import {
@@ -28,6 +29,7 @@ import { EmailPage, LinkDialog, LinksPage, LogPage, MyMeetings, RoomDialog, Room
  */
 
 const POLL_MS = 60_000;
+const COMPACT_CALENDAR_PX = 760;
 const COLOR_KEY = "meetings.colorBy";
 const fresh = <T,>(path: string) => api.get<T>(path, { signal: new AbortController().signal });
 const message = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong. Please try again.");
@@ -44,11 +46,13 @@ function rangeFor(view: CalView, anchor: number): [number, number] {
 export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?: string; embedded?: boolean }) {
   const [params, setParams] = useSearchParams();
   const tab: MeetingsTab = isMeetingsTab(params.get("tab")) ? (params.get("tab") as MeetingsTab) : "calendar";
-  const isPhone = useIsPhone();
-  // A 7-day grid is unreadable at phone width, so a phone shows the day instead.
-  const shownViews: readonly CalView[] = isPhone ? VIEWS.filter((v) => v !== "week") : VIEWS;
+  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
+  const rootWidth = useElementWidth(rootEl);
+  // Below this width 7 days (plus the sidebar on wide screens) leave each day too narrow to read, so show one day.
+  const isCompact = rootWidth > 0 ? rootWidth < COMPACT_CALENDAR_PX : typeof window !== "undefined" && window.innerWidth < 768;
+  const shownViews: readonly CalView[] = isCompact ? VIEWS.filter((v) => v !== "week") : VIEWS;
   const viewParam = params.get("view");
-  const view: CalView = isView(viewParam) && shownViews.includes(viewParam) ? viewParam : isPhone ? "day" : "week";
+  const view: CalView = isView(viewParam) && shownViews.includes(viewParam) ? viewParam : isCompact ? "day" : "week";
   const dateParam = params.get("date");
   const [today] = useState(() => startOfDay(Date.now()));
   const anchor = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(`${dateParam}T00:00:00`).getTime() : today;
@@ -244,7 +248,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
     if (view === "month") { const d = new Date(anchor); d.setMonth(d.getMonth() + dir, 1); setAnchor(d.getTime()); }
     else setAnchor(addDays(anchor, dir * (view === "week" ? 7 : view === "list" ? 7 : 1)));
   };
-  const title = view === "day" || view === "rooms" ? (isPhone ? fmtDay(anchor) : fmtDayLong(anchor)) : `${MONTH_NAMES[new Date(view === "week" ? startOfWeek(anchor) + 3 * DAY : anchor).getMonth()]} ${new Date(anchor).getFullYear()}`;
+  const title = view === "day" || view === "rooms" ? (isCompact ? fmtDay(anchor) : fmtDayLong(anchor)) : `${MONTH_NAMES[new Date(view === "week" ? startOfWeek(anchor) + 3 * DAY : anchor).getMonth()]} ${new Date(anchor).getFullYear()}`;
   const days = view === "day" ? [startOfDay(anchor)] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
   const cal = { meetings: shown, rooms, people, colorOf, now, onOpen: (m: Meeting, x: number, y: number) => void openMeeting(m, x, y) };
 
@@ -253,7 +257,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
   }
 
   return (
-    <div className="flex min-h-0 flex-col" style={{ "--meet-mine": "var(--color-primary)", height: embedded ? "100%" : "calc(100dvh - 64px)" } as CSSProperties}>
+    <div ref={setRootEl} className="flex min-h-0 flex-col" style={{ "--meet-mine": "var(--color-primary)", height: embedded ? "100%" : "calc(100dvh - 64px)" } as CSSProperties}>
       <div className={cn("px-4 sm:px-6", embedded ? "pt-1" : "pt-4")}>
         {!embedded && <h1 className="text-[22px] font-bold text-ink">Meetings</h1>}
         {!embedded && <p className="mb-2 text-[13px] text-muted-ink">Meeting rooms shared by every company. Book anyone from any company; they see it in their own ERP.</p>}
@@ -261,7 +265,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
       </div>
       {tab === "calendar" && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <MeetingsToolbar title={title} view={view} views={shownViews} query={query} unread={unread}
+          <MeetingsToolbar isCompact={isCompact} title={title} view={view} views={shownViews} query={query} unread={unread}
             onToday={() => setAnchor(startOfDay(Date.now()))} onStep={step} onView={(v) => patch({ view: v })}
             onQuery={(q) => { setQuery(q); if (q) patch({ view: "list" }); }} onInbox={() => patch({ tab: "mine" })} />
           {calError && <div className="bg-danger-bg px-4 py-2 text-[13px] text-danger">The calendar could not be loaded: {calError}</div>}
