@@ -185,7 +185,7 @@ export function TimeGrid(p: CalProps & {
       </div>
       <div ref={scroller} className="meet-scroll relative flex-1 overflow-auto">
         <div className="relative grid" style={{ gridTemplateColumns: template, height: (GRID_TO - GRID_FROM) * HH, backgroundImage: `repeating-linear-gradient(to bottom, var(--color-line-soft) 0, var(--color-line-soft) 1px, transparent 1px, transparent ${HH}px)` }}>
-          <div className="pr-2 text-right text-[10px] text-faint">
+          <div className="relative z-[1] bg-card pr-2 text-right text-[10px] text-faint">
             {Array.from({ length: GRID_TO - GRID_FROM }, (_, i) => GRID_FROM + i).map((h) => (
               <div key={h} style={{ height: HH, transform: "translateY(-6px)" }}>{h === GRID_FROM ? "" : `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`}</div>
             ))}

@@ -58,7 +58,7 @@ export function MeetingsToolbar(p: MeetingsToolbarProps): JSX.Element {
         <div className={cn(SEG_TRACK, "flex-1 md:flex-none")} role="group" aria-label="View">
           {p.views.map((v) => (
             <button key={v} type="button" aria-pressed={p.view === v} onClick={() => p.onView(v)}
-              className={cn(SEG_ITEM, "h-10 flex-1 px-3 capitalize md:h-8 md:flex-none", p.view === v ? SEG_ON : SEG_OFF)}>{v}</button>
+              className={cn(SEG_ITEM, "h-11 flex-1 px-3 capitalize md:h-8 md:flex-none", p.view === v ? SEG_ON : SEG_OFF)}>{v}</button>
           ))}
         </div>
         {inboxButton("hidden md:inline-flex")}

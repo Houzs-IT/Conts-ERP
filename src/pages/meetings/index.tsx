@@ -7,7 +7,7 @@ import { TabStrip, useIsPhone } from "./kit";
 import { MeetingsToolbar } from "./MeetingsToolbar";
 import { cx as cn } from "../../lib/design-tokens";
 import {
-  DAY, MONTH_NAMES, addDays, atHour, draftBody, draftFrom, emptyDraft, fmtDayLong, isMeetingsTab, isoDay, isView, VIEWS, ms, nextStart, peopleOf, readConflict, startOfDay, startOfWeek,
+  DAY, MONTH_NAMES, addDays, atHour, draftBody, draftFrom, emptyDraft, fmtDay, fmtDayLong, isMeetingsTab, isoDay, isView, VIEWS, ms, nextStart, peopleOf, readConflict, startOfDay, startOfWeek,
   companyColor, meetingColor, INVITED_COLOR, OTHERS_COLOR, type Bootstrap, type CalView, type ColorBy, type ConflictReply, type Draft, type GuestLink, type Meeting, type MeetingsTab, type Notice, type Room, bestRoom } from "../../lib/meetings";
 import { ListView, MiniMonth, MonthView, RoomsTimeline, TimeGrid } from "./MeetingsCalendar";
 import { ConflictDialog, MeetingDetail, MeetingEditor, PersonSearch, QuickBook, ScopeQuestion, type MeetingFile } from "./MeetingsDialogs";
@@ -244,7 +244,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
     if (view === "month") { const d = new Date(anchor); d.setMonth(d.getMonth() + dir, 1); setAnchor(d.getTime()); }
     else setAnchor(addDays(anchor, dir * (view === "week" ? 7 : view === "list" ? 7 : 1)));
   };
-  const title = view === "day" || view === "rooms" ? fmtDayLong(anchor) : `${MONTH_NAMES[new Date(view === "week" ? startOfWeek(anchor) + 3 * DAY : anchor).getMonth()]} ${new Date(anchor).getFullYear()}`;
+  const title = view === "day" || view === "rooms" ? (isPhone ? fmtDay(anchor) : fmtDayLong(anchor)) : `${MONTH_NAMES[new Date(view === "week" ? startOfWeek(anchor) + 3 * DAY : anchor).getMonth()]} ${new Date(anchor).getFullYear()}`;
   const days = view === "day" ? [startOfDay(anchor)] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
   const cal = { meetings: shown, rooms, people, colorOf, now, onOpen: (m: Meeting, x: number, y: number) => void openMeeting(m, x, y) };
 
