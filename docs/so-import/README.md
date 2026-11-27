@@ -136,5 +136,5 @@ column Quotation, 18 PDFs on Drive) are the truth for her SOs. The CODE/COLOUR o
 - ASTRUM A-24-31 (no project before): project opened (customer SUN WENG FONG, from the quotation) and its SO at the printed
   RM 23,500. ASTRUM S-24-29 (on the sheet, no project, no quotation): project only, customer SUWARNARAJ CHINNIAH (the
   rental side's owner of that unit).
-- Not done, waiting on the owner: ASTRUM R-29-27, R-52-29, A-17-20 print no total; ASTRUM R-19-23 has no project and no
-  owner on record.
+- ASTRUM R-29-27, R-52-29, A-17-20 print no total: their SOs open at RM 0, to be updated when the price is known; ASTRUM
+  R-19-23 (no project, no owner on record): project opened under "OWNER TO BE CONFIRMED" (owner, 27 Nov 2026).
