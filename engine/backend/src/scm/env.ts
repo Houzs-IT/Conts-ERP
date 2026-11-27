@@ -58,6 +58,9 @@ export interface Variables {
    *  the guard only proved the caller holds SOME qualifying capability, not
    *  that this specific transition is theirs. Absent/false = normal access. */
   scmWriteBypassed?: boolean;
+  /** Whether the REAL caller may see purchase-side documents (lib/procurement-visible.ts), worked out in scm/index.ts
+   *  before the auth bridge replaces `user` and drops page_access. Unset means visible. */
+  seesProcurement?: boolean;
   /** Set true by cancelApprovalGuard (routes/document-cancel-routes.ts) when
    *  the document carries an APPROVED cancellation request AND the caller holds
    *  one of that document's cancel-approve keys: the area guard's writeBypass

@@ -50,6 +50,7 @@ import { chunkIn } from '../lib/paginate-all';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { fmtSen } from '../shared/format';
+import { PROCUREMENT_HIDDEN_MESSAGE, procurementHidden } from '../middleware/procurement-flag';
 
 export const documentFlow = new Hono<{ Bindings: Env; Variables: Variables }>();
 documentFlow.use('*', supabaseAuth);
@@ -465,6 +466,16 @@ async function buildConsignmentFlow(sb: any, c: Context<any>, type: NodeType, id
   return orphan([rootPco]);
 }
 
+/* A caller who must not see procurement (owner, 27 Nov 2026: salespeople) gets the sales side of the map only: no
+   PO, GRN, purchase invoice or purchase return node, no edge that touches one, no PO amendment. */
+const PURCHASE_NODE_TYPES: ReadonlySet<NodeType> = new Set<NodeType>(['po', 'grn', 'pi', 'pr']);
+export function withoutPurchaseSide<T extends { nodes: FlowNode[]; edges: FlowEdge[]; poAmendments?: unknown[] }>(graph: T): T {
+  const nodes = graph.nodes.filter((n) => !PURCHASE_NODE_TYPES.has(n.type));
+  const kept = new Set(nodes.map((n) => n.key));
+  const edges = graph.edges.filter((e) => kept.has(e.from) && kept.has(e.to));
+  return { ...graph, nodes, edges, ...(graph.poAmendments ? { poAmendments: [] } : {}) };
+}
+
 /* ── GET /document-flow/candidate-pos/:soDocNo ──────────────────────────────
    ADVISORY, READ-ONLY. For an SO whose purchase leg was never linked
    (purchase_order_items.so_item_id NULL — every PO raised before the MRP-linked
@@ -479,6 +490,7 @@ async function buildConsignmentFlow(sb: any, c: Context<any>, type: NodeType, id
    as a NodeType. Company-scoped both ends: gated on SO ownership, and the PO
    read itself is scopeToCompany'd. */
 documentFlow.get('/candidate-pos/:soDocNo', async (c) => {
+  if (procurementHidden(c)) return c.json({ candidates: [] });
   const sb = c.get('supabase');
   const soDocNo = c.req.param('soDocNo');
   const cid = activeCompanyId(c);
@@ -536,6 +548,8 @@ documentFlow.get('/:type/:id', async (c) => {
   if (!ALL_TYPES.includes(type)) {
     return c.json({ error: 'bad_type' }, 400);
   }
+  const hidden = procurementHidden(c);
+  if (hidden && PURCHASE_NODE_TYPES.has(type)) return c.json({ error: 'forbidden', message: PROCUREMENT_HIDDEN_MESSAGE }, 403);
 
   // Multi-company: the graph is isolated to the ACTIVE company. Resolved once
   // here and threaded into both the consignment builder and the SO-root filter.
@@ -697,7 +711,8 @@ documentFlow.get('/:type/:id', async (c) => {
         }));
       }
     }
-    return c.json({ nodes: [...nodes.values()], edges, rootSos, amendments: [], poAmendments });
+    const orphanGraph = { nodes: [...nodes.values()], edges, rootSos, amendments: [], poAmendments };
+    return c.json(hidden ? withoutPurchaseSide(orphanGraph) : orphanGraph);
   }
 
   // ── 1. SO headers + lines ───────────────────────────────────────────────
@@ -1140,7 +1155,8 @@ documentFlow.get('/:type/:id', async (c) => {
     }));
   }
 
-  return c.json({ nodes: [...nodes.values()], edges, rootSos, amendments, poAmendments });
+  const graph = { nodes: [...nodes.values()], edges, rootSos, amendments, poAmendments };
+  return c.json(hidden ? withoutPurchaseSide(graph) : graph);
 });
 
 export default documentFlow;

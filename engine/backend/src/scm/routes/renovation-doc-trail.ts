@@ -1,6 +1,7 @@
 /* One order's chain at a glance (owner, 7 Nov 2026): from any document, where the goods are. Sales order, PO, production
    order, goods receipt and delivery order with their status and dates. It reads numbers and dates only, no prices, so
-   anyone who can open one of the documents may see the chain. Renovation orders only: a Houzs order answers nothing. */
+   anyone who can open one of the documents may see the chain, except the purchase side for a caller who must not see
+   procurement (owner, 27 Nov 2026): they get the SO and DO only. Renovation orders only: a Houzs order answers nothing. */
 
 import { Hono } from 'hono';
 import type { Env, Variables } from '../env';
@@ -8,6 +9,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { soCoverage } from './mfg-sales-orders';
 import { withListMemo } from '../lib/mrp-list-memo';
+import { PROCUREMENT_HIDDEN_MESSAGE, procurementHidden } from '../middleware/procurement-flag';
 
 export const renovationDocTrail = new Hono<{ Bindings: Env; Variables: Variables }>();
 renovationDocTrail.use('*', supabaseAuth);
@@ -80,6 +82,59 @@ export function lineStatuses(
   return out;
 }
 
+/* One query per line set. For a caller who must not see the purchase side only the DO arm runs, so PO, production
+   order, goods receipt and supplier rows are never read. The first arm names the columns. */
+const LINE_IDS = `WITH ids AS (SELECT unnest(string_to_array(?::text, ',')) AS id)`;
+const LINE_PO = `
+     SELECT i.so_item_id::text AS line, 'po' AS kind, po.id::text AS id, po.po_number AS no, po.status::text AS status, po.on_hold, po.expected_at::text AS expected, NULL::text AS started, po.received_at::text AS done, s.name AS who
+       FROM scm.purchase_order_items i JOIN ids ON ids.id = i.so_item_id::text JOIN scm.purchase_orders po ON po.id = i.purchase_order_id AND po.company_id = ?
+       LEFT JOIN scm.suppliers s ON s.id = po.supplier_id`;
+const LINE_PRODUCTION = `
+     SELECT i.so_item_id::text, 'production', o.id::text, o.po_number, o.status::text, o.on_hold, o.expected_at::text, o.actual_start_at::text, o.received_at::text, NULL
+       FROM scm.production_order_items i JOIN ids ON ids.id = i.so_item_id::text JOIN scm.production_orders o ON o.id = i.production_order_id AND o.company_id = ?`;
+const LINE_GR = `
+     SELECT pi.so_item_id::text, 'gr', g.id::text, g.grn_number, g.status::text, g.on_hold, NULL, NULL, g.received_at::text, NULL
+       FROM scm.grn_items gi JOIN scm.purchase_order_items pi ON pi.id = gi.purchase_order_item_id JOIN ids ON ids.id = pi.so_item_id::text
+       JOIN scm.grns g ON g.id = gi.grn_id JOIN scm.purchase_orders po ON po.id = g.purchase_order_id AND po.company_id = ?`;
+const LINE_DO = `
+     SELECT di.so_item_id::text AS line, 'do' AS kind, d.id::text AS id, d.do_number AS no, d.status::text AS status, d.on_hold, coalesce(d.customer_delivery_date, d.do_date)::text AS expected, NULL::text AS started, d.delivered_at::text AS done, NULL::text AS who
+       FROM scm.delivery_order_items di JOIN ids ON ids.id = di.so_item_id::text JOIN scm.delivery_orders d ON d.id = di.delivery_order_id
+       JOIN scm.mfg_sales_orders so ON so.doc_no = d.so_doc_no AND so.company_id = ?`;
+/** The per-line query and its binds: the line ids, then the company once per arm. */
+export function linesQuery(ids: readonly string[], companyId: number, hidden: boolean): { sql: string; binds: unknown[] } {
+  const arms = hidden ? [LINE_DO] : [LINE_PO, LINE_PRODUCTION, LINE_GR, LINE_DO];
+  const body = hidden ? `SELECT DISTINCT * FROM (${LINE_DO}) d` : arms.join('\n     UNION');
+  return { sql: `${LINE_IDS}\n${body}`, binds: [ids.join(','), ...arms.map(() => companyId)] };
+}
+
+const PURCHASE_KINDS: readonly TrailKind[] = ['po', 'production', 'gr'];
+
+/* The chain of one document. For a caller who must not see the purchase side only the SO and DO arms run, so PO,
+   production order, goods receipt and supplier rows are never read. */
+const TRAIL_SO = `
+     SELECT 'so' AS kind, doc_no AS id, doc_no AS no, status, on_hold, NULL::text AS expected, so_date::text AS started, NULL::text AS done, NULL::text AS who FROM sos`;
+const TRAIL_PURCHASE = `
+     SELECT 'po', po.id::text, po.po_number, po.status::text, po.on_hold, po.expected_at::text, NULL, po.received_at::text, s.name
+       FROM scm.purchase_orders po JOIN pos ON pos.id = po.id LEFT JOIN scm.suppliers s ON s.id = po.supplier_id
+     UNION ALL
+     SELECT DISTINCT 'production', o.id::text, o.po_number, o.status::text, o.on_hold, o.expected_at::text, o.actual_start_at::text, o.received_at::text, NULL
+       FROM scm.production_orders o JOIN scm.production_order_items i ON i.production_order_id = o.id JOIN items ON items.id = i.so_item_id
+     UNION ALL
+     SELECT 'gr', g.id::text, g.grn_number, g.status::text, g.on_hold, NULL, NULL, g.received_at::text, NULL
+       FROM scm.grns g JOIN pos ON pos.id = g.purchase_order_id`;
+const TRAIL_DO = `
+     SELECT 'do', d.id::text, d.do_number, d.status::text, d.on_hold, coalesce(d.customer_delivery_date, d.do_date)::text, NULL, d.delivered_at::text, NULL
+       FROM scm.delivery_orders d JOIN sos ON sos.doc_no = d.so_doc_no`;
+export const trailSql = (hidden: boolean): string =>
+  `${ROOTS}${(hidden ? [TRAIL_SO, TRAIL_DO] : [TRAIL_SO, TRAIL_PURCHASE, TRAIL_DO]).join('\n     UNION ALL')}`;
+
+/** A line's stock word stays; the incoming PO's number and arrival date go. */
+export function withoutIncomingPo(lines: Record<string, LineStatus>): Record<string, LineStatus> {
+  const out: Record<string, LineStatus> = {};
+  for (const [id, l] of Object.entries(lines)) out[id] = { ...l, incomingPo: null, eta: null };
+  return out;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 renovationDocTrail.get('/lines', async (c) => {
@@ -87,28 +142,15 @@ renovationDocTrail.get('/lines', async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const ids = [...new Set((c.req.query('ids') ?? '').split(',').map((s) => s.trim()).filter((s) => UUID.test(s)))].slice(0, 400);
   if (ids.length === 0) return c.json({ lines: {} });
-  const { results } = await (c.env.DB as unknown as Db).prepare(
-    `WITH ids AS (SELECT unnest(string_to_array(?::text, ',')) AS id)
-     SELECT i.so_item_id::text AS line, 'po' AS kind, po.id::text AS id, po.po_number AS no, po.status::text AS status, po.on_hold, po.expected_at::text AS expected, NULL::text AS started, po.received_at::text AS done, s.name AS who
-       FROM scm.purchase_order_items i JOIN ids ON ids.id = i.so_item_id::text JOIN scm.purchase_orders po ON po.id = i.purchase_order_id AND po.company_id = ?
-       LEFT JOIN scm.suppliers s ON s.id = po.supplier_id
-     UNION
-     SELECT i.so_item_id::text, 'production', o.id::text, o.po_number, o.status::text, o.on_hold, o.expected_at::text, o.actual_start_at::text, o.received_at::text, NULL
-       FROM scm.production_order_items i JOIN ids ON ids.id = i.so_item_id::text JOIN scm.production_orders o ON o.id = i.production_order_id AND o.company_id = ?
-     UNION
-     SELECT pi.so_item_id::text, 'gr', g.id::text, g.grn_number, g.status::text, g.on_hold, NULL, NULL, g.received_at::text, NULL
-       FROM scm.grn_items gi JOIN scm.purchase_order_items pi ON pi.id = gi.purchase_order_item_id JOIN ids ON ids.id = pi.so_item_id::text
-       JOIN scm.grns g ON g.id = gi.grn_id JOIN scm.purchase_orders po ON po.id = g.purchase_order_id AND po.company_id = ?
-     UNION
-     SELECT di.so_item_id::text, 'do', d.id::text, d.do_number, d.status::text, d.on_hold, coalesce(d.customer_delivery_date, d.do_date)::text, NULL, d.delivered_at::text, NULL
-       FROM scm.delivery_order_items di JOIN ids ON ids.id = di.so_item_id::text JOIN scm.delivery_orders d ON d.id = di.delivery_order_id
-       JOIN scm.mfg_sales_orders so ON so.doc_no = d.so_doc_no AND so.company_id = ?`,
-  ).bind(ids.join(','), co.companyId, co.companyId, co.companyId, co.companyId).all<LineRow>();
+  const hidden = procurementHidden(c);
+  const q = linesQuery(ids, co.companyId, hidden);
+  const { results } = await (c.env.DB as unknown as Db).prepare(q.sql).bind(...q.binds).all<LineRow>();
   // Stock is best effort: when the stock count fails the documents still show.
   /* The picker asks in pages; the whole-company stock count is the same for each page, so it is worked out once and
      reused for a few seconds (as the list screens do) instead of once per page. */
   const cov = await withListMemo(`doc-trail-lines:${co.companyId}`, () => soCoverage(c, c.get('supabase')));
-  return c.json({ lines: lineStatuses(ids, results ?? [], cov.coverage as ReadonlyMap<string, { source?: string | null; po?: string | null; eta?: string | null }>) });
+  const lines = lineStatuses(ids, results ?? [], cov.coverage as ReadonlyMap<string, { source?: string | null; po?: string | null; eta?: string | null }>);
+  return c.json({ lines: hidden ? withoutIncomingPo(lines) : lines });
 });
 
 renovationDocTrail.get('/', async (c) => {
@@ -117,21 +159,9 @@ renovationDocTrail.get('/', async (c) => {
   const kind = c.req.query('kind') ?? '';
   const id = c.req.query('id') ?? '';
   if (!(ORDER as readonly string[]).includes(kind) || !id) return c.json({ error: 'validation', message: 'Say which document.' }, 400);
-  const { results } = await (c.env.DB as unknown as Db).prepare(
-    `${ROOTS}
-     SELECT 'so' AS kind, doc_no AS id, doc_no AS no, status, on_hold, NULL::text AS expected, so_date::text AS started, NULL::text AS done, NULL::text AS who FROM sos
-     UNION ALL
-     SELECT 'po', po.id::text, po.po_number, po.status::text, po.on_hold, po.expected_at::text, NULL, po.received_at::text, s.name
-       FROM scm.purchase_orders po JOIN pos ON pos.id = po.id LEFT JOIN scm.suppliers s ON s.id = po.supplier_id
-     UNION ALL
-     SELECT DISTINCT 'production', o.id::text, o.po_number, o.status::text, o.on_hold, o.expected_at::text, o.actual_start_at::text, o.received_at::text, NULL
-       FROM scm.production_orders o JOIN scm.production_order_items i ON i.production_order_id = o.id JOIN items ON items.id = i.so_item_id
-     UNION ALL
-     SELECT 'gr', g.id::text, g.grn_number, g.status::text, g.on_hold, NULL, NULL, g.received_at::text, NULL
-       FROM scm.grns g JOIN pos ON pos.id = g.purchase_order_id
-     UNION ALL
-     SELECT 'do', d.id::text, d.do_number, d.status::text, d.on_hold, coalesce(d.customer_delivery_date, d.do_date)::text, NULL, d.delivered_at::text, NULL
-       FROM scm.delivery_orders d JOIN sos ON sos.doc_no = d.so_doc_no`,
-  ).bind(kind, id, co.companyId).all<TrailRow>();
+  const hidden = procurementHidden(c);
+  if (hidden && PURCHASE_KINDS.includes(kind as TrailKind)) return c.json({ error: 'forbidden', message: PROCUREMENT_HIDDEN_MESSAGE }, 403);
+  const { results } = await (c.env.DB as unknown as Db).prepare(trailSql(hidden))
+    .bind(kind, id, co.companyId).all<TrailRow>();
   return c.json({ steps: trailOf(results ?? []) });
 });

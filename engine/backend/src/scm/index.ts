@@ -141,6 +141,7 @@ import { quotes } from "./routes/quotes";
 import { hr } from "./routes/hr";
 
 import { scmAreaGuard } from "./middleware/area-guard";
+import { procurementFlag, requireProcurementVisible } from "./middleware/procurement-flag";
 import { hasPositionCapability } from "../services/positionCapabilities";
 import { scmWriteFreeze } from "./lib/write-freeze";
 import { venturePortalKick } from "./lib/venture-portal-kick";
@@ -173,6 +174,10 @@ scm.use('/*', scmWriteFreeze());
    are the zero-loss guarantee and this is only the accelerator. Cost of an idle
    kick, and what it cannot see: lib/venture-portal-kick.ts. */
 scm.use('/*', venturePortalKick());
+
+/* Whether the real caller may see purchase documents, read before any router's auth bridge replaces `user`
+   (owner 27 Nov 2026: salespeople never see PO, GR, production orders or purchase invoices). */
+scm.use('/*', procurementFlag);
 
 /* Read-only view of that value for the operator making the go/no-go call —
    GET, so the freeze never blocks it, and no area guard because it is not an
@@ -813,6 +818,7 @@ scm.route("/document-flow", documentFlow);
 // class as document-flow (which already reveals the SO a purchase doc descends
 // from) and the MRP page; the finance-leak rule at line 112 was specifically
 // about cost + margin, which this endpoint never returns (see line 119).
+scm.use("/po-so-coverage/*", requireProcurementVisible);
 scm.route("/po-so-coverage", poSoCoverage);
 scm.use("/drivers/*", scmAreaGuard("scm.transportation.drivers"));
 scm.route("/drivers", drivers);

@@ -30,6 +30,7 @@ import { ContractProjectCard } from './ContractProjectCard';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
+import { useSeesProcurement } from '../../lib/procurementVisible';
 
 function lineQty(l: DocLine): string {
   const m = l.measureMilli ?? null;
@@ -248,7 +249,8 @@ export function RenovationSalesOrder() {
 /** Plan item 23: the PO lines to fix, at the top of the sales order's page. It opens the section further down
     (ContractSections); nothing here writes. The page's own status is the one status shown (owner, 7 Nov 2026). */
 export function ContractQuickLinks({ docNo }: { docNo: string }) {
-  const flags = usePoFlags(docNo);
+  // Salespeople never see purchase orders (owner, 27 Nov 2026), so the PO flags are not even asked for.
+  const flags = usePoFlags(useSeesProcurement() ? docNo : undefined);
   const open = flags.data?.flags.filter((f) => f.status === 'OPEN').length ?? 0;
   const jump = (id: string) => () => document.getElementById(id)?.scrollIntoView({ block: 'start' });
   const link = 'inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-0.5 text-[12px] font-semibold text-primary hover:bg-primary-soft';
@@ -260,7 +262,7 @@ export function ContractQuickLinks({ docNo }: { docNo: string }) {
     project, the order's lines, its payments and its files; here come only the action row and what is the contract's. */
 export function ContractSections({ docNo, embedded = false }: { docNo: string | undefined; embedded?: boolean }) {
   const c = useContract(docNo);
-  const flags = usePoFlags(docNo);
+  const flags = usePoFlags(useSeesProcurement() ? docNo : undefined);
   const brands = useBrands();
   const navigate = useNavigate();
   const { can } = useAuth();

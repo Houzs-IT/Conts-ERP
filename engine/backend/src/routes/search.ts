@@ -12,6 +12,7 @@ import {
 import { assrCompanySql } from "./assr";
 import { SO_REF_MATCH_CAP, inArm, poIdsForSoDocNos, soDocNosByRef } from "../scm/lib/so-ref-search";
 import { initialsLikes } from "../services/projects";
+import { seesProcurement } from "../lib/procurement-visible";
 
 /** Each word on its own, in any field, as the project list searches ("mle sccc"). */
 function projectWordSearch(q: string): { sql: string; binds: string[] } {
@@ -275,7 +276,8 @@ export async function runGlobalSearch(
   // Guarded: any failure here degrades to the public hits above, and names the
   // source it could not read in `degraded`.
   const projectIds = await projectIdsByName(env, raw, projectCoSql);
-  await appendScmHits(c, env, raw, hits, degraded, projectIds);
+  // `user` is still the real caller here; salespeople never see purchase documents (owner, 27 Nov 2026).
+  await appendScmHits(c, env, raw, hits, degraded, projectIds, seesProcurement(c.get("user")));
 
   return { hits, degraded };
 }
@@ -343,6 +345,7 @@ async function appendScmHits(
   hits: Hit[],
   degraded: HitType[],
   projectIds: readonly string[] = [],
+  showPurchase = true,
 ): Promise<void> {
   if (!isSupabaseConfigured(env)) return;
   const wildcard = searchPattern(raw, true);
@@ -354,7 +357,7 @@ async function appendScmHits(
   } catch (e) {
     // Configured but unbuildable: every SCM source is unreadable, not empty.
     console.warn("[search] SCM client unavailable:", (e as Error)?.message ?? e);
-    degraded.push(...SCM_SOURCE_TYPES);
+    degraded.push(...SCM_SOURCE_TYPES.filter((t) => showPurchase || !PURCHASE_SOURCE_TYPES.has(t)));
     return;
   }
 
@@ -371,7 +374,7 @@ async function appendScmHits(
         soDocNosByProject(sb, c, projectIds),
       ]);
       soRefDocNos = [...new Set([...byRef, ...byProject])];
-      soRefPoIds = await poIdsForSoDocNos(sb, soRefDocNos);
+      if (showPurchase) soRefPoIds = await poIdsForSoDocNos(sb, soRefDocNos);
     } catch (e) {
       console.warn("[search] SO reference lookup failed:", e instanceof Error ? e.message : e);
     }
@@ -442,21 +445,27 @@ async function appendScmHits(
     scopeToCompany(prodQuery, c)
       .order("code", { ascending: true })
       .limit(PER_SOURCE_LIMIT),
-    scopeToCompany(poQuery, c)
-      .order("po_date", { ascending: false })
-      .limit(PER_SOURCE_LIMIT),
-    scopeToCompany(grnQuery, c)
-      .order("received_at", { ascending: false })
-      .limit(PER_SOURCE_LIMIT),
+    showPurchase
+      ? scopeToCompany(poQuery, c)
+        .order("po_date", { ascending: false })
+        .limit(PER_SOURCE_LIMIT)
+      : NOT_ASKED,
+    showPurchase
+      ? scopeToCompany(grnQuery, c)
+        .order("received_at", { ascending: false })
+        .limit(PER_SOURCE_LIMIT)
+      : NOT_ASKED,
     scopeToCompany(doQuery, c)
       .order("do_date", { ascending: false })
       .limit(PER_SOURCE_LIMIT),
     scopeToCompany(siQuery, c)
       .order("invoice_date", { ascending: false })
       .limit(PER_SOURCE_LIMIT),
-    scopeToCompany(piQuery, c)
-      .order("invoice_date", { ascending: false })
-      .limit(PER_SOURCE_LIMIT),
+    showPurchase
+      ? scopeToCompany(piQuery, c)
+        .order("invoice_date", { ascending: false })
+        .limit(PER_SOURCE_LIMIT)
+      : NOT_ASKED,
   ]);
 
   for (const r of sourceRows(soRes, "sales_order", degraded)) {
@@ -603,6 +612,10 @@ const SCM_SOURCE_TYPES = [
   "sales_invoice",
   "purchase_invoice",
 ] as const satisfies readonly HitType[];
+
+// The purchase sources a caller who must not see procurement never queries; they are left out, not degraded.
+const PURCHASE_SOURCE_TYPES: ReadonlySet<HitType> = new Set<HitType>(["purchase_order", "grn", "purchase_invoice"]);
+const NOT_ASKED = Promise.resolve({ data: [] as unknown[], error: null });
 
 /**
  * Rows from one settled source, or [] with the source recorded as degraded.

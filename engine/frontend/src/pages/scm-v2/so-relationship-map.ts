@@ -149,12 +149,13 @@ export function useSoRelationshipMap(salesOrder: SoRelationshipHeader | null): {
   /* GRN sits behind the procurement guard — App.tsx mounts /scm/grns/:id as
      <ScmGuard area="scm.procurement.grn"> with NO allowSales — so mirror that
      route gate here rather than handing a salesperson a node that navigates
-     straight into <Forbidden>. Same OR-shape as the Guard itself. */
-  const canOpenGrn = can('scm.access') || pageAccess('scm.procurement.grn') !== 'none';
+     straight into <Forbidden>. scm.access alone is not enough: every salesperson holds it, and they must not open
+     purchase documents (owner, 27 Nov 2026). */
+  const canOpenGrn = can('*') || pageAccess('scm.procurement.grn') !== 'none';
   // Same gate shape for the PO / PI nodes (/scm/purchase-orders/:id and
   // /scm/purchase-invoices/:id guard on their own areas, no allowSales).
-  const canOpenPo = can('scm.access') || pageAccess('scm.procurement.po') !== 'none';
-  const canOpenPi = can('scm.access') || pageAccess('scm.procurement.pi') !== 'none';
+  const canOpenPo = can('*') || pageAccess('scm.procurement.po') !== 'none';
+  const canOpenPi = can('*') || pageAccess('scm.procurement.pi') !== 'none';
 
   const poRef = customerRefOf(salesOrder);
 
