@@ -2,6 +2,7 @@
 // password of the API's database role (pos_app).
 //
 //   node scripts/migrate-pg.mjs --dry-run                    show the target and what is pending (.dev.vars)
+//   node scripts/migrate-pg.mjs --check                      the same, and exit 1 if anything is pending (deploy gate)
 //   node scripts/migrate-pg.mjs --env-file=.dev.vars.production --dry-run
 //   node scripts/migrate-pg.mjs --only=0049,0050              apply only those files, leave the rest pending
 //   node scripts/migrate-pg.mjs --env-file=.dev.vars.production   apply
@@ -18,7 +19,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import postgres from 'postgres';
 
-const DRY = process.argv.includes('--dry-run');
+const CHECK = process.argv.includes('--check');
+const DRY = CHECK || process.argv.includes('--dry-run');
 // --prompt asks for the connection string on this terminal (typed or pasted, nothing is shown) instead of reading
 // a vars file, so whoever holds the password can run a migration without it touching disk or shell history.
 // Before anything is applied it prints the target project and asks for that project ref to be typed back.
@@ -93,9 +95,13 @@ try {
   console.error(`DATABASE_URL is not a valid connection string (from ${envFile}). Nothing was applied.`);
   process.exit(1);
 }
-await sql`create table if not exists public.pos_migrations (filename text primary key, checksum text not null, applied_at timestamptz not null default now())`;
-await sql`alter table public.pos_migrations enable row level security`;
-const applied = new Map((await sql`select filename, checksum from public.pos_migrations`).map((r) => [r.filename, r.checksum]));
+// A dry run writes nothing: the engine deploy runs --check against production on every merge.
+if (!DRY) {
+  await sql`create table if not exists public.pos_migrations (filename text primary key, checksum text not null, applied_at timestamptz not null default now())`;
+  await sql`alter table public.pos_migrations enable row level security`;
+}
+const tracked = DRY ? (await sql`select to_regclass('public.pos_migrations') is not null as ok`)[0].ok : true;
+const applied = new Map(tracked ? (await sql`select filename, checksum from public.pos_migrations`).map((r) => [r.filename, r.checksum]) : []);
 
 const DEMO_BEFORE = "do $$ begin if to_regproc('demo.drop_views') is not null then perform demo.drop_views(); end if; end $$";
 const DEMO_AFTER = "do $$ begin if to_regproc('demo.sync') is not null then perform demo.sync(); end if; end $$";
@@ -127,3 +133,4 @@ if (!DRY && enginePw && (await sql`select 1 from pg_roles where rolname = 'scm_e
 }
 console.log(pending === 0 ? 'Nothing to apply; the database is up to date.' : DRY ? `${pending} pending.` : `Applied ${pending}.`);
 await sql.end();
+if (CHECK && pending) { console.error(`${pending} migration${pending === 1 ? ' is' : 's are'} not applied to ${target}. Apply them first (migrate-production.yml).`); process.exit(1); }

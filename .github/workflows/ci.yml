@@ -71,6 +71,16 @@ jobs:
         run: node scripts/ci-api-db.mjs
         env:
           CI_DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      # The engine deploy gate: passes on a migrated database, fails once a file is pending.
+      - name: Migration gate (migrate-pg --check)
+        run: |
+          node scripts/migrate-pg.mjs --check
+          touch migrations-pg/9999_ci_pending.sql
+          if node scripts/migrate-pg.mjs --check > check.log; then echo "::error::--check passed with a pending migration"; exit 1; fi
+          grep -q 'pending: 9999_ci_pending.sql' check.log || { cat check.log; echo "::error::--check failed for another reason"; exit 1; }
+          rm migrations-pg/9999_ci_pending.sql
+        env:
+          DATABASE_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Build
         run: npx vite build
       - name: Start the API
