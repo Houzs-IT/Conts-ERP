@@ -17,7 +17,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import postgres from 'postgres';
+import postgres, { type Sql } from 'postgres';
 import { renoDbOf, type RenoDb, type UnsafeRunner } from '../src/scm/lib/renovation-db';
 import { createQuotation, lockQuotation, setQuotationStatus, type RenoActor } from '../src/scm/lib/renovation-quotation';
 import { convertQuotationToSo, liveContractOfProject, revisedContractSen } from '../src/scm/lib/renovation-so';
@@ -25,6 +25,8 @@ import { applyVo, createVo, saveVo } from '../src/scm/lib/renovation-vo';
 import { readSections } from '../src/scm/lib/renovation-doc-lines';
 import { normaliseSections, type NormSection } from '../src/scm/lib/renovation-validate';
 import { lineAmounts } from '../src/scm/shared/renovation-money';
+import { createRenovationProject } from '../src/services/renovation/create';
+import { d1Compat } from '../src/db/d1-compat';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const arg = (n: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3);
@@ -38,7 +40,8 @@ const PACKAGE = 'Package price (the quotation prices the whole unit)';
 interface DataLine { kind: 'ITEM' | 'TEXT'; itemCode?: string; description: string; qty?: number; unitPriceSen?: number; discountBp?: number; netSen?: number }
 interface DataSection { heading: string; lumpSumSen?: number; lines: DataLine[] }
 interface DataVersion { file: string; docDate: string | null; lastAmended: string | null; preparedBy: string; to: string; payableSen: number; linesSen: number; sections: DataSection[] }
-interface DataProject { project: string; projectId: number | null; versions: DataVersion[] }
+interface NewProject { building: string; unitNo: string; customerName: string }
+interface DataProject { project: string; projectId: number | null; newProject?: NewProject | null; versions: DataVersion[] }
 
 const data = JSON.parse(readFileSync(arg('data') ?? join(root, 'docs/so-import/jinni-quotes-2026-11-27.json'), 'utf8')) as { projects: DataProject[] };
 
@@ -113,6 +116,30 @@ function pair(live: Live[], target: Array<{ heading: string; line: DataLine }>) 
   }
   unmatched.push(...todo);
   return { omit: live.filter((l) => left.has(l.id)), add: unmatched };
+}
+
+/* A unit with no project yet gets one through the screens' own create, with the fields the other ASTRUM projects carry
+   (Airbnb package, The Conts, in-house renovation, customer funded). Keyed on source_ref, so a re-run finds it. */
+const ASTRUM_ADDRESS = 'ASTRUM AMPANG, Astrum Ampang, Jalan Jelatek, Taman Keramat, 54200, Ampang Jaya, Selangor, Malaysia';
+async function ensureProject(db: RenoDb, tx: Sql, p: DataProject, companyId: number, typeId: number): Promise<{ id: number; code: string; created: boolean }> {
+  const np = p.newProject!;
+  const sourceRef = `jinni-quotes:${p.project}`;
+  const [have] = await db.q<{ id: string; code: string }>(
+    `select id::text as id, code from public.projects where company_id = $1 and (source_ref = $2 or (upper(building) = upper($3) and upper(unit_no) = upper($4)))`,
+    [companyId, sourceRef, np.building, np.unitNo]);
+  if (have) return { id: Number(have.id), code: have.code, created: false };
+  const name = `${np.building} ${np.unitNo}`;
+  const made = await createRenovationProject(d1Compat(() => tx) as never, {
+    name, projectTypeId: typeId, customerKind: 'customer', customerName: np.customerName, building: np.building, unitNo: np.unitNo,
+  }, null as never, companyId);
+  if (!made) throw new Error(`project type ${typeId} not found: ${p.project}`);
+  await db.q(
+    `update public.projects set brand = 'The Conts', finance_kind = 'INHOUSE_RENOVATION', property_type = 'Condo', funding = 'customer',
+            status = 'pending', address1 = $2, country = 'Malaysia', start_date = $3::date, source = 'import', source_ref = $4
+      where id = $1`,
+    [made.id, ASTRUM_ADDRESS, TODAY, sourceRef],
+  );
+  return { ...made, created: true };
 }
 
 async function createSo(db: RenoDb, actor: RenoActor, p: DataProject) {
@@ -237,15 +264,24 @@ try {
   const missing = codes.filter((c) => !known.has(c));
   console.log(`${codes.length} SKU codes used, ${missing.length} missing${missing.length ? `: ${missing.join(', ')}` : ''}`);
   if (missing.length) throw new Error('Open the missing SKUs first; nothing was written.');
-  const lost = data.projects.filter((p) => p.projectId == null).map((p) => p.project);
+  const lost = data.projects.filter((p) => p.projectId == null && !p.newProject).map((p) => p.project);
   if (lost.length) throw new Error(`No project for: ${lost.join(', ')}. Nothing was written.`);
-  let changed = 0, created = 0, same = 0, failed = 0;
+  const [ptype] = await sql`select id from public.project_types where company_id = ${actor.companyId} and name = 'Airbnb package' and active`;
+  if (!ptype) throw new Error('No active "Airbnb package" project type. Nothing was written.');
+  let changed = 0, created = 0, same = 0, failed = 0, projects = 0;
   for (const p of data.projects) {
     if (ONLY && p.project !== ONLY) continue;
     const last = p.versions[p.versions.length - 1];
     try {
       await sql.begin(async (tx) => {
         const db = renoDbOf(tx as unknown as UnsafeRunner);
+        if (p.newProject) {
+          const pr = await ensureProject(db, tx as unknown as Sql, p, actor.companyId, Number(ptype.id));
+          p.projectId = pr.id;
+          console.log(`${pr.created ? 'proj ' : 'had  '} ${p.project}: ${pr.code}${pr.created ? ' opened' : ' already there'}`);
+          if (pr.created) projects++;
+        }
+        if (!last) { if (DRY) throw new Rollback(); return; }
         const existing = await liveContractOfProject(db, p.projectId!);
         if (!existing) {
           const r = await createSo(db, actor, p);
@@ -270,7 +306,7 @@ try {
       console.log(`FAIL  ${p.project}: ${(e as Error).message}`);
     }
   }
-  console.log(`${changed} SO changed by a VO, ${created} SO created, ${same} already matching, ${failed} failed${DRY ? ' (dry run: nothing written)' : ''}.`);
+  console.log(`${projects} project(s) opened, ${changed} SO changed by a VO, ${created} SO created, ${same} already matching, ${failed} failed${DRY ? ' (dry run: nothing written)' : ''}.`);
   if (failed) process.exitCode = 1;
 } finally {
   await sql.end();

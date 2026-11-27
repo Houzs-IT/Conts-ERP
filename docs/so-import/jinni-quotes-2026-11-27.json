@@ -3074,6 +3074,7 @@
   {
    "project": "ASTRUM R-13-03",
    "projectId": 315,
+   "newProject": null,
    "versions": [
     {
      "file": "ASTRUM_R-13-03.pdf (Google sheet JINNI UNIT PROGRESS)",
@@ -3408,6 +3409,7 @@
   {
    "project": "ASTRUM R-16-22",
    "projectId": 316,
+   "newProject": null,
    "versions": [
     {
      "file": "ASTRUM_R-16-22.pdf (Google sheet JINNI UNIT PROGRESS)",
@@ -3742,6 +3744,7 @@
   {
    "project": "ASTRUM R-21-18",
    "projectId": 317,
+   "newProject": null,
    "versions": [
     {
      "file": "ASTRUM_R-21-18.pdf (Google sheet JINNI UNIT PROGRESS)",
@@ -4076,6 +4079,7 @@
   {
    "project": "ASTRUM R-54-16",
    "projectId": 325,
+   "newProject": null,
    "versions": [
     {
      "file": "ASTRUM_R-54-16.pdf (Google sheet JINNI UNIT PROGRESS)",
@@ -4410,6 +4414,7 @@
   {
    "project": "ASTRUM S-25-20",
    "projectId": 327,
+   "newProject": null,
    "versions": [
     {
      "file": "ASTRUM_S-25-20.pdf (Google sheet JINNI UNIT PROGRESS)",
@@ -4740,6 +4745,347 @@
      ]
     }
    ]
+  },
+  {
+   "project": "ASTRUM A-24-31",
+   "projectId": null,
+   "newProject": {
+    "building": "ASTRUM",
+    "unitNo": "A-24-31",
+    "customerName": "SUN WENG FONG"
+   },
+   "versions": [
+    {
+     "file": "ASTRUM_A-24-31.pdf (Google sheet JINNI UNIT PROGRESS)",
+     "docDate": null,
+     "lastAmended": null,
+     "preparedBy": "WILLIAM",
+     "to": "SUN WENG FONG",
+     "payableSen": 2350000,
+     "linesSen": 0,
+     "sections": [
+      {
+       "heading": "LIVING",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "SOF-GEN-PREMIUM-2.5S",
+         "description": "SOFA 2.5 SEATER PC151-01",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "BEDROOM SET",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "BED-HKA-1013-(Q)",
+         "description": "BEDFRAME JAGER QUEEN PC151-01",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "AKEMI GALLENT MATT (Q)",
+         "description": "AKEMI HOTEL MATTRESS QUEEN GALLENT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-151041",
+         "description": "MUJI SIDE TABLE 151041",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-353014",
+         "description": "SOFT CLOSE WARDROBE 353014",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-124057",
+         "description": "WORKING TABLE 124057",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-241717",
+         "description": "WORKING CHAIR 241717",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "DINING",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-144044",
+         "description": "DINING TABLE 144044",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FUR-HLM-241507",
+         "description": "DINING CHAIR 241507",
+         "qty": 4,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "CURTAIN",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "CUR-GEN-SINGLE",
+         "description": "BLACKOUT CURTAIN ONE LAYER MVP-01",
+         "qty": 20,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "OTHERS",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "MIR-GEN-ROUND600",
+         "description": "TOILET MIRROR 600MM",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "HTR-GEN-HEATER",
+         "description": "WATER HEATER",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "DLT-GEN-SURF8-CW",
+         "description": "SURFACE DOWNLIGHT 8 INCH",
+         "qty": 5,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "FAN-GEN-CEILING",
+         "description": "FAN WITH LIGHT 42 INCH",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "SIG-0013",
+         "description": "DOOR BELL",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROTECTION",
+         "description": "FLOORING PROTECTION CANVAS",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "AIRCOND",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "ACU-HIS-1HP",
+         "description": "AIRCOND1.0 HP LIVING",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-AIRCON_INSTALL",
+         "description": "COPPER CASING FULL UNIT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "SERVICES",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PAINTING",
+         "description": "PAINITNG 1 COLOUR",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-DELIVERY",
+         "description": "DELIVERY DOOR TO DOOR",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-CLEANING",
+         "description": "POST RENO",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-CLEANING",
+         "description": "DEEP CLEAN +SET UP",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-INSTALLATION",
+         "description": "INSTALLATION",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-PROJECT_MGMT",
+         "description": "PROJECT SUPERVISE",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "KITCHEN CABINET",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "KITCHEN WALL UNIT - 700 X 300MM COLOUR CODE",
+         "qty": 7,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "KITCHEN BASE UNIT - 860(H) X 600MM (W) COLOUR CODE",
+         "qty": 7,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-COUNTERTOP",
+         "description": "KITCHEN TOP - QUARTZ STONE CODE",
+         "qty": 7,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "FORM BOARD - 3FT",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-SOFTCLOSEDRAWER",
+         "description": "SOFT CLOSE DRAWER - 3PCS",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "NANO SINK - STAINLESS STEEL",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "RN-KITCHEN_CABINET",
+         "description": "SMOKE HOOD WITH INTALLATION",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      },
+      {
+       "heading": "ELECTRICAL ITEM",
+       "lines": [
+        {
+         "kind": "ITEM",
+         "itemCode": "FRG-GEN-280L",
+         "description": "REFRIGERATOR 280L",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        },
+        {
+         "kind": "ITEM",
+         "itemCode": "WSH-MID-2IN1",
+         "description": "WASHING MACHINE 8.5K/6KGG WITH DRYER 2 IN 1",
+         "qty": 1,
+         "unitPriceSen": 0,
+         "netSen": 0
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "project": "ASTRUM S-24-29",
+   "projectId": null,
+   "newProject": {
+    "building": "ASTRUM",
+    "unitNo": "S-24-29",
+    "customerName": "SUWARNARAJ CHINNIAH"
+   },
+   "versions": []
   }
  ]
 }

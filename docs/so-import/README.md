@@ -133,4 +133,8 @@ column Quotation, 18 PDFs on Drive) are the truth for her SOs. The CODE/COLOUR o
   where it prints one (A-11-05, C-31-01, C-51-06: RM 35,990), else the SO's own total, unchanged.
 - ASTRUM, 5 new SOs (R-13-03, R-16-22, R-21-18, R-54-16, S-25-20): lines without prices plus one package line,
   RM 21,499 each (RM 14,999 + Airbnb RM 5,000 + electrical RM 1,500). The optional "extend kitchen top RM 100" is left out.
-- Not done, waiting on the owner: ASTRUM R-29-27, R-52-29, A-17-20 print no total; ASTRUM A-24-31 has no project.
+- ASTRUM A-24-31 (no project before): project opened (customer SUN WENG FONG, from the quotation) and its SO at the printed
+  RM 23,500. ASTRUM S-24-29 (on the sheet, no project, no quotation): project only, customer SUWARNARAJ CHINNIAH (the
+  rental side's owner of that unit).
+- Not done, waiting on the owner: ASTRUM R-29-27, R-52-29, A-17-20 print no total; ASTRUM R-19-23 has no project and no
+  owner on record.
