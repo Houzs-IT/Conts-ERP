@@ -34,6 +34,9 @@ export interface OutstandingSoPageQuery {
   supplier: string | null;
   location: string | null;
   docNo: string | null;
+  projectIds: number[];
+  noProject: boolean;
+  debtor: string | null;
   colFilters: Partial<Record<PickerFacetCol, string[]>>;
   sort: PickerSort | null;
 }
@@ -44,7 +47,7 @@ export interface PickerLine {
   qty: number; poQtyPicked: number;
   soDate: string | null; processingDate: string | null; deliveryDate: string | null;
   debtorName: string | null; ref: string | null; customerSoNo: string | null;
-  projectCode: string | null; projectName: string | null;
+  projectId: number | null; projectCode: string | null; projectName: string | null;
   mainSupplierCode: string | null; mainSupplierName: string | null;
 }
 
@@ -116,6 +119,8 @@ export function parseOutstandingSoPageQuery(query: Record<string, string | undef
   const dateField: DateFieldKey = query.dateField === 'processing' || query.dateField === 'delivery' ? query.dateField : 'soDate';
   const date = (v: string | undefined): string | null => (v && ISO_DATE.test(v) ? v : null);
   const text = (v: string | undefined): string | null => (v && v.trim() ? v.trim() : null);
+  const projectIds = (query.projectIds ?? '').split(',').filter(Boolean).map(Number);
+  if (projectIds.some((id) => !Number.isInteger(id) || id <= 0)) return { ok: false, reason: 'projectIds is not a list of project ids' };
   return {
     ok: true,
     page: {
@@ -123,6 +128,7 @@ export function parseOutstandingSoPageQuery(query: Record<string, string | undef
       category: query.category && query.category !== 'all' ? query.category : null,
       dateField, dateFrom: date(query.dateFrom), dateTo: date(query.dateTo),
       supplier: text(query.supplier), location: text(query.location), docNo: text(query.docNo),
+      projectIds, noProject: query.noProject === '1', debtor: query.debtor || null,
       colFilters, sort: parseSort(query.sort),
     },
   };
@@ -262,6 +268,8 @@ export function groupHeading(l: PickerLine): string {
 export interface PickerGroup {
   project: string;
   customer: string;
+  projectIds: number[];
+  noProject: boolean;
   heading: string;
   matching: number;
   total: number;
@@ -284,7 +292,9 @@ export function buildPickerGroups(lines: readonly PickerLine[], page: Outstandin
     const customer = facetValue(l, 'debtorName');
     const key = JSON.stringify([project, customer]);
     let g = byKey.get(key);
-    if (!g) { g = { project, customer, heading: groupHeading(l), matching: 0, total: 0 }; byKey.set(key, g); }
+    if (!g) { g = { project, customer, projectIds: [], noProject: false, heading: groupHeading(l), matching: 0, total: 0 }; byKey.set(key, g); }
+    if (l.projectId == null) g.noProject = true;
+    else if (!g.projectIds.includes(l.projectId)) g.projectIds.push(l.projectId);
     g.total += 1;
     if (passesTopBar(l, page)) g.matching += 1;
     if (l.mainSupplierCode && passesTopBar(l, noSupplier)) {
@@ -339,6 +349,10 @@ export async function readPickerLines(
       .not('so.status', 'in', '(CANCELLED,DRAFT,ON_HOLD)')
       .not('so.on_hold', 'is', true);
     if (page.docNo) q = q.eq('doc_no', page.docNo);
+    // Narrows the read only; the Project and Customer funnels still pick the exact group.
+    if (page.projectIds.length > 0 && !page.noProject) q = q.in('so.project_id', page.projectIds);
+    if (page.noProject && page.projectIds.length === 0) q = q.is('so.project_id', null);
+    if (page.debtor) q = q.eq('so.debtor_name', page.debtor);
     if (page.location) q = q.eq('so.sales_location', page.location);
     if (page.dateField !== 'delivery') {
       const col = page.dateField === 'soDate' ? 'so.so_date' : 'so.processing_date';
@@ -386,6 +400,7 @@ export async function readPickerLines(
       soDate: r.so.so_date, processingDate: r.so.processing_date,
       deliveryDate: r.line_delivery_date ?? r.so.customer_delivery_date,
       debtorName: r.so.debtor_name, ref: r.so.ref, customerSoNo: r.so.customer_so_no,
+      projectId: r.so.project_id == null ? null : Number(r.so.project_id),
       projectCode: project?.code ?? null, projectName: project?.name ?? null,
       mainSupplierCode: supplier?.code ?? null, mainSupplierName: supplier?.name ?? null,
     });

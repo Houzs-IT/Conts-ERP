@@ -941,6 +941,8 @@ export type OutstandingSoItem = {
   projectId?:   number | null;
   projectCode?: string | null;
   projectName?: string | null;
+  /** From the same stock plan that set remainingQty; null when that plan failed. */
+  lineStock?: { stock: 'stock' | 'po' | 'shortage' | null; incomingPo: string | null; eta: string | null } | null;
 };
 
 export function useOutstandingSoItems() {
@@ -968,6 +970,9 @@ export type OutstandingSoPageFilters = {
   /** A sort the server applies over every matching line (PICKER_SORT_COLS); null for the list order. */
   sort?: { key: string; dir: 'asc' | 'desc' } | null;
   supplier?: string;
+  projectIds?: number[];
+  noProject?: boolean;
+  debtor?: string;
 };
 
 export type OutstandingSoPage = {
@@ -993,6 +998,9 @@ function setOutstandingSoFilterParams(p: URLSearchParams, f: Partial<Outstanding
   if (Object.keys(cols).length > 0) p.set('cols', JSON.stringify(cols));
   if (f.sort) p.set('sort', `${f.sort.key}:${f.sort.dir}`);
   if (f.supplier) p.set('supplier', f.supplier);
+  if (f.projectIds?.length) p.set('projectIds', f.projectIds.join(','));
+  if (f.noProject) p.set('noProject', '1');
+  if (f.debtor) p.set('debtor', f.debtor);
 }
 
 export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { docNo?: string }, cursor: string | null, limit = OUTSTANDING_SO_PAGE_SIZE): string {
@@ -1005,7 +1013,13 @@ export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { do
 export type PickerTopFilters = Pick<OutstandingSoPageFilters, 'q' | 'category' | 'dateField' | 'dateFrom' | 'dateTo'> & { supplier: string };
 
 // project and customer are funnel texts: together they read exactly this group's lines.
-export type PickerGroup = { project: string; customer: string; heading: string; matching: number; total: number };
+export type PickerGroup = {
+  project: string; customer: string; projectIds: number[]; noProject: boolean;
+  heading: string; matching: number; total: number;
+};
+
+// Funnel texts for a blank customer, which are not the stored name.
+const BLANK_CUSTOMER_TEXTS = new Set(['(none)', '—']);
 
 export type PickerGroups = {
   groups: PickerGroup[];
@@ -1056,7 +1070,13 @@ export function fetchPickerGroupLines(filters: PickerTopFilters, g: PickerGroup,
 }
 
 async function readPickerGroupLines(filters: PickerTopFilters, g: PickerGroup, signal?: AbortSignal): Promise<OutstandingSoItem[]> {
-  const scoped = { ...filters, cols: { project: [g.project], debtorName: [g.customer] } };
+  const scoped = {
+    ...filters,
+    cols: { project: [g.project], debtorName: [g.customer] },
+    projectIds: g.projectIds,
+    noProject: g.noProject,
+    debtor: BLANK_CUSTOMER_TEXTS.has(g.customer) ? undefined : g.customer,
+  };
   const byId = new Map<string, OutstandingSoItem>();
   let cursor: string | null = null;
   for (let n = 0; n < GROUP_LINES_MAX_PAGES; n++) {

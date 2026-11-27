@@ -15,7 +15,7 @@ const line = (i: number, over: Partial<PickerLine> = {}): PickerLine => ({
   qty: (i % 4) + 1, poQtyPicked: 0,
   soDate: '2026-11-01', processingDate: null, deliveryDate: i % 4 === 0 ? '2026-12-01' : '2026-11-20',
   debtorName: `Customer ${i % 3}`, ref: null, customerSoNo: null,
-  projectCode: `P${i % 6}`, projectName: i % 6 === 5 ? null : `Project ${i % 6}`,
+  projectId: i % 6 === 4 ? null : 100 + (i % 6), projectCode: `P${i % 6}`, projectName: i % 6 === 5 ? null : `Project ${i % 6}`,
   mainSupplierCode: i % 2 === 0 ? 'SUP-A' : null, mainSupplierName: i % 2 === 0 ? 'Supplier A' : null,
   ...over,
 });
@@ -23,7 +23,7 @@ const lines = (n: number): PickerLine[] => Array.from({ length: n }, (_, i) => l
 
 const pageOf = (over: Partial<OutstandingSoPageQuery> = {}): OutstandingSoPageQuery => ({
   groups: false, limit: 10, cursor: null, q: '', category: null, dateField: 'soDate', dateFrom: null, dateTo: null,
-  supplier: null, location: null, docNo: null, colFilters: {}, sort: null, ...over,
+  supplier: null, location: null, docNo: null, projectIds: [], noProject: false, debtor: null, colFilters: {}, sort: null, ...over,
 });
 
 function walk(all: PickerLine[], over: Partial<OutstandingSoPageQuery>) {
@@ -121,6 +121,21 @@ describe('project groups', () => {
     const byCategory = buildPickerGroups(all, pageOf({ category: 'CURTAIN' }));
     expect(byCategory.categories).toEqual([['CURTAIN', 30], ['FURNITURE', 30]]);
     expect(byCategory.suppliers).toEqual([]);
+  });
+
+  test('each group names the project ids and whether lines without a project are in it', () => {
+    const res = buildPickerGroups(lines(60), pageOf());
+    const p0 = res.groups.find((g) => g.heading === 'Project 0 - Customer 0');
+    expect(p0).toMatchObject({ projectIds: [100], noProject: false });
+    const p4 = res.groups.find((g) => g.heading.startsWith('Project 4'));
+    expect(p4).toMatchObject({ projectIds: [], noProject: true });
+  });
+
+  test('project ids, no-project and debtor are read for the database to narrow on', () => {
+    const r = parseOutstandingSoPageQuery({ limit: '200', projectIds: '12,40', noProject: '1', debtor: 'MS NATALIE' });
+    expect(r.ok && r.page).toMatchObject({ projectIds: [12, 40], noProject: true, debtor: 'MS NATALIE' });
+    expect(parseOutstandingSoPageQuery({ limit: '200', projectIds: '12,x' }).ok).toBe(false);
+    expect(parseOutstandingSoPageQuery({ limit: '200' })).toMatchObject({ page: { projectIds: [], noProject: false, debtor: null } });
   });
 
   test('groups=1 asks for groups without a limit; no limit and no groups is still the whole list', () => {
@@ -235,7 +250,8 @@ describe('readPickerLines', () => {
       not(col: string, op: string, v: unknown) { log.push(`${this.table}.not ${col} ${op} ${String(v)}`); return this; }
       gte(col: string) { log.push(`${this.table}.gte ${col}`); return this; }
       lte(col: string) { log.push(`${this.table}.lte ${col}`); return this; }
-      in() { return this; }
+      in(col: string, v: unknown[]) { log.push(`${this.table}.in ${col} ${v.join(',')}`); return this; }
+      is(col: string, v: unknown) { log.push(`${this.table}.is ${col} ${String(v)}`); return this; }
       filter() { return this; }
       order() { return this; }
       range() { return this; }
@@ -263,6 +279,20 @@ describe('readPickerLines', () => {
     expect(log).toContain('mfg_sales_order_items.not so.status in (CANCELLED,DRAFT,ON_HOLD)');
     expect(log).toContain('mfg_sales_order_items.not so.on_hold is true');
     expect(log).toContain('mfg_sales_order_items.gte so.so_date');
+  });
+
+  test("an opened project's ids, or no project and its customer, narrow the database read", async () => {
+    const read = async (over: Partial<OutstandingSoPageQuery>) => {
+      const log: string[] = [];
+      await readPickerLines(fakeSb({}, log), (q) => q, 1, pageOf(over));
+      return log.filter((l) => l.startsWith('mfg_sales_order_items.'));
+    };
+    expect(await read({ projectIds: [12, 40] })).toContain('mfg_sales_order_items.in so.project_id 12,40');
+    const noProject = await read({ noProject: true, debtor: 'Walk-in' });
+    expect(noProject).toContain('mfg_sales_order_items.is so.project_id null');
+    expect(noProject).toContain('mfg_sales_order_items.eq so.debtor_name');
+    const both = await read({ projectIds: [12], noProject: true });
+    expect(both.some((l) => l.includes('project_id'))).toBe(false);
   });
 });
 

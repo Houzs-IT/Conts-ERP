@@ -22,6 +22,10 @@ describe('outstandingSoPageUrl — the PO-from-SO picker asks the server for one
     expect(params(pickerGroupsUrl({ q: 'oak', category: 'all', dateField: 'soDate', dateFrom: '', dateTo: '', supplier: 'SUP-A' })))
       .toEqual({ groups: '1', q: 'oak', supplier: 'SUP-A' });
   });
+  test("a project's lines send its ids and customer for the database to narrow on", () => {
+    expect(params(outstandingSoPageUrl({ projectIds: [12, 40], noProject: true, debtor: 'MS NATALIE' }, null, 200)))
+      .toEqual({ limit: '200', projectIds: '12,40', noProject: '1', debtor: 'MS NATALIE' });
+  });
   test('a sofa set is read by its SO number', () => {
     expect(params(outstandingSoPageUrl({ docNo: 'HC-SO-1' }, null, 200))).toEqual({ limit: '200', docNo: 'HC-SO-1' });
   });
