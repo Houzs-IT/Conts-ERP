@@ -648,7 +648,7 @@ productionOrders.post('/material-pos', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
-  const b = (await c.req.json().catch(() => ({}))) as { picks?: Array<{ materialId?: string; qty?: number; supplierId?: string | null }>; expectedAt?: string; mode?: string };
+  const b = (await c.req.json().catch(() => ({}))) as { picks?: Array<{ materialId?: string; qty?: number; supplierId?: string | null }>; expectedAt?: string; mode?: string; asDraft?: boolean };
   const picks = (b.picks ?? []).filter((p) => p.materialId && Number(p.qty) > 0);
   if (picks.length === 0) return c.json({ error: 'validation', message: 'Nothing to order.' }, 422);
   const ids = picks.map((p) => String(p.materialId));
@@ -715,6 +715,7 @@ productionOrders.post('/material-pos', async (c) => {
         materialKind: 'mfg_product', itemCode: g.itemCode, materialName: g.name, description: g.name, qty: g.qty,
         unitPriceSen: g.unitPriceSen, deliveryDate: g.deliveryDate, warehouseId: g.warehouseId,
       })),
+      asDraft: b.asDraft === true,
     };
     const out = await callHandler(c, createMfgPurchaseOrderHandler, body) as unknown as { json: { id?: string; poNumber?: string } & Record<string, unknown>; status: number };
     if (out.status >= 300 || !out.json.id) return c.json({ ...out.json, created }, out.status as 409);
