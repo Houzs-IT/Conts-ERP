@@ -272,7 +272,7 @@ function SplitDropdown({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex h-9 items-center rounded-md border border-primary/60 bg-primary/10 px-2.5 text-primary hover:bg-primary/20"
+        className="inline-flex h-9 items-center rounded-md rounded-l-none border-l border-white/25 bg-primary px-2.5 text-white hover:bg-primary/90"
       >
         <ChevronDown size={14} />
       </button>
