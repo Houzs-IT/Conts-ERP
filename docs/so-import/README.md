@@ -138,3 +138,8 @@ column Quotation, 18 PDFs on Drive) are the truth for her SOs. The CODE/COLOUR o
   rental side's owner of that unit).
 - ASTRUM R-29-27, R-52-29, A-17-20 print no total: their SOs open at RM 0, to be updated when the price is known; ASTRUM
   R-19-23 (no project, no owner on record): project opened under "OWNER TO BE CONFIRMED" (owner, 27 Nov 2026).
+- Applied on production 27 Nov 2026 (dry-run twice first): 9 SKYLINE EMBASSY SOs changed by one VO each (A-11-05 and
+  C-31-01 to RM 35,990), 9 ASTRUM SOs created (TC-SO-2611-043 to -051), 3 projects opened (A-24-31 RN-2611-073,
+  S-24-29 RN-2611-074, R-19-23 RN-2611-075). The one-off workflow is removed; the script stays for reference.
+- After the run, someone edited TC-SO-2611-045 (R-21-18) and -046 (R-54-16) by hand in the SO screen: the package line was
+  cancelled and an "EXTEND KITCHEN TOP" line carries RM 214,999 / RM 20,499. Left for the owner to confirm.
