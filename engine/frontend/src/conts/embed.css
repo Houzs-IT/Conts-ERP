@@ -72,6 +72,11 @@ html.conts-embedded[data-beta-skin="night"] :is(.text-accent, [class*="text-acce
 html.conts-embedded[data-beta-skin="night"] :is(.text-learning, [class*="text-learning/"]) { color: #A9C4FF; }
 html.conts-embedded[data-beta-skin="night"] .text-primary { color: #EEF1F8; }
 html.conts-embedded[data-beta-skin="night"] .border-primary { border-color: #EEF1F8; }
+/* Selected text: index.css gives dark ink on a brown wash, which vanished on the night card. Opaque fill, so the ink
+   reads the same over any surface. Announcement links: index.css is not night-mapped, so its dark teal sat on a dark card. */
+html.conts-embedded[data-beta-skin="night"] ::selection { background: #6B5C32; color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] :is(.ann-rich, .ann-rte) a { color: #9FC0FF; }
+html.conts-embedded[data-beta-skin="night"] .ann-rich a:hover { color: #EEF1F8; }
 /* A chosen pill and the black main action: flat light ink, as /projects/list marks a chosen tab, so they keep their shape. */
 html.conts-embedded[data-beta-skin="night"] .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
 html.conts-embedded[data-beta-skin="night"] .bg-primary :is(.text-white, [class*="text-white/"]) { color: #151823; }
