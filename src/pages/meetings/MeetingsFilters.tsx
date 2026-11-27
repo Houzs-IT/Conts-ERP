@@ -95,8 +95,8 @@ export function MeetingsFilterSheet({ onClose, monthPicker, ...filters }: Omit<M
         <button type="button" aria-label="Close filters" className={cn(ICON_BTN, "h-11 w-11")} onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
       <div className="meet-scroll grid min-h-0 content-start gap-5 overflow-y-auto px-4 pb-4 pt-3">
-        {monthPicker}
         <MeetingsFilters density="sheet" {...filters} />
+        {monthPicker}
       </div>
       <div className="flex-none border-t border-line-soft px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
         <button type="button" className={cn(PRI, "h-11 w-full justify-center")} onClick={onClose}>Done</button>
