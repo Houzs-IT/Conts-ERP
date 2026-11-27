@@ -1,0 +1,101 @@
+/* PO header: content-sized fields inside the page's 1024px column. Card, field and input looks come from
+   SalesOrderDetail.module.css; this file only sets the grid and the 36px control height. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.top {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4) 20px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.row4 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.notes { max-width: 36rem; }
+
+@media (min-width: 640px) {
+  .row4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.body .control {
+  height: 36px;
+  padding-left: 12px;
+  box-sizing: border-box;
+}
+/* DateField's own wrap uses the soft muted look; here it matches the inputs beside it. */
+.body .dateControl {
+  height: 36px;
+  padding: 0 8px 0 12px;
+  box-sizing: border-box;
+  border-color: var(--input-border);
+  background: var(--input-bg);
+  font-variant-numeric: tabular-nums;
+}
+
+.body .textarea {
+  min-height: 60px;
+  padding: 8px 12px;
+  resize: vertical;
+}
+
+.caption {
+  margin-top: 4px;
+  font-size: var(--fs-11);
+  line-height: 1.35;
+  color: var(--fg-muted);
+}
+
+/* Read-only supplier summary: one quiet panel, so it never reads as typeable boxes. */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid rgb(var(--eng-border-subtle));
+  border-radius: var(--radius-md);
+  background: rgb(var(--eng-surface-2) / 0.5);
+  font-size: var(--fs-12);
+  color: var(--fg-muted);
+}
+.summaryEmpty { font-style: italic; }
+.summaryName {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: rgb(var(--eng-ink));
+}
+.summaryLine { line-height: 1.4; }
+.summaryMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--space-4);
+  margin-top: 2px;
+}
+.summaryMeta strong {
+  font-weight: 600;
+  color: rgb(var(--eng-ink));
+}

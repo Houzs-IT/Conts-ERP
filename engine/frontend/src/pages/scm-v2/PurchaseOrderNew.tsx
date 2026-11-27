@@ -25,7 +25,6 @@ import { Save, Trash2, X, ArrowRightLeft, Plus } from 'lucide-react';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { ItemPickerDialog, type ItemPickerRow } from '../../vendor/scm/components/ItemPickerDialog';
 import { Button } from '@2990s/design-system';
-import { formatPhone } from '@2990s/shared/phone';
 import {
   useCreateBinding,
   useCreatePurchaseOrder,
@@ -52,7 +51,6 @@ import { useFabricTrackings, fabricOptionLabel } from '../../vendor/scm/lib/fabr
 import { poMissingOptionLabels } from '../../conts/flowRules';
 import { useWarehouses } from '../../vendor/scm/lib/inventory-queries';
 import { sortByText, sortByNumeric, byText } from '../../vendor/scm/lib/sort-options';
-import { SearchableSelect } from '../../vendor/scm/components/SearchableSelect';
 import {
   computeMfgPoUnitCost,
   type MfgFabricTier,
@@ -70,6 +68,7 @@ import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { computeTotalHeight, isTotalHeightCategory, isTotalHeightPart } from '../../vendor/shared/total-height';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { PurchaseOrderHeaderCard, type PoHeaderDateKey } from './PurchaseOrderHeaderCard';
 import { showsVariantEditor } from '../../vendor/scm/lib/variant-editor-groups';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
@@ -200,6 +199,21 @@ export const PurchaseOrderNew = () => {
   const supplier        = supplierDetail.data?.supplier ?? null;
   const bindings        = useMemo(() => supplierDetail.data?.bindings ?? [], [supplierDetail.data?.bindings]);
   const currency        = supplier?.currency ?? 'MYR';
+  const creditorOptions = useMemo(
+    () => sortByText(suppliers.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` })),
+    [suppliers.data],
+  );
+  const warehouseOptions = useMemo(
+    () => sortByText(warehouses.data ?? []).map((w) => ({ value: w.id, label: w.code })),
+    [warehouses.data],
+  );
+  const headerDateSetters: Record<PoHeaderDateKey, (iso: string) => void> = {
+    poDate: setPoDate,
+    expectedAt: setExpectedAt,
+    supplierDate2: setSupplierDeliveryDate2,
+    supplierDate3: setSupplierDeliveryDate3,
+    supplierDate4: setSupplierDeliveryDate4,
+  };
 
   // PR #114 — Commander 2026-05-26: "逻辑上应该可以让我选 Item，选好之后
   // Supplier 的范围再缩小到目前供货这个 Item 的几个供应商". Item-first
@@ -981,7 +995,7 @@ export const PurchaseOrderNew = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-5xl space-y-4">
       <PageHeader back
         eyebrow="Procurement"
         title="New purchase order"
@@ -1017,141 +1031,20 @@ export const PurchaseOrderNew = () => {
         }
       />
 
-      {/* Header card — 2-column grid */}
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Header</h2>
-        </div>
-        <div className={styles.cardBody}>
-          <div className={styles.formGrid2}>
-            {/* LEFT column */}
-            <label className={styles.field}>
-              <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Creditor <span className={styles.req}>*</span></span>
-              {/* Type-to-search: a plain select over every supplier was a long scroll (Hookka #HK supplier picker, owner 8 Nov). */}
-              <SearchableSelect
-                value={supplierId}
-                onChange={changeCreditor}
-                clearable
-                options={sortByText(suppliers.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))}
-                placeholder="Type a supplier code or name"
-                ariaLabel="Creditor"
-                className={styles.fieldInput}
-              />
-            </label>
-
-            {/* RIGHT column */}
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>P/O No</span>
-              <input
-                type="text"
-                readOnly
-                value="(assigned on Save)"
-                className={styles.fieldInput}
-                style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)' }}
-              />
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Name</span>
-              <input
-                type="text"
-                readOnly
-                value={supplier?.name ?? ''}
-                placeholder="(auto-filled when supplier selected)"
-                className={styles.fieldInput}
-                style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)' }}
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Date <span className={styles.req}>*</span></span>
-              <DateField fullWidth value={poDate} onChange={(iso) => setPoDate(iso)} className={styles.fieldInput}/>
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Address</span>
-              <textarea
-                readOnly
-                value={[supplier?.address, supplier?.area, supplier?.postcode, supplier?.state, supplier?.country]
-                  .filter(Boolean).join(', ')}
-                placeholder="(auto-filled when supplier selected)"
-                className={styles.fieldInput}
-                style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)', minHeight: 52, resize: 'vertical' }}
-                rows={3}
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Expected Delivery <span style={{ color: 'var(--fg-muted)', fontWeight: 400 }}>(defaults to today)</span></span>
-              <DateField fullWidth value={expectedAt} onChange={(iso) => setExpectedAt(iso)} className={styles.fieldInput}/>
-            </label>
-
-            {/* Mig 0026 — supplier-revised header delivery dates. Optional; the
-                supplier pushes the delivery back. Fan down to lines that don't
-                carry their own revised date. */}
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Supplier Date 2</span>
-              <DateField fullWidth value={supplierDeliveryDate2} onChange={(iso) => setSupplierDeliveryDate2(iso)} className={styles.fieldInput}/>
-            </label>
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Supplier Date 3</span>
-              <DateField fullWidth value={supplierDeliveryDate3} onChange={(iso) => setSupplierDeliveryDate3(iso)} className={styles.fieldInput}/>
-            </label>
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Supplier Date 4</span>
-              <DateField fullWidth value={supplierDeliveryDate4} onChange={(iso) => setSupplierDeliveryDate4(iso)} className={styles.fieldInput}/>
-            </label>
-
-            <label className={styles.field}>
-              <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Purchase Location <span className={styles.req}>*</span></span>
-              <select
-                value={purchaseLocationId}
-                onChange={(e) => setPurchaseLocationId(e.target.value)}
-                className={styles.fieldInput}
-                required
-              >
-                <option value="">— Pick a warehouse —</option>
-                {sortByText(warehouses.data ?? []).map((w) => (
-                  <option key={w.id} value={w.id}>{w.code}</option>
-                ))}
-              </select>
-              <span style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)' }}>
-                Default ship-to warehouse for every line; each line can override below.
-              </span>
-            </label>
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Notes</span>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Free text — supplier instructions, internal notes…"
-                className={styles.fieldInput}
-                rows={3}
-                style={{ minHeight: 52, resize: 'vertical' }}
-              />
-            </label>
-          </div>
-
-          {supplier && (
-            <div style={{
-              marginTop: 'var(--space-3)',
-              background: 'var(--c-cream)',
-              border: '1px solid var(--line)',
-              borderRadius: 'var(--radius-md)',
-              padding: 'var(--space-2) var(--space-3)',
-              fontSize: 'var(--fs-12)',
-              color: 'var(--fg-muted)',
-              display: 'flex',
-              gap: 'var(--space-4)',
-              flexWrap: 'wrap',
-            }}>
-              {supplier.contact_person && <span>Contact: <strong>{supplier.contact_person}</strong></span>}
-              {supplier.phone          && <span>Phone: <strong>{formatPhone(supplier.phone)}</strong></span>}
-              {supplier.email          && <span>Email: <strong>{supplier.email}</strong></span>}
-              {supplier.payment_terms  && <span>Terms: <strong>{supplier.payment_terms}</strong></span>}
-              <span>Currency: <strong>{currency}</strong></span>
-            </div>
-          )}
-        </div>
-      </section>
+      <PurchaseOrderHeaderCard
+        supplierId={supplierId}
+        creditorOptions={creditorOptions}
+        onCreditorChange={changeCreditor}
+        supplier={supplier}
+        currency={currency}
+        dates={{ poDate, expectedAt, supplierDate2: supplierDeliveryDate2, supplierDate3: supplierDeliveryDate3, supplierDate4: supplierDeliveryDate4 }}
+        onDateChange={(key, iso) => headerDateSetters[key](iso)}
+        purchaseLocationId={purchaseLocationId}
+        warehouseOptions={warehouseOptions}
+        onPurchaseLocationChange={setPurchaseLocationId}
+        notes={notes}
+        onNotesChange={setNotes}
+      />
 
       {/* Item-first lookup hint — only renders when commander picked an item
           before a supplier and the reverse lookup found >1 bound suppliers
