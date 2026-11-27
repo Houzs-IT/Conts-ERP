@@ -31,7 +31,7 @@ export function RenovationDocTrail({ kind, id }: { kind: TrailKind; id: string |
       <h2 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Order status</h2>
       <ol className="m-0 grid list-none grid-cols-2 gap-x-5 gap-y-3 p-0 sm:grid-cols-3 lg:grid-cols-5">
         {stagesOf(steps).map((g) => {
-          const [only] = g.steps;
+          const only = g.steps.at(0);
           const many = g.steps.length > 1;
           const listId = `trail-${g.kind}-list`;
           return (

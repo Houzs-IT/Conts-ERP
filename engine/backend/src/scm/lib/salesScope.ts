@@ -198,7 +198,7 @@ export async function resolveCallerStaffId(
 /** The staff uuid to stamp as a new order's created_by: the signed-in person's own
  *  staff row, else the bridge's system uuid (headless agent, or no staff row). */
 export async function resolveCreatorStaffId(
-  sb: any,
+  sb: Parameters<typeof resolveCallerStaffId>[0],
   houzsUserId: number | null | undefined,
   systemStaffId: string,
 ): Promise<string> {

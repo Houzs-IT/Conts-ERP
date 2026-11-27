@@ -38,7 +38,7 @@ function groupSummary(kind: TrailKind, steps: readonly TrailStep[], today: strin
     const stopped = steps.filter((s) => s.tone === "stopped").length;
     return { summary: stopped === 0 ? "All done" : `${steps.length - stopped} done, ${stopped} stopped`, overdue: false };
   }
-  const [next] = open.filter((s) => dayOf(s.date) !== null).sort((a, b) => (dayOf(a.date) ?? "").localeCompare(dayOf(b.date) ?? ""));
+  const next = open.filter((s) => dayOf(s.date) !== null).sort((a, b) => (dayOf(a.date) ?? "").localeCompare(dayOf(b.date) ?? "")).at(0);
   const undated = open.filter((s) => dayOf(s.date) === null).length;
   const parts = [
     next ? `${kind === "po" ? "Next ETA" : "Next due"} ${fmtDate(dayOf(next.date) ?? "")}` : null,
@@ -51,7 +51,7 @@ function groupSummary(kind: TrailKind, steps: readonly TrailStep[], today: strin
 export function stagesOf(steps: readonly TrailStep[], today: string = todayKl()): TrailStage[] {
   return TRAIL_KINDS.map((kind) => {
     const mine = steps.filter((s) => s.kind === kind);
-    const [only] = mine;
+    const only = mine.at(0);
     if (!only) return { kind, steps: mine, tone: "wait", summary: "Not yet", overdue: false };
     if (mine.length === 1) return { kind, steps: mine, tone: only.tone, summary: stepCaption(only), overdue: isOverdue(only, today) };
     return { kind, steps: mine, tone: stageTone(mine), ...groupSummary(kind, mine, today) };
