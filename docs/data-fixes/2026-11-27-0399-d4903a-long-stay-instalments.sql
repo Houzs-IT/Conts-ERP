@@ -1,3 +1,7 @@
+-- APPLIED to production on 27 Nov 2026 as migration 0399 (migrate-production.yml, --only=0399). Kept here, not in
+-- migrations-pg: it is a one-off fix of one production booking; public.pos_migrations keeps its row. Checked after:
+-- net RM 12,909.79, D-49-03A October income RM 6,904.07 (as the owner report).
+
 -- 0399_d4903a_long_stay_instalments: one-off data fix of one production booking, HMFA323EHS at SKYLINE D-49-03A
 -- (reservation hp-res-0QEC6WSTN, 3 Sep - 31 Oct 2026, 58 nights), chew 27 Nov 2026 ("好，改吧"). On an empty database
 -- (CI, staging) the row is not there and nothing changes.
