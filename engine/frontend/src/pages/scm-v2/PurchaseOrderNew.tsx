@@ -33,7 +33,9 @@ import {
   useSuppliers,
   useSupplierDetail,
   useSuppliersForMaterial,
+  useFetchSupplierDetail,
   type BindingRow,
+  type SupplierDetail,
   type NewPoItem,
   type MaterialKind,
   type OutstandingSoItem,
@@ -42,6 +44,8 @@ import { outcomeOfError, useContentBoundIdempotencyKey } from '../../lib/idempot
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
 import { bindMaterialsTo, formPickOfProduction, mainSupplierHolding, type ProductionPick } from './renovation-po-from-production';
+import { rematchLinesToCreditor } from './po-creditor-rematch';
+import { CreditorRematchSummary } from './CreditorRematchSummary';
 import { useMfgProducts, useMaintenanceConfig, useSpecialAddons, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
 import { activeOptions, maintPickerValues, fmtMoneySen } from '@2990s/shared';
 import { useFabricTrackings, fabricOptionLabel } from '../../vendor/scm/lib/fabric-queries';
@@ -165,6 +169,7 @@ export const PurchaseOrderNew = () => {
      "an earlier submission with different details already finished"). */
   const poKeys   = useContentBoundIdempotencyKey();
   const bindSupplier = useCreateBinding();
+  const fetchSupplierDetail = useFetchSupplierDetail();
   const notify   = useNotify();
 
   // ── Header state ────────────────────────────────────────────────────
@@ -630,7 +635,7 @@ export const PurchaseOrderNew = () => {
     prev.filter((l) => l.rid !== rid),
   );
 
-  // Lines carry the old creditor's supplier SKU and price, so a different creditor starts the items over.
+  // Lines carry the old creditor's supplier SKU and price: a different creditor keeps only the SKUs it also sells.
   const changeCreditor = async (nextSupplierId: string) => {
     if (nextSupplierId === supplierId) return;
     /* Lines from Transfer from Production Order stay: they are raw materials still to buy, so moving them to another
@@ -660,6 +665,30 @@ export const PurchaseOrderNew = () => {
         return;
       }
       setLines((prev) => prev.map((l) => (l.productionMaterialId ? { ...l, bindingId: undefined, supplierSku: undefined, unitPriceSen: 0, priceTouched: false } : l)));
+      setPendingItemPick(null);
+      setSupplierId(nextSupplierId);
+      return;
+    }
+    if (nextSupplierId && filled.length > 0) {
+      let next: SupplierDetail;
+      try {
+        next = await fetchSupplierDetail(nextSupplierId);
+      } catch (e) {
+        void notify({ title: 'Could not load the creditor’s items', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
+        return;
+      }
+      const { supplier: nextSupplier, bindings: nextBindings } = next;
+      const { kept, removed } = rematchLinesToCreditor(
+        lines, nextBindings, pickableBindings(nextBindings, allSkus.data ?? []), nextSupplier.code,
+      );
+      const proceed = await serviceConfirm({
+        title: 'Change creditor?',
+        body: <CreditorRematchSummary creditorName={nextSupplier.name} kept={kept} removed={removed} />,
+        confirmLabel: removed.length > 0 ? `Change and remove ${removed.length}` : 'Change creditor',
+        danger: removed.length > 0,
+      });
+      if (!proceed) return;
+      setLines(kept);
       setPendingItemPick(null);
       setSupplierId(nextSupplierId);
       return;
