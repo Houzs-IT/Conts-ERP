@@ -111,6 +111,12 @@
 :root[data-theme="dark"] textarea {
   background-color: var(--color-surface-card);
   color: var(--color-text-primary);
+  /* The field outline (3.8:1 on the card), so an input reads as "type here"; border-strong was 1.9:1 and faded out.
+     Read-only and disabled fields keep the softer edge, as on Dream Crafter's side below. */
+  border-color: var(--color-line-input);
+}
+:root[data-theme="theconts-dark"] :is(input, select, textarea):is([readonly], :disabled),
+:root[data-theme="dark"] :is(input, select, textarea):is([readonly], :disabled) {
   border-color: var(--color-border-strong);
 }
 :root[data-theme="theconts-dark"] ::placeholder { color: var(--color-text-faint); }
