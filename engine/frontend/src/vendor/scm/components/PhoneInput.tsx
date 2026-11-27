@@ -63,16 +63,16 @@ const SEARCH_ALIAS: Record<string, string> = {
   US: '美国 加拿大 美',
 };
 
-// Palette (tailwind.config.js · "Ink & Petrol").
+// Theme tokens (index.css light, embed.css night), so the country menu follows the page theme.
 const C = {
-  surface: '#ffffff',
-  surface2: '#f4f6f3',
-  border: '#d6d9d2',
-  ink: '#11140f',
-  inkMuted: '#767b6e',
-  primary: '#16695f',
-  primarySoft: '#e1efed',
-};
+  surface: 'rgb(var(--eng-surface))',
+  surface2: 'rgb(var(--eng-surface-2))',
+  border: 'rgb(var(--eng-border))',
+  ink: 'rgb(var(--eng-ink))',
+  inkMuted: 'rgb(var(--eng-ink-muted))',
+  primary: 'var(--c-orange)',
+  primarySoft: 'rgb(var(--eng-primary-soft))',
+} as const;
 
 type PhoneInputProps = {
   value: string;
