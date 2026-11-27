@@ -287,3 +287,11 @@ test('a booking whose payment the system holds is not "not paid yet"', () => {
   const m = reconcileMonth('2026-10', [], [stay('HMHELD0001', 500, { checkIn: '2026-10-05' })], '2026-11-10', [{ id: 'wb-3', code: 'HMHELD0001', amount: 50000, date: '2026-10-08' }]);
   assert.deepEqual(m.lines.map(l => l.rule), []);
 });
+
+test('a reservation paid before these files, with only AirCover here, stays R13 though its payout is recorded: HMRJ9KPAA8', () => {
+  const o = { start: '2026-08-02', end: '2026-08-24', nights: 22, date: '2026-10-22' };
+  const l = classify('HMRJ9KPAA8', [aircover('HMRJ9KPAA8', 100, o)], [stay('HMRJ9KPAA8', 3824.43, { checkIn: '2026-08-02', checkOut: '2026-08-24' })], ctx,
+    [{ id: 'wb-4', code: 'HMRJ9KPAA8', amount: 388225, date: '2026-10-10' }]);
+  assert.equal(l.rule, 'R13');
+  assert.equal(l.action, 'none');
+});
