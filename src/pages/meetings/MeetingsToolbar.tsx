@@ -40,7 +40,7 @@ export function MeetingsToolbar(p: MeetingsToolbarProps): JSX.Element {
     </span>
   );
   const switcher = (
-    <div className={cn(SEG_TRACK, p.isCompact && "w-full")} role="group" aria-label="View">
+    <div className={cn(SEG_TRACK, p.isCompact && "w-full sm:w-auto sm:self-start")} role="group" aria-label="View">
       {p.views.map((v) => (
         <button key={v} type="button" aria-pressed={p.view === v} onClick={() => p.onView(v)}
           className={cn(SEG_ITEM, "px-3 capitalize", p.isCompact ? "h-11 flex-1" : "h-8", p.view === v ? SEG_ON : SEG_OFF)}>{v}</button>
