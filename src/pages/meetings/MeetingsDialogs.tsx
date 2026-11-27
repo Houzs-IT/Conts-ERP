@@ -3,7 +3,7 @@ import { Calendar, MapPin, Paperclip, Pencil, Repeat, StickyNote, Trash2, Users,
 import { cx as cn } from "../../lib/design-tokens";
 import { DateField, TimeField } from "./kit";
 import { StatusBadge } from "../../components/StatusBadge";
-import { BTN, CHIP, CONTROL, LABEL, PRI, chip } from "./ui";
+import { BTN, CHIP, CONTROL, CONTROL_OUTLINED, LABEL, PRI, chip } from "./ui";
 import {
   DAY, DAY_NAMES, HOUR, MIN, REMINDER_OPTIONS, addDays, atHour, busySentences, directoryTree, fmtDay, fmtDayLong, fmtRange, fmtTime,
   hhmm, inUsualHours, isoDay, minutesOfDay, ms, peopleOf, personLine, personName, remLabel, snapMinutes, startOfDay, withTime,
@@ -41,7 +41,7 @@ export function PersonSearch({ people, exclude, onPick, placeholder, inputClassN
   const hits = t ? people.filter((p) => !exclude.includes(p.key) && `${p.name} ${p.company} ${p.department} ${p.email ?? ""}`.toLowerCase().includes(t.toLowerCase())).slice(0, 8) : [];
   return (
     <div className="relative">
-      <input className={cn(CONTROL, "border-0 bg-muted", inputClassName)} placeholder={placeholder} aria-label={placeholder} value={t} onChange={(e) => setT(e.target.value)} />
+      <input className={cn(CONTROL_OUTLINED, inputClassName)} placeholder={placeholder} aria-label={placeholder} value={t} onChange={(e) => setT(e.target.value)} />
       {hits.length > 0 && (
         <div className="absolute inset-x-0 top-11 z-30 overflow-hidden rounded-card border border-line bg-card shadow-lg">
           {hits.map((p) => (

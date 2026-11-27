@@ -136,6 +136,10 @@ body { margin: 0; }
      these two stay the same in dark: white on deep colours, near-black on bright ones. */
   --color-meet-ink-light: #FFFFFF;
   --color-meet-ink-dark: #11140F;
+  /* The selected button in a Meetings segmented switcher: a card-white pill with ink text on the grey track.
+     Dark swaps the two, as a card-dark pill on the dark track is only 1.2:1. */
+  --color-meet-seg-on: var(--color-card);
+  --color-on-meet-seg-on: var(--color-ink);
 
   /* text-on-dark: the quiet line on a black panel or photo tile. Pages used the class before it existed, so the
      Portfolio tiles drew it in page ink, unreadable on the photo. */
