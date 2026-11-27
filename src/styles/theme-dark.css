@@ -119,6 +119,9 @@
 :root[data-theme="dark"] :is(input, select, textarea):is([readonly], :disabled) {
   border-color: var(--color-border-strong);
 }
+/* A bordered box around borderless inputs (the stay range) is the field itself, so it takes the same outline. */
+:root[data-theme="theconts-dark"] .ds-ctl:not(:focus-within),
+:root[data-theme="dark"] .ds-ctl:not(:focus-within) { border-color: var(--color-line-input); }
 :root[data-theme="theconts-dark"] ::placeholder { color: var(--color-text-faint); }
 
 /* The switch crossfades through document.startViewTransition (src/lib/theme.ts); keep it short. */
