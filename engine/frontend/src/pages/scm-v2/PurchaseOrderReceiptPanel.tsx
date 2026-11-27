@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { fmtMoneySen } from '@2990s/shared';
 import styles from './SalesOrderDetail.module.css';
+import layout from './PurchaseOrderLayout.module.css';
 
 export interface PoReceiptLine {
   rid: string;
@@ -58,10 +59,9 @@ export const PurchaseOrderReceiptPanel = ({ meta, lines, totals }: PurchaseOrder
   const money = (sen: number): string => fmtMoneySen(sen, meta.currency);
 
   return (
-    // ds-allow-hardcode: the 96px offset clears the workspace top bars; 112px keeps a 16px gap under the panel.
     <aside
       aria-label="Order summary"
-      className={`${styles.card} flex flex-col xl:sticky xl:top-[96px] xl:max-h-[calc(100vh-112px)]`}
+      className={`${styles.card} ${layout.receipt} flex flex-col`}
     >
       <div className="shrink-0 space-y-2 p-4">
         <h2 className={styles.cardTitle}>Order TL;DR</h2>
@@ -73,7 +73,7 @@ export const PurchaseOrderReceiptPanel = ({ meta, lines, totals }: PurchaseOrder
       </div>
 
       {/* Phone and tablet already list every line in full right above this card. */}
-      <div className="hidden min-h-0 flex-1 flex-col border-t border-[rgb(var(--eng-border))] xl:flex">
+      <div className={`${layout.receiptItems} min-h-0 flex-1 flex-col border-t border-[rgb(var(--eng-border))]`}>
         <div className="shrink-0 px-4 pb-2 pt-3" style={LABEL_STYLE}>Items summary ({lines.length})</div>
         <ul className="min-h-0 flex-1 overflow-y-auto pb-2 pl-4 pr-1">
           {lines.length === 0 && (

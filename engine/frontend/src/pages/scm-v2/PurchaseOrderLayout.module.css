@@ -1,0 +1,38 @@
+/* Two columns follow the form's own width, not the window: inside Property OS the engine is an iframe beside its
+   menu, so a 1440px screen gives this page about 1180px. */
+.page {
+  container-type: inline-size;
+}
+
+.columns {
+  display: grid;
+  gap: var(--space-4, 16px); /* ds-allow-hardcode: token fallback */
+}
+
+.receiptItems {
+  display: none;
+}
+
+/* ds-allow-hardcode: 1040px is where the left column still fits the header card's three fields (about 680px). */
+@container (min-width: 1040px) { /* ds-allow-hardcode: breakpoint */
+  .columns {
+    grid-template-columns: minmax(0, 1fr) 340px; /* ds-allow-hardcode: panel width */
+    align-items: start;
+  }
+
+  /* ds-allow-hardcode: 68px = the engine's 52px top bar plus a 16px gap. */
+  .receipt {
+    position: sticky;
+    top: 68px; /* ds-allow-hardcode: top bar offset */
+    max-height: calc(100vh - 112px); /* ds-allow-hardcode: requested panel height */
+  }
+
+  .receiptItems {
+    display: flex;
+  }
+
+  /* Property OS draws no engine top bar (Layout.tsx), and the extra room at the bottom clears its chat buttons. */
+  :global(html.conts-embedded) .receipt {
+    top: 16px; /* ds-allow-hardcode: gap above panel */
+  }
+}

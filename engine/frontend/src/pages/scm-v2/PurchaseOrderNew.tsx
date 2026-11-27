@@ -70,6 +70,7 @@ import { computeTotalHeight, isTotalHeightCategory, isTotalHeightPart } from '..
 import { DateField } from "../../vendor/scm/components/DateField";
 import { PurchaseOrderHeaderCard, type PoHeaderDateKey } from './PurchaseOrderHeaderCard';
 import { PurchaseOrderReceiptPanel } from './PurchaseOrderReceiptPanel';
+import layout from './PurchaseOrderLayout.module.css';
 import { showsVariantEditor } from '../../vendor/scm/lib/variant-editor-groups';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
@@ -1015,7 +1016,7 @@ export const PurchaseOrderNew = () => {
   };
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 xl:max-w-7xl">
+    <div className={`${layout.page} mx-auto w-full max-w-7xl space-y-4`}>
       <PageHeader back
         eyebrow="Procurement"
         title="New purchase order"
@@ -1051,7 +1052,7 @@ export const PurchaseOrderNew = () => {
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+      <div className={layout.columns}>
       <div className="min-w-0 space-y-4">
       <PurchaseOrderHeaderCard
         supplierId={supplierId}
