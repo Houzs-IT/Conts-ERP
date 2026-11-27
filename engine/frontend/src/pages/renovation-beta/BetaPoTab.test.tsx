@@ -187,22 +187,6 @@ describe("PO tab", () => {
     h.furniture = false;
   });
 
-  it("shows no supplier, PO or goods received to someone without Procurement", async () => {
-    h.procurement = "none";
-    try {
-      renderTab();
-      await screen.findAllByText("Lines");
-      expect(screen.queryByText("Need a PO")).toBeNull();
-      expect(screen.queryByText("Goods received")).toBeNull();
-      expect(screen.queryByRole("columnheader", { name: "Supplier" })).toBeNull();
-      expect(screen.queryByRole("columnheader", { name: "PO" })).toBeNull();
-      expect(screen.queryByRole("columnheader", { name: "GR" })).toBeNull();
-      expect(screen.getAllByText("Delivered (DO)").length).toBeGreaterThan(0);
-    } finally {
-      h.procurement = "full";
-    }
-  });
-
   it("moves a column by dragging its header, and Reset columns puts it back", async () => {
     renderTab();
     const region = await screen.findByRole("region", { name: "Sales order lines" });

@@ -299,18 +299,6 @@ describe("Beta project workspace", () => {
     expect(await screen.findByRole("group", { name: "Drawing type" })).toBeTruthy();
   });
 
-  it("leaves the goods received tab out for someone without Procurement", async () => {
-    auth.procurement = "none";
-    try {
-      open("/beta/projects/7?tab=gr");
-      await screen.findByRole("heading", { name: "Payments" });
-      expect(screen.queryByRole("button", { name: "GR" })).toBeNull();
-      expect(screen.getByRole("button", { name: "DO" })).toBeTruthy();
-    } finally {
-      auth.procurement = "full";
-    }
-  });
-
   it("shows the defect pipeline with overdue in red and opens a ticket", async () => {
     open("/beta/projects/7?tab=defects");
     const pipe = await screen.findByRole("region", { name: "Defect pipeline" });

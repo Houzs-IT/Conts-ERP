@@ -125,14 +125,12 @@ export interface LinesAnswer {
   categoryRestricted: boolean;
 }
 
-/** The SO tab for someone without Procurement (owner, 27 Nov 2026: sales see their projects, not POs or costs): the
-    lines stay, but no PO, goods receipt, PO change, supplier or supplier price leaves the server. */
-export function withoutProcurement(a: LinesAnswer): LinesAnswer {
+/** The SO tab for someone who may not see what we pay (owner, 27 Nov 2026: sales follow up POs and goods received,
+    but never see costs): every PO, goods receipt and supplier stays; only the supplier prices behind the pick go. */
+export function withoutCost(a: LinesAnswer): LinesAnswer {
   return {
     ...a,
-    suppliers: [],
-    pendingPoChanges: [],
-    lines: a.lines.map((l) => ({ ...l, pos: [], gr: markOf(0, 0), supplierChoices: [], supplierName: null, supplierId: null, materials: [], materialsClosedBy: null })),
+    lines: a.lines.map((l) => ({ ...l, supplierChoices: l.supplierChoices.map((ch) => ({ ...ch, priceSen: null })) })),
   };
 }
 

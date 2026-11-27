@@ -142,9 +142,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     window.addEventListener("pointermove", move);
     return () => { window.removeEventListener("pointerup", up); window.removeEventListener("pointermove", move); };
   }, [dragItem]);
-  const { can, pageAccess } = useAuth();
-  /* Sales see their project's lines, not its buying: no supplier, PO or goods received (owner, 27 Nov 2026). */
-  const buying = pageAccess("scm.procurement") !== "none";
+  const { can } = useAuth();
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [edits, setEdits] = useState<Record<string, LineEdit>>({});
   /* The variants dialog of one line, at the tab's level like the SKU picker: inside the table row a cell clips it. */
@@ -197,7 +195,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const d = q.data;
   const editable = p.canWrite && editing;
   /* The description is enough: no SKU column (owner, 17 Nov 2026). */
-  const columns = (d.finance ? order : order.filter((c) => c !== "amount")).filter((c) => c !== "sku" && (buying || (c !== "supplier" && c !== "po" && c !== "gr")));
+  const columns = (d.finance ? order : order.filter((c) => c !== "amount")).filter((c) => c !== "sku");
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const setEdit = (id: string, patch: Partial<LineEdit>): void => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
   const nextVo = (vo.data?.vos.length ?? 0) + 1;
@@ -365,7 +363,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   const deliveries = site.data?.deliveries ?? [];
   const cell = (l: ManagedLine): RowCtx => ({
-    buying,
     l, projectId: p.projectId, hideArea: view === "area", edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), openMaterials: () => setMaterialsOf(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
@@ -407,7 +404,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         )}
       />
       {d.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
-      {buying && d.sos.map((s) => <ProductionOrderChips key={s.docNo} soDocNo={s.docNo} label="Production orders" />)}
+      {d.sos.map((s) => <ProductionOrderChips key={s.docNo} soDocNo={s.docNo} label="Production orders" />)}
       {lines.length > 0 && (
         <div role="group" aria-label="Group the lines" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <WsFilterPill on={view === "category"} onClick={() => setView("category")}>By category</WsFilterPill>
@@ -415,9 +412,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         </div>
       )}
       <WsStats>
-        <WsStat label="Lines" value={lines.length} meta={buying ? `${buy.length} we buy` : undefined} />
-        {buying && <WsStat label="Need a PO" value={needPo.length} meta={needPo.length ? "No PO yet" : "All ordered"} tone={needPo.length ? WS.amber : WS.green} />}
-        {buying && <WsStat label="Goods received" value={`${buy.filter((l) => l.gr === "yes").length} of ${buy.length}`} meta="Lines fully received" />}
+        <WsStat label="Lines" value={lines.length} meta={`${buy.length} we buy`} />
+        <WsStat label="Need a PO" value={needPo.length} meta={needPo.length ? "No PO yet" : "All ordered"} tone={needPo.length ? WS.amber : WS.green} />
+        <WsStat label="Goods received" value={`${buy.filter((l) => l.gr === "yes").length} of ${buy.length}`} meta="Lines fully received" />
         <WsStat label="Delivered (DO)" value={`${lines.filter((l) => l.do === "yes").length} of ${lines.length}`} meta="Lines fully delivered" />
       </WsStats>
 
@@ -683,8 +680,6 @@ function Band({ band, label, hint, open, onToggle, columns, dates, drag }: { ban
 
 interface RowCtx {
   projectId?: number;
-  /** Procurement is open to the viewer: the supplier, PO and GR fields show. */
-  buying: boolean;
   /** By area: the band already names the area, so the line does not repeat it (owner, 17 Nov 2026). */
   hideArea?: boolean;
   l: ManagedLine;
@@ -1066,12 +1061,12 @@ function LineCard(r: RowCtx): ReactElement {
         {field("Delivery", <DeliveryCell r={r} />)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-        {r.buying && field("Supplier", <SupplierCell r={r} />)}
+        {field("Supplier", <SupplierCell r={r} />)}
         {field("Receive at", <WarehouseCell r={r} />)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-        {r.buying && field("PO", <PoCell r={r} />)}
-        {r.buying && field("GR", <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />)}
+        {field("PO", <PoCell r={r} />)}
+        {field("GR", <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />)}
         {field("DO", <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />)}
       </div>
     </li>
