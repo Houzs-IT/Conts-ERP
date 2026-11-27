@@ -31,6 +31,7 @@ import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/reno
 import { SoLineStatusCell, soLineStatusText, useSoLineStatus, type LineStatus } from './SoLineStatus';
 import { SearchableSelect } from '../../vendor/scm/components/SearchableSelect';
 import { cn } from '../../lib/utils';
+import { planGroupTick } from './poPickerGroupTick';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -90,6 +91,8 @@ export const PurchaseOrderFromSo = () => {
   const idemKey = useIdempotencyKey();
 
   const [picks, setPicks] = useState<Record<string, Pick>>({});
+  const picksRef = useRef(picks);
+  picksRef.current = picks;
 
   const [category, setCategory]   = useState<string>('all');
   const categoryOptions = useCategoryOptions();
@@ -111,6 +114,8 @@ export const PurchaseOrderFromSo = () => {
   }, [targetPoSupplierCode]);
   // Keeps a chosen supplier's name when other filters leave it no lines.
   const [knownSuppliers, setKnownSuppliers] = useState<ReadonlyMap<string, string>>(new Map());
+
+  const [tickingGroup, setTickingGroup] = useState<string | null>(null);
 
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string; confirmLabel?: string; onConfirm?: () => void } | null>(null);
   const [setLoadingDoc, setSetLoadingDoc] = useState<string | null>(null);
@@ -197,7 +202,7 @@ export const PurchaseOrderFromSo = () => {
 
   const togglePick = (id: string, remaining: number) => {
     const row = rowOf(id);
-    if (!row) return;
+    if (!row || tickingGroup) return;
     if (row.mainSupplierCode && lockedSupplier && row.mainSupplierCode !== lockedSupplier
         && !picks[id]?.picked) return;
     const turningOn = !picks[id]?.picked;
@@ -274,6 +279,61 @@ export const PurchaseOrderFromSo = () => {
 
   const setQty = (id: string, qty: number) =>
     setPicks((s) => ({ ...s, [id]: { picked: true, qty } }));
+
+  const tickRows = (list: readonly OutstandingSoItem[]): void =>
+    setPicks((s) => {
+      const next = { ...s };
+      for (const l of list) {
+        const cap = effectiveRemaining(l);
+        if (cap <= 0) continue;
+        next[l.soItemId] = { picked: true, qty: cap };
+      }
+      return next;
+    });
+
+  /* A project's checkbox. Its lines are read first when the project was never opened. Ticked
+     when anything is picked: untick the project. Otherwise tick its lines for ONE supplier: the locked one, else the
+     project's first bound supplier; unbound lines ride along as they do one by one, other suppliers' lines are left
+     and named. One project at a time, so two quick ticks cannot choose two suppliers. */
+  const applyGroupTick = (g: PickerGroup, lines: readonly OutstandingSoItem[]): void => {
+    const current = picksRef.current;
+    const eligible = lines.filter((r) => effectiveRemaining(r) > 0);
+    if (eligible.some((r) => current[r.soItemId]?.picked)) {
+      setPicks((s) => {
+        const next = { ...s };
+        for (const r of eligible) delete next[r.soItemId];
+        return next;
+      });
+      return;
+    }
+    const pickedSupplier = Object.entries(current)
+      .filter(([, v]) => v.picked)
+      .map(([id]) => rowCache.current.get(id)?.mainSupplierCode ?? null)
+      .find((code): code is string => code != null);
+    const { rideOn, skipped, supplier } = planGroupTick(eligible, targetPoSupplierCode ?? pickedSupplier ?? null);
+    tickRows(rideOn);
+    if (skipped > 0) {
+      setDialog({
+        title: 'Some lines need another PO',
+        body: `${skipped} line${skipped === 1 ? '' : 's'} in ${g.heading} belong${skipped === 1 ? 's' : ''} to another supplier and ${skipped === 1 ? 'was' : 'were'} not ticked. One PO takes one supplier (${supplier}).`,
+      });
+    }
+  };
+  const toggleGroup = (g: PickerGroup): void => {
+    if (tickingGroup || setLoadingDoc) return;
+    setTickingGroup(groupKeyOf(g));
+    queryClient.fetchQuery({
+      queryKey: pickerGroupLinesKey(topFilters, g),
+      queryFn: ({ signal }) => readGroupLines(g, signal),
+      staleTime: GROUP_LINES_STALE_MS,
+    })
+      .then((lines) => applyGroupTick(g, lines))
+      .catch((e: unknown) => setDialog({
+        title: 'Could not read this project',
+        body: `The lines of ${g.heading} could not be loaded, so nothing was ticked. Please try again.${e instanceof Error ? `\n${e.message}` : ''}`,
+      }))
+      .finally(() => setTickingGroup(null));
+  };
 
   const clearAll = () => setPicks({});
 
@@ -602,6 +662,7 @@ export const PurchaseOrderFromSo = () => {
           : groupsQ.data
             ? `${groups.length} project${groups.length === 1 ? '' : 's'} · up to ${matchingLines} line${matchingLines === 1 ? '' : 's'} matching${groupsQ.isFetching ? ' · updating…' : ''}`
             : ''}
+        {tickingGroup ? ' · reading the project to tick it…' : ''}
         {setLoadingDoc ? ` · loading the sofa set on ${setLoadingDoc}…` : ''}
       </p>
 
@@ -632,6 +693,9 @@ export const PurchaseOrderFromSo = () => {
                 readLines={readGroupLines}
                 pickedIds={pickedIds}
                 rememberedPickCount={pickedCountByGroup.get(key) ?? 0}
+                isTicking={tickingGroup === key}
+                isTickBlocked={tickingGroup != null || setLoadingDoc != null}
+                onToggleGroup={() => toggleGroup(g)}
                 isShown={hasRemaining}
                 isLocked={isRowLocked}
                 buildColumns={buildColumns}
@@ -664,6 +728,9 @@ export interface ProjectGroupSectionProps {
   readLines: (g: PickerGroup, signal?: AbortSignal) => Promise<OutstandingSoItem[]>;
   pickedIds: ReadonlySet<string>;
   rememberedPickCount: number;
+  isTicking: boolean;
+  isTickBlocked: boolean;
+  onToggleGroup: () => void;
   isShown: (r: OutstandingSoItem) => boolean;
   isLocked: (r: OutstandingSoItem) => boolean;
   buildColumns: (lineStatus: Record<string, LineStatus>) => GridColumn<OutstandingSoItem>[];
@@ -672,7 +739,7 @@ export interface ProjectGroupSectionProps {
 
 function ProjectGroupSection({
   group, isFiltered, isOpen, onToggleOpen, linesKey, readLines, pickedIds, rememberedPickCount,
-  isShown, isLocked, buildColumns, onRowClick,
+  isTicking, isTickBlocked, onToggleGroup, isShown, isLocked, buildColumns, onRowClick,
 }: ProjectGroupSectionProps) {
   const linesQ = useQuery({
     queryKey: linesKey,
@@ -687,6 +754,13 @@ function ProjectGroupSection({
   const columns = useMemo(() => buildColumns(lineStatus), [buildColumns, lineStatus]);
 
   const pickedHere = lines ? lines.filter((r) => pickedIds.has(r.soItemId)).length : rememberedPickCount;
+  const tickable = lines?.filter((r) => !isLocked(r)) ?? [];
+  const isChecked = tickable.length > 0 && tickable.every((r) => pickedIds.has(r.soItemId));
+  const isMixed = !isChecked && pickedHere > 0;
+  const boxRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (boxRef.current) boxRef.current.indeterminate = isMixed;
+  }, [isMixed]);
 
   const countLabel = isFiltered ? `${group.matching} of ${group.total}` : String(group.total);
   const hasNoLines = lines != null && lines.length === 0;
@@ -694,11 +768,22 @@ function ProjectGroupSection({
   return (
     <section className="border-b border-border-subtle last:border-b-0">
       <div className="flex items-center bg-surface-dim/70 transition-colors hover:bg-surface-dim">
+        <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center sm:h-9 sm:w-9">
+          <input
+            ref={boxRef}
+            type="checkbox"
+            checked={isChecked}
+            disabled={isTickBlocked}
+            onChange={onToggleGroup}
+            aria-label={`Tick every line in ${group.heading}`}
+            aria-busy={isTicking || undefined}
+          />
+        </label>
         <button
           type="button"
           onClick={onToggleOpen}
           aria-expanded={isOpen}
-          className="flex min-h-11 flex-1 items-center gap-1.5 py-2 pl-4 pr-4 text-left text-[11px] font-semibold uppercase tracking-brand text-ink sm:min-h-9"
+          className="flex min-h-11 flex-1 items-center gap-1.5 py-2 pr-4 text-left text-[11px] font-semibold uppercase tracking-brand text-ink sm:min-h-9"
         >
           <ChevronRight size={12} className={cn('shrink-0 text-ink-muted transition-transform', isOpen && 'rotate-90')} aria-hidden />
           <span className="min-w-0 break-words">{group.heading}</span>
