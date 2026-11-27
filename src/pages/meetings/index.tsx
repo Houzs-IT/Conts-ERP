@@ -277,7 +277,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
             activeFilterCount={rooms.filter((r) => r.active && roomFilter[r.id] === false).length + overlay.length + (onlyMine && !overlay.length ? 1 : 0)} onFilters={() => setIsFilterSheetOpen(true)} />
           {calError && <div className="bg-danger-bg px-4 py-2 text-[13px] text-danger">The calendar could not be loaded: {calError}</div>}
           <div className="flex min-h-0 flex-1">
-            <aside className="meet-scroll hidden w-[248px] flex-none flex-col gap-3.5 overflow-y-auto px-3.5 pb-3.5 pt-1 lg:flex">
+            <aside className="meet-scroll hidden w-[248px] flex-none content-start gap-3.5 overflow-y-auto px-3.5 pb-3.5 pt-1 lg:grid">
               <button type="button" onClick={() => setEditor({ draft: newDraft(), isNew: true })} className={cn(BOOK_CTA, "h-11 w-full flex-none")}>
                 <Plus size={18} aria-hidden="true" />Book a room
               </button>
@@ -325,7 +325,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
       )}
       {isFilterSheetOpen && tab === "calendar" && (
         <MeetingsFilterSheet {...filterProps} onClose={() => setIsFilterSheetOpen(false)}
-          monthPicker={<MiniMonth key={`${new Date(anchor).getFullYear()}-${new Date(anchor).getMonth()}`} anchor={anchor} week={view === "week"} onPick={(d) => { setAnchor(d); setIsFilterSheetOpen(false); }} />} />
+          monthPicker={<MiniMonth key={`${new Date(anchor).getFullYear()}-${new Date(anchor).getMonth()}`} anchor={anchor} week={view === "week"} isTouch onPick={(d) => { setAnchor(d); setIsFilterSheetOpen(false); }} />} />
       )}
       {quick && <QuickBook draft={quick} rooms={rooms} people={boot?.people ?? []} busyRooms={busyRoomsFor(quick)} saving={saving} onClose={() => setQuick(null)} onMore={(d) => { setQuick(null); setPendingFiles([]); setEditor({ draft: d, isNew: true }); }} onSave={(d) => void save(d, true)} />}
       {editor && (

@@ -26,7 +26,9 @@ export type CalProps = {
   onOpen: (m: Meeting, x: number, y: number) => void;
 };
 
-export function MiniMonth({ anchor, onPick, week }: { anchor: number; onPick: (d: number) => void; week: boolean }) {
+export function MiniMonth({ anchor, onPick, week, isTouch = false }: { anchor: number; onPick: (d: number) => void; week: boolean; isTouch?: boolean }) {
+  const cell = isTouch ? "h-11 w-11" : "h-7 w-7";
+  const navButton = cn("flex items-center justify-center rounded-full text-muted-ink hover:bg-muted", isTouch ? "h-11 w-11" : "p-1");
   const [month, setMonth] = useState(() => new Date(new Date(anchor).getFullYear(), new Date(anchor).getMonth(), 1).getTime());
   const first = startOfWeek(month);
   const cells = Array.from({ length: 42 }, (_, i) => addDays(first, i));
@@ -39,18 +41,18 @@ export function MiniMonth({ anchor, onPick, week }: { anchor: number; onPick: (d
       <div className="flex items-center justify-between px-1 pb-1">
         <span className="text-[13px] font-medium text-ink">{MONTH_NAMES[mm.getMonth()]} {mm.getFullYear()}</span>
         <span className="flex">
-          <button type="button" aria-label="Previous month" className="rounded-full p-1 text-muted-ink hover:bg-muted" onClick={() => step(-1)}><ChevronLeft size={16} /></button>
-          <button type="button" aria-label="Next month" className="rounded-full p-1 text-muted-ink hover:bg-muted" onClick={() => step(1)}><ChevronRight size={16} /></button>
+          <button type="button" aria-label="Previous month" className={navButton} onClick={() => step(-1)}><ChevronLeft size={16} /></button>
+          <button type="button" aria-label="Next month" className={navButton} onClick={() => step(1)}><ChevronRight size={16} /></button>
         </span>
       </div>
-      <div className="grid grid-cols-7 justify-items-center gap-0.5 text-[11px]">
-        {DAY_NAMES.map((n) => n[0]).map((d, i) => <span key={i} className="flex h-7 w-7 items-center justify-center text-faint">{d}</span>)}
+      <div className={cn("grid grid-cols-7 justify-items-center gap-0.5", isTouch ? "text-[14px]" : "text-[11px]")}>
+        {DAY_NAMES.map((n) => n[0]).map((d, i) => <span key={i} className={cn("flex items-center justify-center text-faint", cell)}>{d}</span>)}
         {cells.map((c) => {
           const inWeek = week && c >= ws && c < ws + 7 * DAY;
           return (
             <button key={c} type="button" aria-label={fmtDay(c)} onClick={() => onPick(c)}
               className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full",
+                "flex items-center justify-center rounded-full", cell,
                 c === today ? "bg-primary font-semibold text-on-primary" : inWeek ? "bg-primary-soft text-ink" : "hover:bg-muted",
                 new Date(c).getMonth() !== mm.getMonth() && c !== today && "text-faint",
               )}>
