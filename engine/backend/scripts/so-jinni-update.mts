@@ -36,6 +36,9 @@ const CONTS_REFS: Record<string, string> = { cweomoenhsjvsxfsmiiw: 'PRODUCTION',
 const SYSTEM_STAFF = '00000000-0000-4000-8000-000000000001';
 const TODAY = new Date().toISOString().slice(0, 10);
 const PACKAGE = 'Package price (the quotation prices the whole unit)';
+/* Payment terms the other The Conts unit SOs carry (SKYLINE EMBASSY): 15 / 50 / 30 / 5. A quotation converts only with terms. */
+const TERMS_NAME = '15 / 50 / 30 / 5';
+let termTemplateId: string | null = null;
 
 interface DataLine { kind: 'ITEM' | 'TEXT'; itemCode?: string; description: string; qty?: number; unitPriceSen?: number; discountBp?: number; netSen?: number }
 interface DataSection { heading: string; lumpSumSen?: number; lines: DataLine[] }
@@ -155,6 +158,7 @@ async function createSo(db: RenoDb, actor: RenoActor, p: DataProject) {
     printFormat: docDiscountSen || first.sections.some((s) => s.lines.some((l) => l.discountBp)) ? 'DISCOUNT' : 'AMOUNT',
     attention: first.to, customerName: first.to, preparedBy: first.preparedBy, docDate: soDate, lastAmended: first.lastAmended,
     docDiscountSen, docDiscountLabel: docDiscountSen ? 'Discount as per quotation' : '',
+    termTemplateId,
   };
   const q = await createQuotation(db, actor, { projectId: p.projectId, header: header as never, sections: norm(sections, 'doc') });
   let head = await lockQuotation(db, q.id, actor.companyId);
@@ -268,6 +272,9 @@ try {
   if (lost.length) throw new Error(`No project for: ${lost.join(', ')}. Nothing was written.`);
   const [ptype] = await sql`select id from public.project_types where company_id = ${actor.companyId} and name = 'Airbnb package' and active`;
   if (!ptype) throw new Error('No active "Airbnb package" project type. Nothing was written.');
+  const [terms] = await sql`select id from scm.reno_term_templates where company_id = ${actor.companyId} and kind = 'CUSTOMER' and name = ${TERMS_NAME} and active`;
+  if (!terms) throw new Error(`No active customer payment terms "${TERMS_NAME}". Nothing was written.`);
+  termTemplateId = String(terms.id);
   let changed = 0, created = 0, same = 0, failed = 0, projects = 0;
   for (const p of data.projects) {
     if (ONLY && p.project !== ONLY) continue;
