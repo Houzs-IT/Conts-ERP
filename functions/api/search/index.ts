@@ -8,7 +8,7 @@ import { jobPlaceJoin, BUILDING_JOB_LABEL } from '../../_lib/maintenance';
 import { cleanerNamesSql, taskCleanersReady } from '../../_lib/taskCleaners';
 import { guestSearch } from '../../_lib/guestList';
 import { engineSearchOpen, mayUseScmEngine, scmEngineConfigured, searchEngine, type EngineSearch } from '../../_lib/scmEngine';
-import { menuPathFor } from '../../../src/lib/scmEngine';
+import { engineAddress, menuPathFor } from '../../../src/lib/scmEngine';
 import { switchedOff } from '../../../src/lib/navigation';
 
 /** The supply chain kinds, read by the engine (engine/backend/src/services/renovation/renovationSearch.ts). */
@@ -39,7 +39,7 @@ function engineTarget(path: string): string | null {
   const menu = menuPathFor(path) ?? (path.startsWith('/assr/') ? '/service/cases' : null);
   // A module switched off (consignment, owner, 11 Oct 2026) has no screen to open: its address goes Home, so its records
   // are left out until it is switched back on (lib/navigation.ts), and then they appear by themselves.
-  return menu && !switchedOff(menu) ? `${menu}?engine=${encodeURIComponent(path)}` : null;
+  return menu && !switchedOff(menu) ? engineAddress(menu, path) : null;
 }
 
 /** GET /api/search?q=[&kind=] — the box behind the top bar (and Ctrl/Cmd+K). Empty query returns a few units.
