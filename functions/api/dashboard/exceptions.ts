@@ -34,6 +34,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       action: { label: 'Assign cleaner', taskId: r.id },
       unitId: r.unit_id, unitLabel: label, nextGuestAt: hhmm(r.next_guest_at),
       slaLabel: mins > 0 ? `Due in ${mins} min` : `Overdue ${-mins} min`,
+      // Structured for the AI Connector's urgent alerts (functions/_lib/mcpProactive.ts computeAlerts); the screen ignores them.
+      minutesLeft: mins, readiness: r.readiness ?? null, assigned: !!r.assignee_id,
     });
   }
 

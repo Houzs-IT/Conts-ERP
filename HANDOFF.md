@@ -423,6 +423,56 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
     `statementId`, `guestId`, `taskId`, `issueId`) without a link gets `url`; any `...Sen` left becomes `...Rm` (a hidden
     figure stays null).
   - **Untested live:** the filtered tools/list and `structuredContent` in Claude / ChatGPT.
+- **Round 4d, morning brief email + urgent alerts (owner 26 Nov 2026, "加 全部一起做"; branch `feat/mcp-4d`).** Mirrors
+  Hookka PR #1635. Code: `functions/_lib/mcpProactive.ts` (pure: config, due rules, alerts, debounce, email HTML),
+  `mcpProactiveStore.ts` (tables), `mcpProactiveRun.ts` (runs as the person), `aiBrief.ts`; routes
+  `functions/api/mcp/proactive/tick.ts`, `.../unsubscribe.ts`, `functions/api/ai-connector/brief.ts`, `brief/preview.ts`,
+  `brief/test.ts`; page `src/pages/AiBriefSettings.tsx` (inside System > AI Connector); tests `src/lib/mcpProactive.test.mjs`.
+  D3 (group monthly report) is built in IT Hub, not here.
+  - **Opt-in, per person, off by default:** System > AI Connector > "Morning brief & urgent alerts by email". Brief
+    on/off, time (Malaysia, half hours 06:00 to 22:00, default 08:00), weekdays or every day; urgent alerts on/off. Only
+    for someone the AI Connector lets in (approved or management, active, a desk account) with a real email.
+  - **As the person, always.** Each run issues the person a connector token of their own (client `mcpc_morning_brief`,
+    5 minutes), checks it with `resolveAccessToken` like any AI app, and revokes it in `finally`. The brief is the
+    `daily_brief` tool through `runToolAs` (= `callTool`); Monday adds `data_gaps` (D4, unchanged). Alert reads go through
+    `readAsPerson` (= `readValue`: path gate, session middleware module gate, the handler's own checks, credential fields
+    stripped). Arrears are only read for someone whose Finance level is above No access (`gateFor(...).level('finance')`),
+    and an amount the ERP hid from them never passes a threshold. The brief's tool calls are logged in `mcp_calls`
+    (client "Morning brief") and not counted toward the person's rate limit (`RATE_SQL` / `RATE_COUNT_SQL`).
+  - **Alert rules** (`PROACTIVE_CONFIG`, the one place; shown read-only on the page), checked 07:00 to 20:00 MYT:
+
+    | Alert | Read (as the person) | Rule |
+    | --- | --- | --- |
+    | Check-in at risk | `GET /api/dashboard/exceptions` (the Dashboard's "Check-in at risk"; now also returns `minutesLeft`, `readiness`, `assigned`) | guest arrives within 3 hours and the unit is not ready or has no cleaner; once a day per clean job |
+    | Maintenance newly overdue | `GET /api/maintenance/issues?view=open&limit=200` | more than 3 days past `dueOn` (alerted when 4 to 5 days late, once) |
+    | Money owed newly past 30 days (Finance only) | `GET /api/reservations?view=all&todo=unpaid&size=100`, `GET /api/sales-invoices` | RM 1,000 or more; guests 31 to 32 days since check-in, invoices 31 to 32 days past due; once |
+
+    Known limit: the exceptions list carries the 5 riskiest clean jobs in the next 24 hours where nobody is assigned or
+    the job is overdue (its own rule), so an assigned, not-yet-overdue job with a dirty unit is not alerted.
+  - **Schedule:** the existing cron worker (`theconts-cron`, "Deploy scheduled jobs") runs `aiBriefTick` on its
+    `*/15` trigger. Like `hubHealthReport` it only knocks: `POST ${APP_ORIGIN}/api/mcp/proactive/tick` with Conts's IT Hub
+    key (`IT_HUB_API_KEY`, already held by both); the website runs the tick because a brief is the API's own routes run
+    in-process as the person. Each tick: briefs due (first tick at or after the person's time, within 4 h, at most 10),
+    alert checks (least recently checked first, none within 25 min, at most 15), a 20 s budget, people one at a time.
+  - **Idempotent:** `mcp_proactive_keys (user_id, alert_key, day)`. `brief` is claimed (`INSERT ... ON CONFLICT DO
+    NOTHING RETURNING`) before the brief is built; a build that fails gives it back. Alert keys (`checkin:<task>`,
+    `maintenance:<id>`, `arrears:res:<id>`, `arrears:si:<id>`) are claimed before sending. The outbox row also carries an
+    idempotency key per person per day (brief) or per tick (alerts).
+  - **Email:** the existing outbox (`notify.ts` -> `notification_log`, Resend; the scheduled job retries failures).
+    `Send.html` is new and optional: sent with the plain text when the send happens at once; a retry sends the plain text
+    only (the HTML is not stored). Sent `urgent` so the 22:00-08:00 quiet hours (meant for guests and owners) do not hold
+    a brief the person timed themselves. Each email is a row in `mcp_proactive_sends` (kind, items, notification id,
+    result), never the subject or body.
+  - **Unsubscribe:** `GET /api/mcp/proactive/unsubscribe?t=<32-char token>` shows one button and changes nothing (mail
+    scanners pre-open links); the POST turns brief and alerts off (audited, logged). The token is the only credential.
+  - **The person's own buttons:** Preview my brief (`GET /api/ai-connector/brief/preview?gaps=1`, built as you, shown in a
+    sandboxed frame, NOT sent) and Send me a test brief (`POST /api/ai-connector/brief/test`, to your own address only,
+    `[Test]` in the subject, with data gaps, at most once per 10 minutes).
+  - **Migration `0397_mcp_brief_alerts.sql` (additive: three new tables). NOT applied** (Actions > Apply migrations to
+    production, `only=0397`). Until it is, the tick answers
+    "not set up here yet" and sends nothing, and the page section answers 503 "not set up yet".
+  - **Untested live:** everything on production: no email was sent while building; the tick through the cron worker; the
+    unsubscribe page in a real mail client; migration 0397.
 - **FAQ (owner, 26 Nov 2026): each answered in ONE tool call.**
 
   | # | Question | Tool | Reads |
@@ -454,7 +504,9 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
   `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`, `src/lib/mcpMore.test.mjs`,
   `src/lib/mcpConts4.test.mjs`; round 4: `functions/_lib/mcpConts4.ts`, `mcpConts4Tools.ts`,
   `functions/api/supply-chain/mail-waiting.ts`; round 4b / 4c: `functions/_lib/mcpWrite.ts`, `mcpVisibility.ts`,
-  `migrations-pg/0396_mcp_write_actions.sql`, `src/lib/mcpWrite.test.mjs`.
+  `migrations-pg/0396_mcp_write_actions.sql`, `src/lib/mcpWrite.test.mjs`; round 4d: `functions/_lib/mcpProactive*.ts`,
+  `aiBrief.ts`, `functions/api/mcp/proactive/`, `functions/api/ai-connector/brief*`, `src/pages/AiBriefSettings.tsx`,
+  `migrations-pg/0397_mcp_brief_alerts.sql`, `src/lib/mcpProactive.test.mjs`.
 
 ## Mail Center re-synced with Houzs, 26 Nov 2026
 
