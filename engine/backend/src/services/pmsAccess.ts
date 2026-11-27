@@ -420,7 +420,8 @@ export function financeHiddenForUser(user: AuthUser | null | undefined): boolean
     /* A Conts account signs in from Property OS with no engine position, so the rollout exemption above would
        hand every one of them the money (owner, 27 Nov 2026: sales must not see costs). Its Permissions-chart
        levels decide instead: money shows with Project finances or Invoices open, or a finance grant. */
-    if (!user.role_name.startsWith("Conts: ")) return false;
+    const role = String((user as { role_name?: unknown }).role_name ?? "");
+    if (!role.startsWith("Conts: ")) return false;
     if (isFinanceViewer(user)) return false;
     const pa: Record<string, string | undefined> = user.page_access;
     return (pa["projects.finances"] ?? "none") === "none" && (pa["scm.finance"] ?? "none") === "none";
