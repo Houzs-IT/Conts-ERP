@@ -32,6 +32,7 @@ import {
   SO_PROCESSING_DATE_PAYLOAD_KEY,
 } from "../scm/shared/so-processing-date";
 import { parsePageNumber, parsePerPage } from "../lib/page-params";
+import { todayMyt } from "../scm/lib/my-time";
 
 /* The context the extracted handlers below receive. They are exported so the
    route tests can drive them directly; the shape is exactly what app.get/post
@@ -527,7 +528,8 @@ app.get("/entries/export", requirePageAccess("sales"), async (c) => {
 
   // BOM so Excel opens UTF-8 cleanly.
   const csv = "﻿" + lines.join("\r\n") + "\r\n";
-  const today = new Date().toISOString().slice(0, 10);
+  // Dated in Malaysia, not UTC (audit 2026-11-28, C4): before 08:00 MYT the UTC date is yesterday.
+  const today = todayMyt();
   const filename = !isNaN(projectId)
     ? `sales_project_${projectId}_${today}.csv`
     : `sales_${today}.csv`;
