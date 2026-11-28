@@ -3,6 +3,22 @@
 Read this first. Two other files matter: `README-react.md` (how to run and deploy)
 and `BUTTONS.md` (every button, its request, and the tables it touches).
 
+## Audit 2026-11-28 — what was fixed, what waits
+
+- **C4 fixed** (branch `fix/audit-2026-11-28`): Dream Crafter's "started projects" totals
+  (`engine/backend/src/routes/projects.ts`, both `scope=started` queries) and the sales CSV
+  filename (`routes/sales.ts`) used the UTC date. Workers run in UTC, so before 08:00 MYT a
+  project starting today was left out and the CSV was dated a day early. Both now use
+  `todayMyt()` from `scm/lib/my-time.ts`. Test: `engine/backend/tests/dcStartedProjectsMytDate.test.ts`.
+- **C3 NOT changed — waits on the owner.** Dream Crafter "Record payment" on a PO instalment still
+  creates, checks, approves and posts the voucher in one press (`scm/lib/renovation-po-voucher.ts`,
+  owner decision of 7 Nov 2026). The audit asks the owner to confirm one person may pay a supplier
+  end to end; do not touch it until he answers.
+- **C1 / C2 are data and operations, not code:** 120 cleaning jobs in the next 3 days had no
+  cleaner (assign in Operations → Cleaning; check whether auto-assign stopped), and 4 owners have
+  no bank details / 8 no contract / ASTRUM AMPANG S-23A-29 has no owner (finance to complete before
+  the December statements). No data was changed by this branch.
+
 ## The two halves
 
 | | Design reference | Production source |
