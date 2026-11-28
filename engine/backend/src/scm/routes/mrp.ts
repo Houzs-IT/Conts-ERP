@@ -496,6 +496,13 @@ const deliveryOf = (r: DemandRow): string | null => effectiveSoDelivery({
 });
 
 /* A project line with its PO-tab plan applied, or nothing if it is not demand (the rule at the call in computeMrp). */
+/** Conts (owner, 28 Nov 2026: "service 的也要可以开 PO"): a project's service line (installation, cleaning, aircon...)
+    is demand like a Works line, so MRP can open its PO; marking it No PO on the PO tab keeps in-house work out. A
+    service on an order with no project (the Houzs delivery fee lines) still never creates purchase demand. */
+export function isProjectService(d: DemandRow): boolean {
+  return d.so?.project_id != null;
+}
+
 export function projectDemandLine(
   r: DemandRow,
   plan: { order_on: string | null; deliver_on: string | null; no_po: boolean } | undefined,
@@ -1394,7 +1401,7 @@ export async function computeMrp(
        services, not goods: they never create purchase demand. Skip BEFORE the
        category filter so even ?category=SERVICE can't surface them. (Section 8
        below is SOFA-only by construction — SERVICE can't enter it.) */
-    if (isServiceLine({ itemGroup: d.item_group, itemCode: d.item_code, category: cat })) continue;
+    if (isServiceLine({ itemGroup: d.item_group, itemCode: d.item_code, category: cat }) && !isProjectService(d)) continue;
     if (catFilter && cat !== catFilter) continue;
     if (cat === 'SOFA') continue;
     const whId = d.warehouse_id ?? null;

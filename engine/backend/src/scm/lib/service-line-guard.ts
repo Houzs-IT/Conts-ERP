@@ -89,3 +89,28 @@ export const serviceGuardUnavailableResponse = (reason: string) => ({
   message:
     `Could not check whether these lines are SERVICE lines, so the return was not saved — try again (${reason}).`,
 });
+
+/** The codes among `codes` whose SKU Master category is SERVICE (installation, cleaning ...). A Conts project's service
+ *  line carries item_group RENOVATION, so the item-group test in isServiceLine misses it; a PO for it only tells the
+ *  contractor to do the work, and its receipt must never move stock (owner, 28 Nov 2026: "inventory dont need to
+ *  record"). Throws on a failed read: booking phantom stock is the direction a guess would take. */
+export async function catalogServiceCodes(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the scm PostgREST client is untyped, as in findServiceLineCodes
+  sb: any,
+  companyId: number | null | undefined,
+  codes: ReadonlyArray<string | null | undefined>,
+): Promise<Set<string>> {
+  const wanted = [...new Set(codes.map((c) => (c ?? '').trim()).filter(Boolean))];
+  if (wanted.length === 0) return new Set();
+  let q = pgrestIn(sb.from('mfg_products').select('code, category'), 'code', wanted);
+  if (companyId != null) q = q.eq('company_id', companyId);
+  const { data, error } = await q;
+  if (error) throw new Error(`service_codes_load_failed: ${error.message ?? 'catalog lookup failed'}`);
+  return new Set(((data ?? []) as Array<{ code: string; category: string | null }>).filter((p) => isServiceCategory(p.category)).map((p) => p.code));
+}
+
+/** The lines with each catalog-service line marked item_group 'service', so the stock guards and reversals that skip
+ *  service lines skip it too and stay level with the receipt, which booked nothing for it. Only for stock decisions. */
+export function markCatalogService<T extends { item_code: string; item_group?: string | null }>(lines: readonly T[], service: ReadonlySet<string>): T[] {
+  return lines.map((l) => (service.has(l.item_code) ? { ...l, item_group: 'service' } : l));
+}

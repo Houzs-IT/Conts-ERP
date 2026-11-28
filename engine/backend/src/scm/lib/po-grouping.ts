@@ -43,7 +43,10 @@ export interface GroupKeyInput {
 export function groupKeyFor(input: GroupKeyInput, toggle: PoMode): string {
   const supplier = `${input.warehouseId ?? 'null'}::${input.supplierId}`;
   /* No category in the key: a PO may mix categories (owner, 19 Nov 2026; migration 0345 lifted mig 0116's refusal). */
-  return toggle === 'per-so' || input.unitBound ? `${supplier}::so:${input.soDocNo}` : supplier;
+  /* A service gets a PO of its own (28 Nov 2026): it only tells the contractor to do the work, and on a receipt beside
+     goods a line grouped 'service' would be pooled into their stock cost as freight. */
+  const base = String(input.categoryGroup ?? '').toUpperCase() === 'SERVICE' ? `${supplier}::service` : supplier;
+  return toggle === 'per-so' || input.unitBound ? `${base}::so:${input.soDocNo}` : base;
 }
 
 /** A bucket with no warehouse lands as a DRAFT, and a draft to our own team makes no production order. Works and Built-in

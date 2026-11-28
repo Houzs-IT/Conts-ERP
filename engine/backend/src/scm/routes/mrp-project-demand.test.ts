@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { projectDemandLine, type DemandRow } from './mrp';
+import { isProjectService, projectDemandLine, type DemandRow } from './mrp';
 
 /* Owner, 4 Nov 2026: "只要一有 delivery date，它就会排着出来". */
 
@@ -40,5 +40,15 @@ describe('which project lines are demand', () => {
 
   test('marked No PO stays out, whatever dates it has', () => {
     expect(projectDemandLine(row(), plan({ order_on: '2026-11-10', deliver_on: '2026-11-18', no_po: true }))).toEqual([]);
+  });
+});
+
+describe('a service line in MRP (owner, 28 Nov 2026)', () => {
+  test('a project service line is demand, so MRP can open its PO', () => {
+    expect(isProjectService(row())).toBe(true);
+  });
+
+  test('a service on an order with no project (a Houzs fee line) stays out', () => {
+    expect(isProjectService(row({ project_id: null }))).toBe(false);
   });
 });
