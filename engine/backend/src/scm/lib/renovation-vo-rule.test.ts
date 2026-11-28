@@ -45,6 +45,8 @@ describe('poPickerOffers', () => {
     expect(poPickerOffers({ itemCode: 'RN-PLASTER', itemGroup: 'works', mainSupplierCode: null })).toBe(false);
     expect(poPickerOffers({ itemCode: 'SVC-DELIVERY', itemGroup: 'service', mainSupplierCode: null })).toBe(false);
     expect(poPickerOffers({ itemCode: 'RN-PLASTER', itemGroup: 'works', mainSupplierCode: 'ABC' })).toBe(true);
+    // owner, 28 Nov 2026: a renovation service (installation, cleaning) can be opened on a PO from its SO.
+    expect(poPickerOffers({ itemCode: 'RN-INSTALLATION', itemGroup: 'service', mainSupplierCode: null })).toBe(true);
   });
   test('offers a product line, bound or not', () => {
     expect(poPickerOffers({ itemCode: 'SOFA-1', itemGroup: 'sofa', mainSupplierCode: 'HOOKKA' })).toBe(true);

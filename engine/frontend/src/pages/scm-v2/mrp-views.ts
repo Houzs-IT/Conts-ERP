@@ -143,7 +143,8 @@ export function mrpViews(
     a row whose category is in no group. Replaces the Houzs Sofa / Bedframe / Mattress / Accessories tabs. */
 export function mrpGroupViews(groups: readonly { code: string; label: string }[]): MrpView[] {
   return [
-    ...groups.filter((g) => !NEVER_A_TAB.has(g.code)).map((g): MrpView => ({ value: `${GROUP_PREFIX}${g.code.toLowerCase()}`, category: null, label: g.label, group: g.code })),
+    /* Conts shows its Service tab: a project's service line with a supplier is bought through MRP (28 Nov 2026). */
+    ...groups.map((g): MrpView => ({ value: `${GROUP_PREFIX}${g.code.toLowerCase()}`, category: null, label: g.label, group: g.code })),
     { value: `${GROUP_PREFIX}others`, category: null, label: 'Others', group: '' },
   ];
 }
@@ -151,7 +152,7 @@ export function mrpGroupViews(groups: readonly { code: string; label: string }[]
 export function rowBelongsToView(view: MrpView, rowCategory: string | null | undefined): boolean {
   const cat = (rowCategory ?? '').trim().toUpperCase();
   if (view.group !== undefined) {
-    if (cat === '' || NEVER_A_TAB.has(cat)) return false;
+    if (cat === '') return false;
     return (categoryGroupOf(cat) ?? '') === view.group;
   }
   // The Sofa tab also owns Sofa Accessory rows — they park under their own SO there.

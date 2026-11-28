@@ -34,6 +34,7 @@ import { scheduleStockAllocationAfterCommand } from '../lib/stock-allocation-job
 /* ERP -> AutoCount GRN edit. See queueAcDoEdit in delivery-orders-mfg.ts for
    the shape and why it never throws. AcSyncService.cs:445 is `case "GR"`. */
 import { reconcileUncostedOuts, reconcileUncostedAfterIn } from '../lib/oversell-retrocost';
+import { catalogServiceCodes, markCatalogService } from '../lib/service-line-guard';
 import { buildVariantSummary, computeVariantKey, effectiveDelivery, isServiceLine, type VariantAttrs } from '../shared';
 import {
   orderSofaModuleRowsWithinBuilds,
@@ -564,10 +565,12 @@ export async function postGrnAndRollup(sb: any, grnId: string, userId: string, c
       sb,
       itemRows.map((it) => it.purchase_order_item_id),
     );
+    const catalogService = await catalogServiceCodes(sb, companyId, itemRows.map((it) => it.item_code));
     const movements = itemRows
       // SERVICE lines (freight) never enter inventory — skip them here. Their
       // amount has already been allocated INTO the goods lines' lot cost above.
       .filter((it) => !isServiceLine({ itemGroup: it.item_group ?? null, itemCode: it.item_code }))
+      .filter((it) => !catalogService.has(it.item_code))
       .filter((it) => it.qty_accepted > 0)
       .map((it) => ({
         movement_type: 'IN' as const,
@@ -2393,11 +2396,11 @@ export const cancelGrnCommand = async (
   const { data: lines } = await sb.from('grn_items')
     .select('purchase_order_item_id, qty_accepted, item_code, material_name, unit_price_sen, item_group, variants')
     .eq('grn_id', id);
-  const lineList = (lines ?? []) as Array<{
+  const lineList = markCatalogService((lines ?? []) as Array<{
     purchase_order_item_id: string | null; qty_accepted: number;
     item_code: string; material_name: string | null; unit_price_sen: number | null;
     item_group?: string | null; variants?: VariantAttrs | null;
-  }>;
+  }>, await catalogServiceCodes(sb, co.companyId, ((lines ?? []) as Array<{ item_code: string }>).map((l) => l.item_code)));
 
   // Bug #2 — block the cancel if the received stock was already consumed
   // downstream (reversing it out would drive on-hand negative + corrupt COGS).
@@ -2594,11 +2597,12 @@ grns.patch('/:id', async (c) => {
       const { data: lines } = await sb.from('grn_items')
         .select('purchase_order_item_id, qty_accepted, item_code, material_name, unit_price_sen, item_group, variants')
         .eq('grn_id', id);
-      const lineList = (lines ?? []) as Array<{
+      const rawLines = (lines ?? []) as Array<{
         purchase_order_item_id: string | null; qty_accepted: number;
         item_code: string; material_name: string | null; unit_price_sen: number | null;
         item_group?: string | null; variants?: VariantAttrs | null;
       }>;
+      const lineList = markCatalogService(rawLines, await catalogServiceCodes(sb, activeCompanyId(c), rawLines.map((l) => l.item_code)));
       // Guard: can't relocate stock that's already gone from the old warehouse.
       const consumedLock = await grnReverseWouldGoNegative(sb, oldWh, lineList, id);
       if (consumedLock) return refuseWithoutWriting(c, consumedLock, 409);
@@ -2975,7 +2979,7 @@ grns.post('/:id/items', async (c) => {
   // this one line so add/edit/delete all converge. Best-effort throughout.
   try { await recomputePoReceived(sb, [addedPoiId]); } catch { /* best-effort */ }
   // The PO rollup still runs (received_qty is paperwork); the IN does not.
-  if (qtyReceived > 0 && !migratedNoStock) {
+  if (qtyReceived > 0 && !migratedNoStock && !(await catalogServiceCodes(sb, activeCompanyId(c), [String(it.itemCode)])).has(String(it.itemCode))) {
     try {
       const { data: grnHeader } = await sb.from('grns')
         .select('grn_number, warehouse_id, exchange_rate').eq('id', grnId).maybeSingle();
@@ -3203,7 +3207,9 @@ grns.patch('/:id/items/:itemId', async (c) => {
   const isDraftGrn = grnGateStatus === 'DRAFT';
   // migratedNoStock joins isDraftGrn for the same reason: no committed stock, so
   // no delta to write and no on-hand guard to run.
-  const inventoryChange = !isDraftGrn && !migratedNoStock
+  const prevCode = (prev as { item_code: string }).item_code;
+  const editService = await catalogServiceCodes(sb, activeCompanyId(c), [prevCode, matCode]);
+  const inventoryChange = !isDraftGrn && !migratedNoStock && !editService.has(prevCode) && !editService.has(matCode)
     && (qtyChanged || bucketChanged) && (prevAccepted > 0 || newAccepted > 0);
 
   // Resolve warehouse once (needed by both the guard and the movement write).
@@ -3421,7 +3427,9 @@ grns.delete('/:id/items/:itemId', async (c) => runScmPgCommand(c, async (
   const isDraftGrn = grnGateStatus === 'DRAFT';
   // One flag so the three stock steps below cannot drift apart. DRAFT and
   // MIGRATED arrive by different routes and mean the same thing here.
-  const noCommittedStock = isDraftGrn || migratedNoStock;
+  const lineCode = (line as { item_code?: string } | null)?.item_code ?? '';
+  const noCommittedStock = isDraftGrn || migratedNoStock
+    || (lineCode !== '' && (await catalogServiceCodes(sb, activeCompanyId(c), [lineCode])).has(lineCode));
   // Bug #2 — deleting a posted GRN line writes an OUT to reverse its receipt.
   // If that line's received stock was already consumed downstream the OUT would
   // drive on-hand negative + corrupt COGS, so block it. Resolve the GRN's

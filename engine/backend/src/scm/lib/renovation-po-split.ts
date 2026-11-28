@@ -88,14 +88,16 @@ export function poPickerOffers(l: { itemCode: string | null; itemGroup: string |
   if (l.mainSupplierCode) return true;
   if (code.startsWith('RENO-') || code.startsWith('SVC-')) return false;
   const group = categoryGroupOf(l.itemGroup);
-  if (group === 'WORKS' || group === 'SERVICE') return false;
-  return !String(l.itemGroup ?? '').toUpperCase().includes('SERVICE');
+  if (group === 'WORKS') return false;
+  /* A service is offered too (owner, 28 Nov 2026: "service 的也要可以开 PO 然后 PO convert SO 也是"). */
+  return true;
 }
 
 /** Where a VO line goes (owner, 24 Oct 2026): the client buys it (Client PO), we buy it (PO), or it is our own works /
     service with no supplier to buy it from. Same rule as poPickerOffers. */
 export function voGoesTo(l: { itemCode: string | null; itemGroup: string | null; mainSupplierCode: string | null }): 'po' | 'client' | 'works' {
   if (l.mainSupplierCode === 'CUSTOMER') return 'client';
+  if (!l.mainSupplierCode && (categoryGroupOf(l.itemGroup) === 'SERVICE' || String(l.itemGroup ?? '').toUpperCase().includes('SERVICE'))) return 'works';
   return poPickerOffers(l) ? 'po' : 'works';
 }
 
@@ -134,7 +136,7 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
     }
     if (!r.supplier_id) {
       if (Number(r.unit_cost_sen) === 0 && GOODS_GROUPS.has(group ?? '')) out.unsupplied.push({ ...line, reason: 'No supplier: pick one on the contract line to order it' });
-      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: treated as in-house work. To buy it, pick a supplier in MRP' });
+      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: treated as in-house work. To buy it, pick a supplier on the PO tab or in MRP' });
       else out.blocked.push({ ...line, reason: 'Has a cost but no supplier' });
       continue;
     }

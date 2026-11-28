@@ -23,6 +23,7 @@ import { qtyCapRefusal } from '../lib/qty-cap';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
 import { writeMovements, reverseMovements, defaultWarehouseId } from '../lib/inventory-movements';
 import { readGrnSiteFlag, siteReceivedGrnIds } from '../lib/renovation-site-receipt';
+import { catalogServiceCodes } from '../lib/service-line-guard';
 import { reconcileUncostedAfterIn } from '../lib/oversell-retrocost';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
@@ -514,9 +515,12 @@ async function writePurchaseReturnMovements(sb: any, prId: string, returnNumber:
      moves for this return and the caller is told (fails closed). */
   const siteGrns = await siteReceivedGrnIds(sb, [...lineGrnId.values()].filter((x): x is string => !!x));
   if (siteGrns === null) return [`OUT ${returnNumber}: not written, could not tell whether the source receipt was taken on site`];
+  // A Conts service line (installation, cleaning ...) never entered stock either (owner, 28 Nov 2026).
+  const catalogService = await catalogServiceCodes(sb, prCompanyId, itemList.map((it) => it.item_code));
   const movements = itemList
     .filter((it) => it.qty_returned > 0)
     .filter((it) => !siteGrns.has(lineGrnId.get(it.id) ?? ''))
+    .filter((it) => !catalogService.has(it.item_code))
     .map((it) => {
       const warehouseId = lineWh.get(it.id) ?? null;
       if (!warehouseId) return null;
@@ -596,9 +600,10 @@ async function checkPrStockAvailability(
     for (const r of (giRows ?? []) as Array<{ id: string; grn_id: string }>) giToGrn.set(r.id, r.grn_id);
   }
   const siteGrns = await siteReceivedGrnIds(sb, [...giToGrn.values(), ...(headerGrnId ? [headerGrnId] : [])]);
-  const active = siteGrns
+  const catalogService = await catalogServiceCodes(sb, companyId, requested.map((l) => l.item_code));
+  const active = (siteGrns
     ? requested.filter((l) => !siteGrns.has((l.grn_item_id ? giToGrn.get(l.grn_item_id) : null) ?? headerGrnId ?? ''))
-    : requested;
+    : requested).filter((l) => !catalogService.has(l.item_code));
   if (active.length === 0) return [];
   const lineWh = await resolvePrLineWarehouses(
     sb, active.map((l) => ({ id: l.id, grn_item_id: l.grn_item_id ?? null })), headerGrnId, companyId,
@@ -650,6 +655,7 @@ async function writePrLineDeltaMovement(
   },
 ): Promise<string[]> {
   if (!args.deltaQty) return [];
+  if ((await catalogServiceCodes(sb, args.companyId, [args.line.item_code])).has(args.line.item_code)) return [];
   /* SITE RECEIPT guard, as in writePurchaseReturnMovements: no stock behind the
      source line, so no delta either. */
   {

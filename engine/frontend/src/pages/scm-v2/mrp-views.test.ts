@@ -31,7 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { mrpViews, mrpCategoryOf, rowBelongsToView } from './mrp-views';
+import { mrpViews, mrpCategoryOf, mrpGroupViews, rowBelongsToView } from './mrp-views';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const SCHEMA_SQL = path.join(repoRoot, 'backend/scripts/scm-schema/2990s-full-schema.sql');
@@ -178,5 +178,15 @@ describe('what the tab list does and does not invent', () => {
     /* A row with no category at all stays off every tab. bug 0777 fixed the
        engine so this is rare, but Others must not become the bin that hides it. */
     expect(rowBelongsToView(others, null)).toBe(false);
+  });
+});
+
+describe('Conts group tabs (owner, 28 Nov 2026)', () => {
+  const views = mrpGroupViews([{ code: 'WORKS', label: 'Works' }, { code: 'SERVICE', label: 'Service' }]);
+  test('has a Service tab, and a SERVICE row lands on it', () => {
+    const service = views.find((v) => v.group === 'SERVICE');
+    expect(service?.label).toBe('Service');
+    expect(rowBelongsToView(service!, 'SERVICE')).toBe(true);
+    expect(rowBelongsToView(views.find((v) => v.group === '')!, 'SERVICE')).toBe(false);
   });
 });

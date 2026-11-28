@@ -4,7 +4,8 @@
 import { chunkIn } from './paginate-all';
 import { pgrestInList } from './pgrest-in-list';
 
-const UNIT_BOUND_CATEGORIES: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN']);
+/* A bought service (installation, cleaning ...) is done at one unit too (28 Nov 2026). */
+const UNIT_BOUND_CATEGORIES: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN', 'SERVICE']);
 
 export const isUnitBoundCategory = (category: string | null | undefined): boolean =>
   UNIT_BOUND_CATEGORIES.has(String(category ?? '').toUpperCase());
