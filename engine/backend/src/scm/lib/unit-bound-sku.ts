@@ -10,6 +10,12 @@ const UNIT_BOUND_CATEGORIES: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN', 
 export const isUnitBoundCategory = (category: string | null | undefined): boolean =>
   UNIT_BOUND_CATEGORIES.has(String(category ?? '').toUpperCase());
 
+/* Only Works and Built-in need a PO of their own per SO (two customers on one in-house PO jam production Complete).
+   A service PO may carry several units' jobs for one contractor (owner, 28 Nov 2026); each line still covers only its
+   own SO line. */
+export const isOneSoPerPoCategory = (category: string | null | undefined): boolean =>
+  isUnitBoundCategory(category) && String(category ?? '').toUpperCase() !== 'SERVICE';
+
 /** Built-in is sales order to PO only (owner, 7 Nov 2026): never a production order, even bound to In-house. */
 export const isBuiltInCategory = (category: string | null | undefined): boolean => String(category ?? '').toUpperCase() === 'BUILTIN';
 

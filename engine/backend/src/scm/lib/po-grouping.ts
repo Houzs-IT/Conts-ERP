@@ -25,7 +25,7 @@
 
 import { chunkIn } from './paginate-all';
 import { pgrestInList } from './pgrest-in-list';
-import { isUnitBoundCategory } from './unit-bound-sku';
+import { isOneSoPerPoCategory } from './unit-bound-sku';
 
 /** The caller's global toggle. */
 export type PoMode = 'combined' | 'per-so';
@@ -36,6 +36,7 @@ export interface GroupKeyInput {
   soDocNo: string;
   /* Set only on a line of a project's SO. */
   categoryGroup?: string | null;
+  /* Works or Built-in: the PO serves one SO even in Combined. */
   unitBound?: boolean;
 }
 
@@ -57,6 +58,7 @@ export function takesOnSiteDefault(b: { warehouseId: string | null; supplierId: 
 
 export interface PoGroupFacts {
   categoryGroupOf: (itemCode: string, soDocNo: string) => string | null;
+  /** Works or Built-in: one SO per PO. A service is unit-bound elsewhere but may share a PO across SOs. */
   unitBound: (itemCode: string) => boolean;
 }
 
@@ -80,7 +82,7 @@ export async function loadPoGroupFacts(
     sb.from('mfg_sales_orders').select('doc_no, project_id').in('doc_no', batch).order('doc_no').range(from, to));
   if (soErr) throw new Error(`po_group_facts_failed: ${soErr.message}`);
   const group = new Map((products ?? []).map((p) => [p.code, p.category_group]));
-  const bound = new Set((products ?? []).filter((p) => isUnitBoundCategory(p.category) || isUnitBoundCategory(p.category_group)).map((p) => p.code));
+  const bound = new Set((products ?? []).filter((p) => isOneSoPerPoCategory(p.category) || isOneSoPerPoCategory(p.category_group)).map((p) => p.code));
   const projectDocs = new Set((orders ?? []).filter((o) => o.project_id != null).map((o) => o.doc_no));
   return {
     categoryGroupOf: (itemCode, soDocNo) => (projectDocs.has(soDocNo) ? group.get(itemCode) ?? null : null),
