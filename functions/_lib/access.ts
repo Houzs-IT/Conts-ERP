@@ -302,6 +302,8 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[
   { method: 'PATCH', path: /^\/api\/units\/[^/]+\/bank-account$/, area: 'owners', why: 'Choosing which of the owner\'s bank accounts a unit is paid to is owner payout work.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; the Messages inbox keeps its own area.' },
+  { method: 'GET', path: /^\/api\/connect\/preview$/, area: 'reservations', why: 'Previewing a guest WhatsApp template (Houzs Connect) from a reservation or guest record; same area as messaging a guest, so Finance is held out the same way.' },
+  { method: 'POST', path: /^\/api\/connect\/send$/, area: 'reservations', why: 'Sending a guest WhatsApp template (Houzs Connect) from a reservation or guest record; same area as POST /api/messages.' },
   { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report is a tab of Units > Unit report.' },
   { method: 'GET', path: /^\/api\/finance\/ygrr-report$/, area: 'reports', why: 'The YGRR report (Package D) is a tab of Units > Unit report.' },
   // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording

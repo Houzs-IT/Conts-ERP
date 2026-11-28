@@ -28,6 +28,7 @@ import ApprovalBanner from '../ApprovalBanner';
 import { DocumentsSection, type GuestDocument } from './GuestDocuments';
 import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/approvals';
 import { CloseButton } from '../CloseButton';
+import { ConnectTemplatePanel } from '../ConnectTemplatePanel';
 import { moneyStatus, lastPaidOn, isOtaChannel } from '../../lib/payoutStatus';
 import { Link } from 'react-router-dom';
 import type { Review } from '../../pages/reviews/ReviewCard';
@@ -321,18 +322,21 @@ export function MessageGuestModal({ r, onClose, onSent }: { r: { id: string; gue
   }
   return (
     <CentreModal eyebrow="Reservations" title={`Message ${r.guestName || 'guest'}`} sub={`Goes to the guest's ${thread} conversation when that channel is connected.`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
-        <div className="flex flex-col gap-[6px]">
-          <label htmlFor="bk-msg" className="text-meta font-medium text-muted-ink">Message</label>
-          <textarea id="bk-msg" required value={body} onChange={e => setBody(e.target.value)} rows={4}
-            placeholder={`Hi ${greetName(r.guestName)}, a quick note about your reservation…`}
-            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
-        </div>
-        <ModalActions>
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
-        </ModalActions>
-      </form>
+      <div className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
+        <form onSubmit={submit} className="flex flex-col gap-[14px]">
+          <div className="flex flex-col gap-[6px]">
+            <label htmlFor="bk-msg" className="text-meta font-medium text-muted-ink">Message</label>
+            <textarea id="bk-msg" required value={body} onChange={e => setBody(e.target.value)} rows={4}
+              placeholder={`Hi ${greetName(r.guestName)}, a quick note about your reservation…`}
+              className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
+          </div>
+          <div className="flex items-center justify-end flex-wrap gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
+          </div>
+        </form>
+        <ConnectTemplatePanel reservationId={r.id} guestName={r.guestName} onSent={() => { onSent?.(); onClose(); }} />
+      </div>
     </CentreModal>
   );
 }
